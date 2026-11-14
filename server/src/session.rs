@@ -530,7 +530,19 @@ impl Session {
                 let _ = tx.send(Cmd::AudioSkip { seq });
                 return;
             }
-            let result = match tokio::time::timeout(wait, tts.synth(&text, &lang)).await {
+            // A dropped connection is common when several sentences start at once: retry it
+            // once inside the same deadline before giving the sentence up.
+            let attempt = async {
+                match tts.synth(&text, &lang).await {
+                    Err(e) if e.status == 0 => {
+                        tracing::info!("tts retry for seq {seq}: {}", e.message);
+                        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                        tts.synth(&text, &lang).await
+                    }
+                    other => other,
+                }
+            };
+            let result = match tokio::time::timeout(wait, attempt).await {
                 Ok(r) => r,
                 Err(_) => Err(crate::voice::VoiceError::timeout()),
             };
