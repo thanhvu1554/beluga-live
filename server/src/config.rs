@@ -18,6 +18,8 @@ pub struct Config {
     pub mock: bool,
     /// Delay between mock lesson lines.
     pub mock_delay_ms: u64,
+    /// How long the `capture_photo` tool waits for the phone (PROTOCOL: 8 seconds).
+    pub capture_timeout_ms: u64,
     pub data_dir: PathBuf,
     pub board_dir: PathBuf,
     pub tutor_dir: PathBuf,
@@ -124,6 +126,7 @@ impl Config {
         Config {
             port,
             mock,
+            capture_timeout_ms: 8000,
             mock_delay_ms: get("BELUGA_MOCK_DELAY_MS").and_then(|v| v.parse().ok()).unwrap_or(250),
             data_dir,
             board_dir: root.join("shared").join("board"),

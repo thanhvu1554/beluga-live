@@ -16,8 +16,6 @@ use std::time::Duration;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::oneshot;
 
-pub const CAPTURE_TIMEOUT: Duration = Duration::from_secs(8);
-
 pub enum Cmd {
     Attach {
         conn: u64,
@@ -444,12 +442,13 @@ impl Session {
             return;
         }
         let request_id = uuid::Uuid::new_v4().to_string();
-        self.send(json!({"t": "capture_request", "requestId": request_id}));
         self.send(state_frame("tool", Some("capture")));
+        self.send(json!({"t": "capture_request", "requestId": request_id}));
         self.capture = Some(PendingCapture { request_id: request_id.clone(), reply });
         let tx = self.self_tx.clone();
+        let wait = Duration::from_millis(self.deps.cfg.capture_timeout_ms);
         tokio::spawn(async move {
-            tokio::time::sleep(CAPTURE_TIMEOUT).await;
+            tokio::time::sleep(wait).await;
             let _ = tx.send(Cmd::CaptureTimeout { request_id });
         });
     }
