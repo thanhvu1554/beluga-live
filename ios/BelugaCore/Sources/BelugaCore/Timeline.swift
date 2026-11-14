@@ -1,5 +1,12 @@
 import Foundation
 
+/// What is known about the server audio of one `say`.
+public enum SayAudio: Sendable, Equatable {
+    case mp3(Data)
+    /// `audio_skip`: speak with the system voice right away.
+    case skip
+}
+
 /// What the app must do next as the timeline advances.
 public enum TimelineAction: Sendable, Equatable {
     /// Start speaking this `say`. Call `Timeline.finishedSpeaking(seq:)` when playback ends.
@@ -27,7 +34,7 @@ public struct Timeline: Sendable {
     /// Highest turn seen.
     public private(set) var latestTurn: Int = -1
     /// Server TTS audio by `say` seq. It may arrive before its turn to play and out of order.
-    public private(set) var audio: [Int: Data] = [:]
+    public private(set) var audio: [Int: SayAudio] = [:]
     /// Says that gave up waiting and used the system voice: their late audio is dropped.
     private var abandonedAudio: Set<Int> = []
 
@@ -53,12 +60,19 @@ public struct Timeline: Sendable {
     @discardableResult
     public mutating func receiveAudio(seq: Int, data: Data) -> Bool {
         guard anchored ? seq > lastPlayed : true, !abandonedAudio.contains(seq) else { return false }
-        audio[seq] = data
+        audio[seq] = .mp3(data)
         return true
     }
 
-    /// Take the audio for a say that is now due, if it has arrived.
-    public mutating func takeAudio(seq: Int) -> Data? {
+    /// `audio_skip`: the server has no audio for this say.
+    public mutating func receiveAudioSkip(seq: Int) {
+        guard anchored ? seq > lastPlayed : true, !abandonedAudio.contains(seq) else { return }
+        audio[seq] = .skip
+    }
+
+    /// Take the audio outcome for a say that is now due, if it is known yet
+    /// (nil = keep waiting, up to `ready.audioWaitMs`).
+    public mutating func takeAudio(seq: Int) -> SayAudio? {
         audio.removeValue(forKey: seq)
     }
 

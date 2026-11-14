@@ -113,7 +113,7 @@
       }
       case "plot":
         n = h("div", "block plot");
-        n.appendChild(Plot.render(b, root.clientWidth - 48));
+        n.appendChild(Plot.render(b, (global.innerWidth || 390) - 48));
         break;
       case "answer":
         n = h("div", "block answer", '<span class="label">' + L("answer") + "</span>" + MD.block(b.md)); break;
@@ -135,11 +135,14 @@
     post({ type: "stepChanged", index: current, count: steps.length });
   }
 
+  // Paging by transform in vw units: independent of when the web view gets its size.
   function scrollToStep(i, smooth) {
-    var s = steps[Math.max(0, Math.min(steps.length - 1, i))];
-    if (!s) return;
-    root.scrollTo({ left: s.el.offsetLeft, behavior: smooth ? "smooth" : "auto" });
-    settle(steps.indexOf(s));
+    if (!steps.length) return;
+    var idx = Math.max(0, Math.min(steps.length - 1, i));
+    if (!smooth) root.classList.add("dragging");
+    root.style.transform = "translateX(" + (-idx * 100) + "vw)";
+    if (!smooth) { void root.offsetWidth; root.classList.remove("dragging"); }
+    if (idx !== current || !smooth) settle(idx);
   }
 
   function scrollIntoBlock(stepObj, node) {
@@ -149,26 +152,39 @@
     if (bottom > page.scrollTop + page.clientHeight) page.scrollTo({ top: bottom - page.clientHeight, behavior: restoring ? "auto" : "smooth" });
   }
 
-  var scrollTimer = null;
-  root.addEventListener("scroll", function () {
-    clearTimeout(scrollTimer);
-    scrollTimer = setTimeout(function () {
-      if (root.clientWidth < 10) return;
-      var i = Math.round(root.scrollLeft / Math.max(1, root.clientWidth));
-      if (i !== current) settle(i);
-    }, 90);
+  // Horizontal swipe between steps; vertical drags scroll the page.
+  var touch = null;
+  root.addEventListener("touchstart", function (e) {
+    var t = e.touches[0];
+    touch = { x: t.clientX, y: t.clientY, dx: 0, horizontal: null };
   }, { passive: true });
-
-  // The web view may be laid out after content arrived (panel hidden): keep the current page in view.
-  global.addEventListener("resize", function () {
-    var s = steps[current];
-    if (s) root.scrollTo({ left: s.el.offsetLeft, behavior: "auto" });
+  root.addEventListener("touchmove", function (e) {
+    if (!touch) return;
+    var t = e.touches[0];
+    touch.dx = t.clientX - touch.x;
+    var dy = t.clientY - touch.y;
+    if (touch.horizontal === null && (Math.abs(touch.dx) > 8 || Math.abs(dy) > 8)) touch.horizontal = Math.abs(touch.dx) > Math.abs(dy);
+    if (touch.horizontal) {
+      e.preventDefault();
+      var edge = (current === 0 && touch.dx > 0) || (current === steps.length - 1 && touch.dx < 0);
+      root.classList.add("dragging");
+      root.style.transform = "translateX(calc(" + (-current * 100) + "vw + " + (edge ? touch.dx / 3 : touch.dx) + "px))";
+    }
+  }, { passive: false });
+  root.addEventListener("touchend", function () {
+    if (!touch) return;
+    root.classList.remove("dragging");
+    var next = current;
+    if (touch.horizontal && touch.dx < -50) next = current + 1;
+    if (touch.horizontal && touch.dx > 50) next = current - 1;
+    touch = null;
+    scrollToStep(next, true);
   });
 
   var board = {
     version: VERSION,
     reset: function () {
-      root.innerHTML = ""; steps = []; current = 0;
+      root.innerHTML = ""; steps = []; current = 0; root.style.transform = "";
       post({ type: "stepChanged", index: 0, count: 0 });
     },
     apply: function (ev) {

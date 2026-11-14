@@ -111,6 +111,8 @@ public enum ServerMessage: Sendable, Equatable {
     case heard(text: String)
     case event(LessonEvent)
     case audio(seq: Int, mime: String, data: Data)
+    /// No server audio for this say: speak it with the system voice now.
+    case audioSkip(seq: Int)
     case title(text: String)
     case captureRequest(requestId: String)
     case snapshot(events: [LessonEvent])
@@ -150,6 +152,8 @@ public enum ServerMessage: Sendable, Equatable {
         case "audio":
             let data = Data(base64Encoded: v["data"]?.string ?? "") ?? Data()
             return .audio(seq: v["seq"]?.int ?? -1, mime: v["mime"]?.string ?? "audio/mpeg", data: data)
+        case "audio_skip":
+            return .audioSkip(seq: v["seq"]?.int ?? -1)
         case "title":
             return .title(text: v["text"]?.string ?? "")
         case "capture_request":

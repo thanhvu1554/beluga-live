@@ -27,8 +27,7 @@ final class AppSettings {
             .trimmingCharacters(in: .whitespaces) ?? ""
         host = defaults.string(forKey: "host") ?? bundled
         pairCode = defaults.string(forKey: "pairCode") ?? ""
-        let systemLang: Lang = (Locale.preferredLanguages.first ?? "vi").hasPrefix("en") ? .en : .vi
-        lang = defaults.string(forKey: "lang").flatMap(Lang.init(rawValue:)) ?? systemLang
+        lang = defaults.string(forKey: "lang").flatMap(Lang.init(rawValue:)) ?? .vi
         model = defaults.string(forKey: "model").flatMap(ModelChoice.init(rawValue:)) ?? .sonnet
         rigor = defaults.string(forKey: "rigor").flatMap(Rigor.init(rawValue:)) ?? .medium
         handsFree = defaults.object(forKey: "handsFree") as? Bool ?? false

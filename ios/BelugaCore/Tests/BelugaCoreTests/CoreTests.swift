@@ -30,6 +30,7 @@ import Testing
         #expect(try ServerMessage.decode(#"{"t":"capture_request","requestId":"r1"}"#) == .captureRequest(requestId: "r1"))
         #expect(try ServerMessage.decode(#"{"t":"error","code":"bad_pair","text":"no","fatal":true}"#) == .error(code: "bad_pair", text: "no", fatal: true))
         #expect(try ServerMessage.decode(#"{"t":"whatever"}"#) == .unknown(type: "whatever"))
+        #expect(try ServerMessage.decode(#"{"t":"audio_skip","seq":12}"#) == .audioSkip(seq: 12))
         let audio = try ServerMessage.decode(#"{"t":"audio","seq":3,"mime":"audio/mpeg","data":"AAEC"}"#)
         #expect(audio == .audio(seq: 3, mime: "audio/mpeg", data: Data([0, 1, 2])))
         let snap = try ServerMessage.decode(#"{"t":"snapshot","events":[{"t":"say","seq":1,"turn":1,"text":"a","audio":false},{"t":"done","seq":2,"turn":1}]}"#)

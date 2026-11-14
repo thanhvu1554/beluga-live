@@ -45,7 +45,7 @@
   function fmt(v) { return Math.abs(v) < 1e-9 ? "0" : String(+v.toFixed(2)).replace("-", "−"); }
 
   function render(block, width) {
-    var W = Math.max(280, width || 340), H = Math.round(W * 0.66), pad = 24;
+    var W = Math.max(280, width || 340), H = Math.round(W * 0.56), pad = 24;
     var fns = (block.fn || []).map(compile).filter(Boolean);
     var x0 = (block.x || [-5, 5])[0], x1 = (block.x || [-5, 5])[1];
     var y0, y1;

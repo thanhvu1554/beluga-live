@@ -138,10 +138,20 @@ private func seqs(_ actions: [TimelineAction]) -> [String] {
         #expect(t.receiveAudio(seq: 1, data: Data([1])))
         _ = t.receive(say(3))
         _ = t.receive(LessonEvent(seq: 2, turn: 1, kind: .step(index: 0, title: "a")))
-        #expect(t.takeAudio(seq: 1) == Data([1]))
+        #expect(t.takeAudio(seq: 1) == .mp3(Data([1])))
         _ = t.finishedSpeaking(seq: 1)
         #expect(t.current?.seq == 3)
-        #expect(t.takeAudio(seq: 3) == Data([3]))
+        #expect(t.takeAudio(seq: 3) == .mp3(Data([3])))
+    }
+
+    @Test func audioSkipMeansSpeakNow() {
+        var t = Timeline(lastPlayed: 0)
+        t.receiveAudioSkip(seq: 2)
+        _ = t.receive(say(1))
+        #expect(t.takeAudio(seq: 1) == nil)
+        _ = t.finishedSpeaking(seq: 1)
+        _ = t.receive(say(2))
+        #expect(t.takeAudio(seq: 2) == .skip)
     }
 
     @Test func lateAudioAfterFallbackIsDropped() {

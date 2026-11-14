@@ -185,6 +185,8 @@ final class LiveController {
             process(timeline.receive(e))
         case let .audio(seq, _, data):
             timeline.receiveAudio(seq: seq, data: data)
+        case .audioSkip(let seq):
+            timeline.receiveAudioSkip(seq: seq)
         case .title(let text):
             title = text
         case .captureRequest(let requestId):
@@ -296,12 +298,14 @@ final class LiveController {
 
     private func speak(_ e: LessonEvent) {
         guard case .say(let text, let hasAudio) = e.kind else { return }
-        pill.handle(.sayStarted)
-        if captionsOn { caption = text }
         speakTask?.cancel()
         speakTask = Task { [weak self] in
             guard let self else { return }
-            await self.play(text: text, seq: e.seq, serverAudio: hasAudio)
+            let source = await self.waitForAudio(seq: e.seq, serverAudio: hasAudio)
+            guard !Task.isCancelled, self.timeline.current?.seq == e.seq else { return }
+            self.pill.handle(.sayStarted)
+            if self.captionsOn { self.caption = text }
+            await self.play(text: text, source: source)
             guard !Task.isCancelled, self.timeline.current?.seq == e.seq else { return }
             self.pill.handle(.sayFinished)
             self.transport?.send(.played(seq: e.seq))
@@ -309,7 +313,22 @@ final class LiveController {
         }
     }
 
-    private func play(text: String, seq: Int, serverAudio: Bool) async {
+    /// Server voice: wait (from now, when the say is due) for its `audio` or `audio_skip`,
+    /// at most `ready.audioWaitMs`. The pill shows `thinking` meanwhile.
+    private func waitForAudio(seq: Int, serverAudio: Bool) async -> SayAudio {
+        guard serverAudio, ready?.serverTTS == true else { return .skip }
+        if let known = timeline.takeAudio(seq: seq) { return known }
+        pill.handle(.server(state: "thinking", tool: nil))
+        let deadline = Date().addingTimeInterval(Double(ready?.audioWaitMs ?? 3000) / 1000)
+        while Date() < deadline, !Task.isCancelled {
+            try? await Task.sleep(for: .milliseconds(40))
+            if let known = timeline.takeAudio(seq: seq) { return known }
+        }
+        timeline.abandonAudio(seq: seq)
+        return .skip
+    }
+
+    private func play(text: String, source: SayAudio) async {
         if isMock {
             mockScriptedLevel = .speaking
             let seconds = max(1.4, Double(text.count) * 0.06)
@@ -318,17 +337,7 @@ final class LiveController {
             return
         }
         guard let audio else { return }
-        if serverAudio, ready?.serverTTS == true {
-            // The wait starts now, when this say is due; the mp3 may already be here.
-            let deadline = Date().addingTimeInterval(Double(ready?.audioWaitMs ?? 3000) / 1000)
-            var data = timeline.takeAudio(seq: seq)
-            while data == nil, Date() < deadline, !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(50))
-                data = timeline.takeAudio(seq: seq)
-            }
-            if let data, await audio.play(mp3: data) { return }
-            if data == nil { timeline.abandonAudio(seq: seq) }
-        }
+        if case .mp3(let data) = source, await audio.play(mp3: data) { return }
         guard !Task.isCancelled else { return }
         await audio.speak(text, lang: settings.lang)
     }
