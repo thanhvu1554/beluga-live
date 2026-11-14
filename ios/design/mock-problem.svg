@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 2600" width="1200" height="2600">
+  <!-- Sample problem page used instead of the camera in mock mode. -->
+  <defs>
+    <radialGradient id="light" cx="45%" cy="35%" r="80%">
+      <stop offset="0" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0.28"/>
+    </radialGradient>
+    <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="4"/>
+      <feColorMatrix values="0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0.06 0"/></filter>
+  </defs>
+  <rect width="1200" height="2600" fill="#3a3936"/>
+  <g transform="rotate(-1.6 600 1300)">
+    <rect x="40" y="-40" width="1140" height="2720" fill="#efece4"/>
+    <g font-family="Times New Roman" fill="#22211f">
+      <text x="120" y="330" font-size="30" fill="#5a5853" letter-spacing="2">CHƯƠNG VI · DẤU CỦA TAM THỨC BẬC HAI</text>
+      <line x1="120" y1="360" x2="1080" y2="360" stroke="#8a8780" stroke-width="2"/>
+      <text x="120" y="470" font-size="44" font-weight="bold">Bài 3.</text>
+      <text x="245" y="470" font-size="44">Giải các bất phương trình sau:</text>
+      <text x="170" y="580" font-size="46">a)  x² − 5x + 6 &gt; 0 ;</text>
+      <text x="170" y="680" font-size="46">b)  −2x² + 3x + 5 ≤ 0 ;</text>
+      <text x="170" y="780" font-size="46">c)  x² − 4x + 4 &gt; 0 ;</text>
+      <text x="170" y="880" font-size="46">d)  (x − 1)(x² − 9) ≥ 0 .</text>
+      <text x="120" y="1010" font-size="44" font-weight="bold">Bài 4.</text>
+      <text x="245" y="1010" font-size="44">Tìm m để bất phương trình</text>
+      <text x="170" y="1110" font-size="46">x² − 2(m + 1)x + m + 7 &gt; 0</text>
+      <text x="120" y="1200" font-size="44">nghiệm đúng với mọi x ∈ ℝ.</text>
+      <text x="120" y="1330" font-size="44" font-weight="bold">Bài 5.</text>
+      <text x="245" y="1330" font-size="44">Một quả bóng được ném lên, độ cao</text>
+      <text x="120" y="1420" font-size="44">của bóng sau t giây là h(t) = −5t² + 20t + 1 (m).</text>
+      <text x="120" y="1510" font-size="44">Trong khoảng thời gian nào bóng ở độ cao</text>
+      <text x="120" y="1600" font-size="44">trên 16 mét?</text>
+      <text x="600" y="2380" font-size="30" fill="#5a5853" text-anchor="middle">— 87 —</text>
+    </g>
+  </g>
+  <rect width="1200" height="2600" filter="url(#grain)"/>
+  <rect width="1200" height="2600" fill="url(#light)"/>
+</svg>

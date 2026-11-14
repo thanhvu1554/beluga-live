@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Beluga Live app icon: geometric beluga (melon forehead, neck dip, smile), one line weight. -->
+  <rect width="1024" height="1024" fill="#F2F2F0"/>
+  <g fill="none" stroke="#141414" stroke-width="40" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M176 596
+             C166 500 236 400 330 362
+             C412 330 486 350 520 404
+             C610 396 714 440 792 524
+             L852 474 C874 456 902 470 896 498
+             C890 530 866 556 842 574
+             C868 590 888 620 878 646
+             C868 672 838 670 820 652
+             L780 612
+             C700 690 560 714 420 704
+             C290 694 186 672 176 596 Z"/>
+    <path d="M214 628 C252 654 310 656 352 634"/>
+    <path d="M462 600 C482 640 516 664 560 668"/>
+  </g>
+  <circle cx="330" cy="520" r="24" fill="#141414"/>
+</svg>

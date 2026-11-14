@@ -88,30 +88,39 @@ import Testing
         var p = PillMachine(now: t0)
         p.handle(.connected, now: t0)
         p.handle(.userSent, now: t0)
-        #expect(!p.shouldAnnounceThinking(now: t0.addingTimeInterval(3.9)))
-        #expect(p.shouldAnnounceThinking(now: t0.addingTimeInterval(4.1)))
-        #expect(!p.shouldAnnounceThinking(now: t0.addingTimeInterval(9)))
+        let a1 = p.shouldAnnounceThinking(now: t0.addingTimeInterval(3.9))
+        #expect(!a1)
+        let a2 = p.shouldAnnounceThinking(now: t0.addingTimeInterval(4.1))
+        #expect(a2)
+        let a3 = p.shouldAnnounceThinking(now: t0.addingTimeInterval(9))
+        #expect(!a3)
     }
 
     @Test func unchangedStateReportsFalse() {
         var p = PillMachine()
-        #expect(p.handle(.connected))
-        #expect(!p.handle(.sayFinished))
+        let changed = p.handle(.connected)
+        #expect(changed)
+        let unchanged = p.handle(.sayFinished)
+        #expect(!unchanged)
     }
 }
 
 @Suite struct BackoffTests {
     @Test func growsAndCaps() {
         var b = Backoff(base: 0.5, factor: 2, max: 4, jitter: 0)
-        #expect([b.next(), b.next(), b.next(), b.next(), b.next()] == [0.5, 1, 2, 4, 4])
+        let seq = [b.next(), b.next(), b.next(), b.next(), b.next()]
+        #expect(seq == [0.5, 1, 2, 4, 4])
         b.reset()
-        #expect(b.next() == 0.5)
+        let first = b.next()
+        #expect(first == 0.5)
     }
 
     @Test func jitterStaysInRange() {
         var b = Backoff(base: 1, factor: 2, max: 10, jitter: 0.2)
-        #expect(abs(b.next(random: 0) - 0.8) < 1e-9)
-        #expect(abs(b.next(random: 1) - 2.4) < 1e-9)
+        let lo = b.next(random: 0)
+        #expect(abs(lo - 0.8) < 1e-9)
+        let hi = b.next(random: 1)
+        #expect(abs(hi - 2.4) < 1e-9)
     }
 }
 
