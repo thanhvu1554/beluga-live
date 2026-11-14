@@ -49,6 +49,7 @@ async fn serve(dir: &Path, voice: Arc<Voice>) -> SocketAddr {
         tutor_dir: dir.join("tutor"),
         claude_bin: "claude".into(),
         claude_effort: None,
+        claude_model_map: vec![],
         eleven: None,
         genvoice: None,
         tts_provider: "auto".into(),

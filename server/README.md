@@ -103,7 +103,10 @@ Hợp đồng ở `../docs/PROTOCOL.md` mục 6. Phần server:
 ## Claude Code (gia sư)
 
 `--model` theo cài đặt của app (mặc định sonnet), `--effort`: sonnet `medium`, opus `low`, haiku không truyền;
-`BELUGA_EFFORT` ghi đè cho mọi model. Khác: `BELUGA_CLAUDE_BIN` (đường dẫn `claude`), `BELUGA_MOCK_DELAY_MS`,
+`BELUGA_EFFORT` ghi đè cho mọi model. `BELUGA_MODEL_MAP` đổi hướng tạm một mức trong app sang model khác, dạng
+`opus=ds/deepseek-flash` (nhiều cặp cách bằng dấu phẩy); model không phải sonnet/opus/haiku được coi là model
+của gateway nên server **giữ** `ANTHROPIC_AUTH_TOKEN`/`ANTHROPIC_API_KEY` cho `claude` (model built-in thì vẫn xóa
+để dùng đăng nhập Pro). Khác: `BELUGA_CLAUDE_BIN` (đường dẫn `claude`), `BELUGA_MOCK_DELAY_MS`,
 `BELUGA_ROOT` (gốc repo), `RUST_LOG`.
 
 ## Thử với dịch vụ thật (tốn hạn mức/credit, mặc định bị bỏ qua)

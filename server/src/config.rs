@@ -38,6 +38,8 @@ pub struct Config {
     pub tutor_dir: PathBuf,
     pub claude_bin: String,
     pub claude_effort: Option<String>,
+    /// `BELUGA_MODEL_MAP`: alias → model, e.g. `opus=ds/deepseek-flash` (temporary tests).
+    pub claude_model_map: Vec<(String, String)>,
     pub eleven: Option<ElevenCfg>,
     pub genvoice: Option<GenvoiceCfg>,
     /// `auto`, `genvoice`, `elevenlabs` or `device`.
@@ -72,6 +74,18 @@ pub fn parse_dotenv(text: &str) -> HashMap<String, String> {
         }
     }
     m
+}
+
+/// Parse `BELUGA_MODEL_MAP`: comma-separated `from=to` pairs. A phone setting (`opus`) can
+/// then run a different Claude Code model without changing the app.
+pub fn parse_model_map(s: &str) -> Vec<(String, String)> {
+    s.split(',')
+        .filter_map(|p| {
+            let (a, b) = p.split_once('=')?;
+            let (a, b) = (a.trim(), b.trim());
+            (!a.is_empty() && !b.is_empty()).then(|| (a.to_string(), b.to_string()))
+        })
+        .collect()
 }
 
 /// Find the repo root (the directory holding `tutor/CLAUDE.md`).
@@ -165,6 +179,7 @@ impl Config {
             tutor_dir: root.join("tutor"),
             claude_bin: get("BELUGA_CLAUDE_BIN").unwrap_or_else(|| "claude".into()),
             claude_effort: get("BELUGA_EFFORT"),
+            claude_model_map: parse_model_map(&get("BELUGA_MODEL_MAP").unwrap_or_default()),
             eleven,
             genvoice,
             tts_provider: get("TTS_PROVIDER").unwrap_or_else(|| "auto".into()),
@@ -193,6 +208,14 @@ pub fn read_board_version(dir: &Path) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn model_map_parsing() {
+        let m = parse_model_map(" opus=ds/deepseek-flash , sonnet=cc/claude-sonnet-5,,");
+        assert_eq!(m, vec![("opus".into(), "ds/deepseek-flash".into()), ("sonnet".into(), "cc/claude-sonnet-5".into())]);
+        assert!(parse_model_map("").is_empty());
+        assert!(parse_model_map("opus").is_empty());
+    }
 
     #[test]
     fn dotenv_parsing() {

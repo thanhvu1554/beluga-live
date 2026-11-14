@@ -40,6 +40,7 @@ async fn harness_with(voice: Arc<Voice>, delay_ms: u64, capture_ms: u64) -> Harn
         tutor_dir: dir.join("tutor"),
         claude_bin: "claude".into(),
         claude_effort: None,
+        claude_model_map: vec![],
         eleven: None,
         genvoice: None,
         tts_provider: "auto".into(),

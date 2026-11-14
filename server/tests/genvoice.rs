@@ -246,6 +246,7 @@ async fn env(o: Opts) -> Env {
         tutor_dir: dir.join("tutor"),
         claude_bin: "claude".into(),
         claude_effort: None,
+        claude_model_map: vec![],
         eleven: None,
         genvoice: Some(GenvoiceCfg {
             api_key: "test-key".into(),

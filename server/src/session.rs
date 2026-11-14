@@ -145,6 +145,7 @@ pub fn spawn_session(id: String, deps: Deps) -> UnboundedSender<Cmd> {
                 tutor_dir: deps.cfg.tutor_dir.clone(),
                 mcp_config: mcp_path,
                 effort: deps.cfg.claude_effort.clone(),
+                model_map: deps.cfg.claude_model_map.clone(),
             },
             id.clone(),
             meta.claude_started,

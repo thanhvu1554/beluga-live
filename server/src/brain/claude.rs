@@ -26,6 +26,19 @@ pub struct ClaudeCfg {
     pub tutor_dir: PathBuf,
     pub mcp_config: PathBuf,
     pub effort: Option<String>,
+    /// `BELUGA_MODEL_MAP`: alias → real model, e.g. `opus=ds/deepseek-flash`.
+    pub model_map: Vec<(String, String)>,
+}
+
+/// Apply `BELUGA_MODEL_MAP`; unknown names pass through unchanged.
+pub fn resolve_model(map: &[(String, String)], model: &str) -> String {
+    map.iter().find(|(from, _)| from == model).map(|(_, to)| to.clone()).unwrap_or_else(|| model.to_string())
+}
+
+/// Anything that is not a built-in alias runs through the user's own gateway
+/// (`ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN`), so its auth env must survive (see `spawn`).
+pub fn is_gateway_model(model: &str) -> bool {
+    !matches!(model, "sonnet" | "opus" | "haiku")
 }
 
 /// Name of the MCP server and its tool as Claude sees them.
@@ -260,6 +273,7 @@ impl Driver {
     }
 
     async fn ensure_proc(&mut self, model: &str) -> Result<(), (String, String)> {
+        let model = resolve_model(&self.cfg.model_map, model);
         if let Some(p) = &self.proc {
             if p.model == model {
                 return Ok(());
@@ -268,17 +282,18 @@ impl Driver {
             tracing::info!("claude model change -> restart");
             self.kill_proc();
         }
-        let args = build_args(&self.cfg, &self.session_id, self.started, model);
+        let args = build_args(&self.cfg, &self.session_id, self.started, &model);
         let mut cmd = Command::new(&self.cfg.bin);
         cmd.args(&args)
             .current_dir(&self.cfg.tutor_dir)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            // Always use the CLI's own login (Pro plan), never a stray API key.
-            .env_remove("ANTHROPIC_API_KEY")
-            .env_remove("ANTHROPIC_AUTH_TOKEN");
+            .kill_on_drop(true);
+        if !is_gateway_model(&model) {
+            // Built-in aliases use the CLI's own login (Pro plan), never a stray API key.
+            cmd.env_remove("ANTHROPIC_API_KEY").env_remove("ANTHROPIC_AUTH_TOKEN");
+        }
         #[cfg(windows)]
         cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
         let mut child = cmd.spawn().map_err(|e| {
@@ -324,7 +339,7 @@ impl Driver {
             }
         });
         tracing::info!("claude started (session {}, resume={}, model={})", self.session_id, self.started, model);
-        self.proc = Some(Proc { child, stdin, model: model.to_string(), gen });
+        self.proc = Some(Proc { child, stdin, model: model.clone(), gen });
         Ok(())
     }
 
@@ -390,12 +405,23 @@ impl Driver {
                 if !tail.is_empty() {
                     tracing::warn!("claude exited; stderr tail: {}", tail.trim());
                 }
-                let Some(inf) = self.inflight.as_mut() else { return };
-                if inf.interrupted {
+                let Some(inf) = self.inflight.as_ref() else { return };
+                let (turn, interrupted, got_text, retries) = (inf.input.turn, inf.interrupted, inf.got_text, inf.retries);
+                // A transcript already exists for this id (the server was killed mid-lesson before
+                // `claude_started` was persisted). `--session-id` cannot recreate it: continue with
+                // `--resume` and remember it so later restarts go straight to resume.
+                if session_in_use(&tail) && !self.started {
+                    self.started = true;
+                    tracing::warn!("claude session already exists on disk; continuing with --resume");
+                    self.emit(turn, BrainEvent::SessionStarted);
+                }
+                if interrupted {
                     self.end_turn(None);
-                } else if !inf.got_text && inf.retries < 1 {
-                    inf.retries += 1;
-                    tracing::warn!("claude died before answering; restarting with --resume and retrying once");
+                } else if !got_text && retries < 1 {
+                    if let Some(inf) = self.inflight.as_mut() {
+                        inf.retries += 1;
+                    }
+                    tracing::warn!("claude died before answering; restarting (resume={}) and retrying once", self.started);
                     self.write_current().await;
                 } else {
                     let (code, text) = classify_failure(&tail, "Claude Code dừng giữa chừng. Cậu thử nói lại nhé.");
@@ -508,6 +534,12 @@ impl Driver {
 
 const RATE_LIMIT_TEXT: &str = "Claude hết hạn mức tạm thời rồi. Đợi một lúc rồi thử lại nhé.";
 
+/// The CLI rejects `--session-id` when that id already has a transcript
+/// (`Error: Session ID … is already in use.`); the way forward is `--resume`.
+pub fn session_in_use(stderr: &str) -> bool {
+    stderr.to_lowercase().contains("already in use")
+}
+
 /// Map CLI error text to a protocol error code and a student-friendly message.
 pub fn classify_failure(detail: &str, default_text: &str) -> (String, String) {
     let d = detail.to_lowercase();
@@ -539,6 +571,21 @@ mod tests {
             tutor_dir: PathBuf::from("tutor"),
             mcp_config: PathBuf::from("mcp.json"),
             effort: None,
+            model_map: vec![],
+        }
+    }
+
+    #[test]
+    fn model_map_redirects_alias() {
+        let m = vec![("opus".to_string(), "ds/deepseek-flash".to_string())];
+        assert_eq!(resolve_model(&m, "opus"), "ds/deepseek-flash");
+        assert_eq!(resolve_model(&m, "haiku"), "haiku");
+        assert_eq!(resolve_model(&[], "opus"), "opus");
+        let a = build_args(&cfg(), "sid", false, &resolve_model(&m, "opus"));
+        assert_eq!(a[a.iter().position(|x| x == "--model").unwrap() + 1], "ds/deepseek-flash");
+        assert!(is_gateway_model("ds/deepseek-flash"));
+        for alias in ["sonnet", "opus", "haiku"] {
+            assert!(!is_gateway_model(alias));
         }
     }
 
@@ -596,6 +643,13 @@ mod tests {
         for banned in ["Bash", "Write", "Edit", "WebFetch", "--dangerously-skip-permissions"] {
             assert!(!a.iter().any(|x| x == banned), "{banned}");
         }
+    }
+
+    #[test]
+    fn session_in_use_is_detected() {
+        assert!(session_in_use("Error: Session ID 7ff8 is already in use.\n"));
+        assert!(!session_in_use("Not logged in · Please run /login"));
+        assert!(!session_in_use(""));
     }
 
     #[test]
