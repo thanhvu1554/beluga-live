@@ -4,7 +4,7 @@
 set -euo pipefail
 APP="${1:-}"; OUT="${2:-screenshots}"
 BUNDLE_ID="${BUNDLE_ID:-com.thanhvu.belugalive}"
-SCENES="${SCENES:-idle listening thinking tool lesson ask done sessions settings offline progress review}"
+SCENES="${SCENES:-idle listening thinking tool lesson longcaption ask done sessions settings offline progress review}"
 mkdir -p "$OUT"
 
 UDID=$(xcrun simctl list devices available -j | jq -r '

@@ -40,7 +40,9 @@ struct RootView: View {
                 // Captions live in the camera area, just above the board (or the controls when the
                 // board is hidden), so they never cover board content.
                 if controller.captionsOn, !controller.caption.isEmpty {
-                    CaptionView(text: controller.caption)
+                    // The board takes the bottom 60 %; the caption may grow up to what is left.
+                    CaptionView(text: controller.caption,
+                                maxHeight: geo.size.height * (controller.boardVisible ? 0.28 : 0.5))
                         .padding(.horizontal, Space.l)
                         .padding(.bottom, controller.boardVisible
                                  ? geo.size.height * 0.6 + Space.m
@@ -210,18 +212,33 @@ private struct PermissionBanner: View {
     }
 }
 
+/// The spoken line as a subtitle. Short lines size to their text; a long line is never cut —
+/// the card stops growing at `maxHeight` and the rest scrolls, starting at the first word.
 private struct CaptionView: View {
     let text: String
+    let maxHeight: CGFloat
+    @State private var textHeight: CGFloat = 0
+
+    private var scrolls: Bool { textHeight > maxHeight }
+    private var shownHeight: CGFloat { textHeight > 0 ? min(textHeight, maxHeight) : 0 }
 
     var body: some View {
-        Text(verbatim: text)
-            .font(TypeScale.callout)
-            .foregroundStyle(Ink.primary)
-            .multilineTextAlignment(.center)
-            .lineLimit(3)
-            .padding(.horizontal, Space.l)
-            .padding(.vertical, Space.m)
-            .glassEffect(.regular, in: .rect(cornerRadius: Radius.l))
-            .frame(maxWidth: 340)
+        ScrollView(.vertical) {
+            Text(verbatim: text)
+                .font(TypeScale.callout)
+                .foregroundStyle(Ink.primary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, Space.l)
+                .padding(.vertical, Space.m)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { textHeight = $0 }
+        }
+        .id(text)   // a new line always starts at its first word
+        .scrollIndicators(scrolls ? .visible : .hidden)
+        .scrollBounceBehavior(.basedOnSize)   // short lines stay still under the finger
+        .frame(maxWidth: 340)
+        .frame(height: shownHeight)
+        .opacity(textHeight > 0 ? 1 : 0)
+        .glassEffect(.regular, in: .rect(cornerRadius: Radius.l))
     }
 }

@@ -3,7 +3,7 @@ import UIKit
 import BelugaCore
 
 enum MockScene: String, CaseIterable {
-    case idle, listening, thinking, tool, lesson, ask, done, sessions, settings, offline, progress, review
+    case idle, listening, thinking, tool, lesson, ask, done, sessions, settings, offline, progress, review, longcaption
 }
 
 /// A refused permission the user can fix in the system Settings.
@@ -720,6 +720,14 @@ final class LiveController {
             restore(upTo: 12)
             captionsForced = true
             caption = "Hệ số a dương, nên đồ thị là parabol quay lên."
+            pill.handle(.sayStarted)
+            mockScriptedLevel = .speaking
+        case .longcaption:
+            // A subtitle far longer than the glass card can show: it must scroll, not get cut.
+            title = lessonTitle
+            restore(upTo: 12)
+            captionsForced = true
+            caption = "Đầu tiên cậu nhìn vào hệ số a của tam thức nhé. Vì a lớn hơn 0 nên parabol quay bề lõm lên trên, nghĩa là f(x) chỉ âm ở khoảng giữa hai nghiệm thôi. Hai nghiệm ở đây là x bằng một và x bằng ba, nên f(x) âm khi x nằm giữa một và ba. Ngoài khoảng đó thì f(x) dương, còn đúng tại hai nghiệm thì f(x) bằng không. Cậu thử tự lấy một giá trị x bằng bốn để kiểm tra lại dấu giúp tớ xem nào."
             pill.handle(.sayStarted)
             mockScriptedLevel = .speaking
         case .ask:
