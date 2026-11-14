@@ -28,28 +28,27 @@ pub struct AppState {
     sessions: Mutex<HashMap<String, UnboundedSender<Cmd>>>,
     next_conn: AtomicU64,
     /// The phone connection attached most recently: (connection id, session id).
-    active: Mutex<Option<(u64, String)>>,
+    active: Mutex<Vec<(u64, String)>>,
 }
 
 impl AppState {
     pub fn new(deps: Deps) -> Arc<AppState> {
-        Arc::new(AppState { deps, sessions: Mutex::new(HashMap::new()), next_conn: AtomicU64::new(1), active: Mutex::new(None) })
+        Arc::new(AppState { deps, sessions: Mutex::new(HashMap::new()), next_conn: AtomicU64::new(1), active: Mutex::new(Vec::new()) })
     }
 
     pub fn set_active(&self, conn: u64, session_id: &str) {
-        *self.active.lock().unwrap() = Some((conn, session_id.to_string()));
+        let mut a = self.active.lock().unwrap();
+        a.retain(|(c, _)| *c != conn);
+        a.push((conn, session_id.to_string()));
     }
 
     pub fn clear_active(&self, conn: u64) {
-        let mut a = self.active.lock().unwrap();
-        if a.as_ref().map(|(c, _)| *c) == Some(conn) {
-            *a = None;
-        }
+        self.active.lock().unwrap().retain(|(c, _)| *c != conn);
     }
 
-    /// Session of the newest live phone connection (target of the general MCP tools).
+    /// Session of the newest phone connection still alive (target of the general MCP tools).
     pub fn active_session(&self) -> Option<UnboundedSender<Cmd>> {
-        let id = self.active.lock().unwrap().as_ref().map(|(_, s)| s.clone())?;
+        let id = self.active.lock().unwrap().last().map(|(_, s)| s.clone())?;
         self.existing_session(&id)
     }
 
@@ -103,7 +102,7 @@ async fn mcp_post(
     Path(sid): Path<String>,
     body: String,
 ) -> Response {
-    if !peer.ip().is_loopback() {
+    if !allowed_peer(peer.ip()) {
         return StatusCode::FORBIDDEN.into_response();
     }
     let Ok(req) = serde_json::from_str::<Value>(&body) else {
@@ -121,7 +120,7 @@ async fn mcp_general_post(
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     body: String,
 ) -> Response {
-    if !peer.ip().is_loopback() {
+    if !allowed_peer(peer.ip()) {
         return StatusCode::FORBIDDEN.into_response();
     }
     let Ok(req) = serde_json::from_str::<Value>(&body) else {
@@ -353,4 +352,23 @@ async fn handle_socket(st: Arc<AppState>, socket: WebSocket) {
     }
     let _ = session.send(Cmd::Detach { conn });
     st.clear_active(conn);
+}
+
+/// MCP routes are for local Claude Code only: never reachable over Tailscale or the LAN.
+pub fn allowed_peer(ip: std::net::IpAddr) -> bool {
+    ip.is_loopback()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_loopback_may_use_mcp() {
+        assert!(allowed_peer("127.0.0.1".parse().unwrap()));
+        assert!(allowed_peer("::1".parse().unwrap()));
+        assert!(!allowed_peer("100.64.1.2".parse().unwrap()), "tailscale range");
+        assert!(!allowed_peer("192.168.1.10".parse().unwrap()));
+        assert!(!allowed_peer("8.8.8.8".parse().unwrap()));
+    }
 }
