@@ -8,6 +8,7 @@ pub mod mcp;
 pub mod parser;
 pub mod session;
 pub mod store;
+pub mod study;
 pub mod voice;
 
 pub use config::Config;
