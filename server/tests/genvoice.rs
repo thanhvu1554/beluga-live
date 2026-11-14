@@ -359,6 +359,52 @@ async fn audio_is_created_in_parallel_and_may_arrive_before_its_turn() {
     assert_eq!(e.mock.lock().unwrap().max_inflight, 2);
 }
 
+/// Guards against a sentence's audio being attached to another sentence's `seq`: every sentence
+/// gets a different body from the service, and the tasks finish in a scrambled order (a long
+/// early sentence finishing last, a late one first). Each `audio` frame must carry the body that
+/// the service made for exactly the text of its own `say`.
+#[tokio::test]
+async fn each_sentence_gets_its_own_audio_when_tasks_finish_out_of_order() {
+    let lat: Vec<u64> = vec![900, 60, 700, 20, 500, 300, 800, 10, 400, 650, 90, 250];
+    let e = env(Opts { latencies: lat, latency: 40, brain_delay_ms: 3, ..Default::default() }).await;
+    let mut p = Phone::connect(e.addr).await;
+    p.hello(json!({})).await;
+    p.send(json!({"t":"user_text","text":"bài dài"})).await; // 40 numbered sentences, then @done
+    let mut says: HashMap<u64, String> = HashMap::new();
+    let mut audio_order: Vec<u64> = Vec::new();
+    let mut bodies: HashMap<u64, String> = HashMap::new();
+    let mut ended = false;
+    while !(ended && bodies.len() == says.len()) {
+        let Some(f) = p.next_within(8000).await else { panic!("timeout: {} says, {} audio", says.len(), bodies.len()) };
+        match f["t"].as_str().unwrap() {
+            "say" => {
+                says.insert(f["seq"].as_u64().unwrap(), f["text"].as_str().unwrap().to_string());
+            }
+            "audio" => {
+                let seq = f["seq"].as_u64().unwrap();
+                assert!(bodies.insert(seq, decode(&f)).is_none(), "two audio frames for seq {seq}");
+                audio_order.push(seq);
+            }
+            "audio_skip" => panic!("unexpected audio_skip: {f}"),
+            "turn_end" => ended = true,
+            _ => {}
+        }
+    }
+    assert_eq!(says.len(), 40);
+    for (seq, text) in &says {
+        assert_eq!(bodies[seq], format!("MP3:{text}"), "audio of seq {seq} belongs to another sentence");
+    }
+    let mut sorted = audio_order.clone();
+    sorted.sort();
+    assert_ne!(audio_order, sorted, "the test is only meaningful if audio really arrived out of order");
+    // The service saw each text exactly once.
+    let g = e.mock.lock().unwrap();
+    let mut sent: Vec<&str> = g.reqs.iter().map(|r| r.text.as_str()).collect();
+    sent.sort();
+    sent.dedup();
+    assert_eq!(sent.len(), 40);
+}
+
 #[tokio::test]
 async fn at_most_four_sentences_are_synthesized_at_once() {
     let e = env(Opts { latency: 300, ..Default::default() }).await;

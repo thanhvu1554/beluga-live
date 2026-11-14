@@ -1,5 +1,5 @@
 //! The general `/mcp` route (any Claude Code session on this PC talking to the phone) with a fake
-//! phone, plus the guarantee that the tutor's per-session route only exposes `capture_photo`.
+//! phone, plus the guarantee that the tutor's per-session route only exposes `capture_photo` and `memory_note`.
 
 mod common;
 
@@ -80,14 +80,14 @@ async fn protocol_basics_and_tool_lists() {
         assert_eq!(t["inputSchema"]["type"], "object");
     }
 
-    // The tutor's own per-session route sees only capture_photo and cannot call the others.
+    // The tutor's own per-session route sees only capture_photo and memory_note and cannot call the others.
     let mut p = Phone::connect(addr).await;
     let ready = p.hello(json!({})).await;
     let path = format!("/mcp/{}", ready["sessionId"].as_str().unwrap());
     let r = rpc(addr, &path, "tools/list", json!({})).await;
     let tools = r["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 1);
-    assert_eq!(tools[0]["name"], "capture_photo");
+    let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["capture_photo", "memory_note"]);
     for name in ["speak", "present", "listen", "interrupt", "phone_status"] {
         let r = rpc(addr, &path, "tools/call", json!({"name": name, "arguments": {"text": "x", "lines": "x"}})).await;
         assert!(r.get("error").is_some(), "{name} must not be callable by the tutor: {r}");

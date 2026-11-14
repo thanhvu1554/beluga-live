@@ -31,6 +31,13 @@ pub struct ClaudeCfg {
 /// Name of the MCP server and its tool as Claude sees them.
 pub const MCP_SERVER: &str = "beluga";
 pub const CAPTURE_TOOL: &str = "mcp__beluga__capture_photo";
+pub const MEMORY_TOOL: &str = "mcp__beluga__memory_note";
+
+/// `--allowedTools` rules for the subject skills only (`Skill(toan)`, ...): the built-in skills
+/// of Claude Code (design, loop, ...) stay denied.
+pub fn skill_rules() -> Vec<String> {
+    crate::memory::SUBJECTS.iter().map(|(id, _)| format!("Skill({id})")).collect()
+}
 
 enum DriverCmd {
     Turn(TurnInput),
@@ -60,14 +67,16 @@ pub fn build_args(cfg: &ClaudeCfg, session_id: &str, resume: bool, model: &str) 
     .collect();
     a.push(if resume { "--resume".into() } else { "--session-id".into() });
     a.push(session_id.to_string());
-    // Only the tutor/ project settings (CLAUDE.md, future skills); never the user's plugins/MCP/skills.
+    // Only the tutor/ project settings (CLAUDE.md, subject skills); never the user's plugins/MCP/skills.
     a.extend(["--setting-sources", "project"].map(String::from));
     // Exactly one MCP server: ours.
     a.extend(["--strict-mcp-config", "--mcp-config"].map(String::from));
     a.push(cfg.mcp_config.to_string_lossy().into_owned());
     // Minimal tools; nothing may ever wait for a permission answer.
     a.extend(["--tools", "Read,Skill"].map(String::from));
-    a.extend(["--allowedTools", "Read", "Skill", CAPTURE_TOOL].map(String::from));
+    a.extend(["--allowedTools", "Read"].map(String::from));
+    a.extend(skill_rules());
+    a.extend([CAPTURE_TOOL, MEMORY_TOOL].map(String::from));
     a.extend(["--permission-mode", "dontAsk", "--permission-prompts", "none"].map(String::from));
     if let Some(e) = effort_for(cfg, model) {
         a.push("--effort".into());
@@ -427,11 +436,31 @@ impl Driver {
                 }
             }
             "system" if v["subtype"] == "init" => {
+                let names = |k: &str| -> String {
+                    v[k].as_array().map(|a| a.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(",")).unwrap_or_default()
+                };
+                tracing::info!("claude init: model={} tools=[{}] skills=[{}]", v["model"].as_str().unwrap_or("?"), names("tools"), names("skills"));
                 if let Some(arr) = v["mcp_servers"].as_array() {
                     for s in arr {
                         if s["status"] != "connected" {
                             tracing::warn!("claude MCP server {} status {}", s["name"], s["status"]);
                         }
+                    }
+                }
+            }
+            "assistant" => {
+                if let Some(blocks) = v["message"]["content"].as_array() {
+                    for b in blocks.iter().filter(|b| b["type"] == "tool_use") {
+                        let input: String = b["input"].to_string().chars().take(200).collect();
+                        tracing::info!("claude tool_use: {} {}", b["name"].as_str().unwrap_or("?"), input);
+                    }
+                }
+            }
+            "user" => {
+                if let Some(blocks) = v["message"]["content"].as_array() {
+                    for b in blocks.iter().filter(|b| b["type"] == "tool_result" && b["is_error"] == true) {
+                        let t: String = b["content"].to_string().chars().take(200).collect();
+                        tracing::warn!("claude tool_result error: {t}");
                     }
                 }
             }
@@ -547,6 +576,16 @@ mod tests {
         assert_eq!(get("--permission-mode"), "dontAsk");
         assert_eq!(get("--permission-prompts"), "none");
         assert!(a.contains(&CAPTURE_TOOL.to_string()));
+        assert!(a.contains(&MEMORY_TOOL.to_string()));
+        // only the subject skills are allowed, never a bare `Skill`
+        let from = a.iter().position(|x| x == "--allowedTools").unwrap() + 1;
+        let to = a.iter().skip(from).position(|x| x.starts_with("--")).map(|p| from + p).unwrap_or(a.len());
+        let allowed = &a[from..to];
+        assert!(!allowed.iter().any(|x| x == "Skill"), "{allowed:?}");
+        for id in ["toan", "ly", "hoa", "van", "anh-ssat", "duc", "tin-cpp", "chung"] {
+            assert!(allowed.contains(&format!("Skill({id})")), "{id}: {allowed:?}");
+        }
+        assert_eq!(allowed.len(), 1 + 8 + 2);
         for banned in ["Bash", "Write", "Edit", "WebFetch", "--dangerously-skip-permissions"] {
             assert!(!a.iter().any(|x| x == banned), "{banned}");
         }

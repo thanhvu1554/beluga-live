@@ -5,6 +5,7 @@ use crate::brain::claude::{ClaudeCfg, ClaudeDriver};
 use crate::brain::mock::MockBrain;
 use crate::brain::{Brain, BrainEvent, BrainMsg, Settings, TurnInput};
 use crate::config::Config;
+use crate::memory::{self, Kind, Memory};
 use crate::parser::{Event, LessonParser};
 use crate::store::{date_suffix, now_rfc3339, SessionMeta, Store};
 use crate::voice::Voice;
@@ -50,6 +51,16 @@ pub enum Cmd {
     McpInterrupt { reply: oneshot::Sender<Value> },
     Capture { reply: oneshot::Sender<Result<Vec<u8>, String>> },
     CaptureTimeout { request_id: String },
+    /// `memory_note` tool call from the tutor (per-session MCP route).
+    MemoryNote { args: Value, reply: oneshot::Sender<Result<Value, String>> },
+}
+
+/// A weak item the server invited the student to review at the start of the session.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReviewRef {
+    pub subject: String,
+    pub topic: String,
+    pub note: String,
 }
 
 #[derive(Clone)]
@@ -95,6 +106,10 @@ struct Session {
     /// `audio` frames with a seq below this belong to an interrupted turn and are dropped.
     audio_floor: u64,
     listener: Option<oneshot::Sender<String>>,
+    /// Offered for review and not yet answered: the next user turn carries a note about it.
+    pending_review: Option<ReviewRef>,
+    /// Do not list the session in the index (used while the server talks first).
+    quiet: bool,
     brain: Brain,
     self_tx: UnboundedSender<Cmd>,
 }
@@ -112,7 +127,9 @@ pub fn spawn_session(id: String, deps: Deps) -> UnboundedSender<Cmd> {
         title: format!("Phiên mới · {}", date_suffix()),
         updated_at: now_rfc3339(),
         claude_started: false,
+        memory_sent: false,
     });
+    let pending_review = pending_review_from_journal(&journal, turn);
     let brain = if deps.cfg.mock {
         Brain::Mock(MockBrain::new(btx, tx.clone(), deps.cfg.mock_delay_ms))
     } else {
@@ -154,6 +171,8 @@ pub fn spawn_session(id: String, deps: Deps) -> UnboundedSender<Cmd> {
         tts_tasks: Vec::new(),
         audio_floor: 0,
         listener: None,
+        pending_review,
+        quiet: false,
         brain,
         self_tx: tx.clone(),
     };
@@ -211,6 +230,9 @@ impl Session {
     }
 
     fn touch(&mut self) {
+        if self.quiet {
+            return;
+        }
         self.meta.updated_at = now_rfc3339();
         self.deps.store.upsert_session(&self.meta);
     }
@@ -275,6 +297,9 @@ impl Session {
                 let _ = reply.send(self.mcp_interrupt());
             }
             Cmd::Capture { reply } => self.start_capture(reply),
+            Cmd::MemoryNote { args, reply } => {
+                let _ = reply.send(self.memory_note(&args));
+            }
             Cmd::CaptureTimeout { request_id } => {
                 if self.capture.as_ref().map(|p| p.request_id == request_id).unwrap_or(false) {
                     let p = self.capture.take().unwrap();
@@ -321,6 +346,35 @@ impl Session {
         if let Some(p) = self.capture.take() {
             let _ = p.reply.send(Err("Điện thoại vừa nối lại giữa chừng, chưa chụp được ảnh. Thử gọi lại.".into()));
         }
+        self.maybe_offer_review();
+    }
+
+    /// A brand-new session with something due for review: the server speaks first (no Claude
+    /// call): one `say`, the `review_offer` block, `turn_end`. At most once per session.
+    fn maybe_offer_review(&mut self) {
+        if self.turn != 0 || !self.journal.is_empty() || self.running.is_some() || self.brain_busy || self.conn.is_none() {
+            return;
+        }
+        let Some(item) = Memory::new(&self.deps.cfg.tutor_dir).review_candidate(memory::today()) else { return };
+        let lines = offer_lines(&self.settings.lang, &item);
+        self.quiet = true;
+        let r = self.emit_lines(lines);
+        self.quiet = false;
+        if r.is_ok() {
+            self.pending_review = Some(ReviewRef { subject: item.subject, topic: item.topic, note: item.note });
+        }
+    }
+
+    fn memory_note(&mut self, args: &Value) -> Result<Value, String> {
+        let field = |k: &str| args[k].as_str().unwrap_or("").trim().to_string();
+        let kind = Kind::parse(&field("kind")).ok_or("kind phải là mistake, mastered, style hoặc progress.")?;
+        let topic = field("topic");
+        if topic.is_empty() {
+            return Err("Thiếu topic.".into());
+        }
+        let r = Memory::new(&self.deps.cfg.tutor_dir).note(&field("subject"), kind, &topic, &field("note"), memory::today())?;
+        tracing::info!("memory_note: {} {:?} {:?} -> {}", r.subject, kind, r.topic, r.action);
+        Ok(r.to_json())
     }
 
     // ----- turns -----
@@ -347,12 +401,16 @@ impl Session {
         }
         let Some(user_text) = self.pending.pop_front() else { return };
         self.turn += 1;
-        let prefix = format!("[lang={}] [rigor={}]", self.settings.lang, self.settings.rigor);
-        let mut text = format!("{prefix} {user_text}");
-        if let Some(note) = self.interrupt_note.take() {
-            text.push('\n');
-            text.push_str(&note);
-        }
+        // The memory summary goes in once per session (also not again after a `--resume`).
+        let summary = if self.meta.memory_sent {
+            None
+        } else {
+            self.meta.memory_sent = true;
+            Memory::new(&self.deps.cfg.tutor_dir).summary(memory::today())
+        };
+        let review = self.pending_review.take();
+        let interrupt = self.interrupt_note.take();
+        let text = compose_turn_text(&self.settings, &user_text, summary.as_deref(), review.as_ref(), interrupt.as_deref());
         let input = TurnInput {
             turn: self.turn,
             user_text,
@@ -548,6 +606,11 @@ impl Session {
         if lines.trim().is_empty() {
             return Err("Không có nội dung.".into());
         }
+        self.emit_lines(lines)
+    }
+
+    /// Run `lines` through the parser as one self-contained turn and send its events.
+    fn emit_lines(&mut self, lines: String) -> Result<Value, String> {
         self.turn += 1;
         let turn = self.turn;
         let mut p = LessonParser::new(turn, self.next_seq, self.steps);
@@ -643,12 +706,147 @@ fn tts_fallback_notice() -> Value {
     json!({"t": "notice", "code": "tts_fallback", "text": "Giọng đọc của server không dùng được, chuyển sang giọng của máy."})
 }
 
+/// The text of one user turn: settings prefix and the student's words, then (when present) the
+/// memory summary, the review note and the interruption note, each on its own line(s).
+pub fn compose_turn_text(settings: &Settings, user_text: &str, memory: Option<&str>, review: Option<&ReviewRef>, interrupt: Option<&str>) -> String {
+    let mut text = format!("[lang={}] [rigor={}] {user_text}", settings.lang, settings.rigor);
+    if let Some(m) = memory {
+        text.push('\n');
+        text.push_str(m);
+    }
+    if let Some(r) = review {
+        text.push_str(&format!("\n[ôn lại: {} · {}", r.subject, r.topic));
+        if !r.note.is_empty() {
+            text.push_str(&format!(" · {}", r.note));
+        }
+        text.push(']');
+    }
+    if let Some(note) = interrupt {
+        text.push('\n');
+        text.push_str(note);
+    }
+    text
+}
+
+/// Lower the first letter of a topic so it reads inside a sentence ("Xét dấu" -> "xét dấu"),
+/// but leave acronyms and names such as "C++" or "SSAT" alone.
+fn inline_topic(topic: &str) -> String {
+    let mut c = topic.chars();
+    match (c.next(), c.next()) {
+        (Some(a), b) if a.is_uppercase() && b.map(|b| !b.is_uppercase() && b != '+').unwrap_or(true) => {
+            a.to_lowercase().chain(topic.chars().skip(1)).collect()
+        }
+        _ => topic.to_string(),
+    }
+}
+
+/// Lesson lines of the review invitation: spoken sentence, step, `review_offer` block.
+pub fn offer_lines(lang: &str, item: &memory::DueItem) -> String {
+    let (say, step) = if lang == "en" {
+        (format!("Last time you kept mixing up {}. Want a quick review question?", inline_topic(&item.topic)), "Review")
+    } else {
+        (format!("Lần trước cậu hay nhầm {}, ôn một câu không?", inline_topic(&item.topic)), "Ôn lại")
+    };
+    let name = memory::subject_name(&item.subject);
+    let mut fallback = format!("**{step}** · {name} · {}", item.topic);
+    if !item.note.is_empty() {
+        fallback.push_str(&format!("\n\n{}", item.note));
+    }
+    let mut block = json!({
+        "type": "review_offer", "topic": item.topic, "subject": item.subject, "subjectName": name,
+        "lastSeen": item.last.format("%Y-%m-%d").to_string(), "fallback": fallback,
+    });
+    if !item.note.is_empty() {
+        block["note"] = json!(item.note);
+    }
+    format!("{say}\n@step {}\n@show {block}", json!({"title": step}))
+}
+
+/// After a restart: an offer that no later turn has answered yet is still pending.
+fn pending_review_from_journal(journal: &[Value], turn: u64) -> Option<ReviewRef> {
+    let e = journal.iter().rev().find(|e| e["t"] == "show" && e["block"]["type"] == "review_offer" && e["turn"].as_u64() == Some(turn))?;
+    let b = &e["block"];
+    Some(ReviewRef {
+        subject: b["subject"].as_str()?.to_string(),
+        topic: b["topic"].as_str()?.to_string(),
+        note: b["note"].as_str().unwrap_or("").to_string(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn say(seq: u64, turn: u64, text: &str) -> Value {
         json!({"t": "say", "seq": seq, "turn": turn, "text": text, "audio": false})
+    }
+
+    fn rref(note: &str) -> ReviewRef {
+        ReviewRef { subject: "toan".into(), topic: "Xét dấu tam thức khi a âm".into(), note: note.into() }
+    }
+
+    #[test]
+    fn turn_text_layers_in_a_fixed_order() {
+        let st = Settings::default();
+        assert_eq!(compose_turn_text(&st, "chào", None, None, None), "[lang=vi] [rigor=medium] chào");
+        let t = compose_turn_text(&st, "ừ", Some("[memory]
+x
+[/memory]"), Some(&rref("hay quên")), Some("(Ghi chú hệ thống: ngắt)"));
+        assert_eq!(
+            t,
+            "[lang=vi] [rigor=medium] ừ
+[memory]
+x
+[/memory]
+[ôn lại: toan · Xét dấu tam thức khi a âm · hay quên]
+(Ghi chú hệ thống: ngắt)"
+        );
+        // empty note: no trailing field
+        let t = compose_turn_text(&st, "ừ", None, Some(&rref("")), None);
+        assert!(t.ends_with("
+[ôn lại: toan · Xét dấu tam thức khi a âm]"), "{t}");
+    }
+
+    #[test]
+    fn offer_lines_are_valid_lesson_lines() {
+        let item = memory::DueItem {
+            subject: "toan".into(),
+            topic: "Xét dấu tam thức khi a âm".into(),
+            note: "hay quên đổi chiều".into(),
+            last: chrono::NaiveDate::from_ymd_opt(2026, 11, 14).unwrap(),
+            due: chrono::NaiveDate::from_ymd_opt(2026, 11, 15).unwrap(),
+            count: 3,
+        };
+        for lang in ["vi", "en"] {
+            let mut p = crate::parser::LessonParser::new(1, 1, 0);
+            let mut ev = p.push_str(&offer_lines(lang, &item));
+            ev.extend(p.push_str("
+"));
+            ev.extend(p.finish());
+            assert!(p.take_dropped().is_empty(), "{lang}");
+            let Event::Say { text, .. } = &ev[0] else { panic!("{ev:?}") };
+            assert!(!text.contains('!'), "{text}");
+            assert!(text.contains("xét dấu tam thức khi a âm"), "{text}");
+            assert!(matches!(&ev[1], Event::Step { .. }));
+            let Event::Show { block, .. } = &ev[2] else { panic!("{ev:?}") };
+            assert_eq!(block["type"], "review_offer");
+            assert_eq!(block["note"], "hay quên đổi chiều");
+            assert!(block["fallback"].as_str().unwrap().contains("Xét dấu"));
+            assert_eq!(ev.len(), 3);
+        }
+        assert_eq!(inline_topic("Xét dấu"), "xét dấu");
+        assert_eq!(inline_topic("C++ pointer"), "C++ pointer");
+        assert_eq!(inline_topic("SSAT reading"), "SSAT reading");
+        assert_eq!(inline_topic("X"), "x");
+    }
+
+    #[test]
+    fn pending_review_is_recovered_only_until_a_later_turn() {
+        let offer = json!({"t":"show","seq":2,"turn":1,"step":0,"block":{"type":"review_offer","subject":"toan","topic":"T","note":"n","id":"b2"}});
+        let j = vec![say(1, 1, "Lần trước..."), offer, json!({"t":"turn_end","seq":3,"turn":1})];
+        assert_eq!(pending_review_from_journal(&j, 1), Some(ReviewRef { subject: "toan".into(), topic: "T".into(), note: "n".into() }));
+        assert_eq!(pending_review_from_journal(&j, 2), None, "a later turn already happened");
+        assert_eq!(pending_review_from_journal(&[], 0), None);
     }
 
     #[test]

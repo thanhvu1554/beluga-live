@@ -313,6 +313,9 @@ async fn handle_socket(st: Arc<AppState>, socket: WebSocket) {
                             }
                         });
                     }
+                    "get_progress" => {
+                        reply(crate::memory::Memory::new(&st.deps.cfg.tutor_dir).progress());
+                    }
                     "list_sessions" => {
                         let items: Vec<Value> = st
                             .deps

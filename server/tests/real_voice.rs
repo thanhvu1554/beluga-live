@@ -2,6 +2,8 @@
 //! Spends a little GenVoice credit (~100 for two short turns), so it is `#[ignore]`.
 //!
 //! Run: `cargo test --test real_voice -- --ignored --nocapture`
+//! Optional: `BELUGA_SAVE_AUDIO=<dir>` keeps every mp3 (seqNN.mp3) and prints its size, bitrate,
+//! duration and a hash, to check that different sentences get different audio.
 //! Needs GENVOICE_API_KEY in server/.env (never printed).
 
 mod common;
@@ -55,12 +57,19 @@ async fn real_genvoice_audio_latency_with_mock_brain() {
                     let (t, txt) = &say_at[&seq];
                     let bytes = base64::engine::general_purpose::STANDARD.decode(f["data"].as_str().unwrap()).unwrap();
                     let mp3 = bytes.starts_with(b"ID3") || (bytes.len() > 2 && bytes[0] == 0xFF && bytes[1] & 0xE0 == 0xE0);
+                    let (kbps, secs) = mp3_info(&bytes).unwrap_or((0, 0.0));
                     println!(
-                        "seq {seq:>2}: say -> audio {:>5} ms, {:>6} bytes, mp3={mp3}, {} chars",
+                        "seq {seq:>2}: say -> audio {:>5} ms, {:>6} bytes, mp3={mp3}, {} chars, {kbps} kbps, {secs:.2} s, hash {:016x}",
                         t.elapsed().as_millis(),
                         bytes.len(),
-                        txt.chars().count()
+                        txt.chars().count(),
+                        simple_hash(&bytes)
                     );
+                    println!("        text: {txt}");
+                    if let Ok(d) = std::env::var("BELUGA_SAVE_AUDIO") {
+                        let _ = std::fs::create_dir_all(&d);
+                        let _ = std::fs::write(std::path::Path::new(&d).join(format!("seq{seq:02}.mp3")), &bytes);
+                    }
                     assert!(mp3, "not an mp3");
                 }
                 "audio_skip" => panic!("audio_skip: {f}"),

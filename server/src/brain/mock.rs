@@ -68,6 +68,26 @@ pub fn script(user_text: &str) -> Vec<Step> {
     ]
 }
 
+/// Spoken echo of the `[memory]` block lines and the `[ôn lại: ...]` note found in a turn's text.
+pub fn context_echo(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut in_memory = false;
+    for l in text.lines() {
+        let l = l.trim();
+        if l == "[memory]" {
+            in_memory = true;
+            out.push("Mock thấy memory.".to_string());
+        } else if l == "[/memory]" {
+            in_memory = false;
+        } else if in_memory {
+            out.push(format!("Mock nhớ: {}", l.trim_start_matches("- ")));
+        } else if let Some(r) = l.strip_prefix("[ôn lại: ") {
+            out.push(format!("Mock ôn lại: {}", r.trim_end_matches(']')));
+        }
+    }
+    out
+}
+
 impl MockBrain {
     pub fn new(sink: Sink, cmd_tx: UnboundedSender<Cmd>, delay_ms: u64) -> Self {
         MockBrain {
@@ -103,6 +123,10 @@ impl MockBrain {
                 }
             };
             let mut queue: std::collections::VecDeque<Step> = script(&input.user_text).into();
+            // Tests can see what context the server attached: echo the memory block and review note.
+            for l in context_echo(&input.text).into_iter().rev() {
+                queue.push_front(Step::Line(l));
+            }
             while let Some(step) = queue.pop_front() {
                 if is_cancelled() {
                     break;

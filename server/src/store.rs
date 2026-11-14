@@ -17,6 +17,10 @@ pub struct SessionMeta {
     /// True once the Claude session file exists (so the next start must use `--resume`).
     #[serde(default)]
     pub claude_started: bool,
+    /// The `[memory]` summary already went into this session's Claude context (never sent twice,
+    /// also not after a `--resume`).
+    #[serde(default)]
+    pub memory_sent: bool,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -193,6 +197,7 @@ mod tests {
             title: "Toán".into(),
             updated_at: "2026-11-14T10:00:00+07:00".into(),
             claude_started: false,
+            memory_sent: false,
         });
         s.append_event(&id, &serde_json::json!({"t":"say","seq":1}));
         s.append_event(&id, &serde_json::json!({"t":"say","seq":2}));

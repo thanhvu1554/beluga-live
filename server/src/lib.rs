@@ -3,6 +3,7 @@
 pub mod brain;
 pub mod config;
 pub mod http;
+pub mod memory;
 pub mod mcp;
 pub mod parser;
 pub mod session;

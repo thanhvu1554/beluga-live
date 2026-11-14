@@ -1,4 +1,5 @@
-//! Minimal MCP server (JSON-RPC over HTTP POST) exposing the single `capture_photo` tool.
+//! Minimal MCP server (JSON-RPC over HTTP POST). The tutor's per-session route has two tools:
+//! `capture_photo` and `memory_note`; the general route has the phone tools.
 //!
 //! Claude Code is pointed at `http://127.0.0.1:<port>/mcp/<sessionId>` via `--mcp-config`,
 //! so the tool call lands in the right phone session without a second process.
@@ -18,6 +19,24 @@ fn tool_def() -> Value {
     })
 }
 
+fn memory_tool_def() -> Value {
+    json!({
+        "name": "memory_note",
+        "description": "Remember something about the student for next time. kind=mistake: the student got a key step wrong (topic = short name of the kind of error, reuse the exact old name if [memory] already has it; note = how it went wrong). kind=mastered: the student did a previously weak topic right on their own. kind=style: a way of teaching that works for this student. kind=progress: a lesson is finished (topic = what was covered). Returns immediately; keep talking, do not mention it.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "subject": {"type": "string", "description": "toan, ly, hoa, van, anh-ssat, duc, tin-cpp or chung (any other subject)"},
+                "kind": {"type": "string", "enum": ["mistake", "mastered", "style", "progress"]},
+                "topic": {"type": "string"},
+                "note": {"type": "string"}
+            },
+            "required": ["subject", "kind", "topic"],
+            "additionalProperties": false
+        }
+    })
+}
+
 fn ok(id: &Value, result: Value) -> Value {
     json!({"jsonrpc": "2.0", "id": id, "result": result})
 }
@@ -26,7 +45,7 @@ fn err(id: &Value, code: i64, message: &str) -> Value {
     json!({"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}})
 }
 
-/// Per-session route (`/mcp/<sessionId>`, used by the tutor): only `capture_photo`.
+/// Per-session route (`/mcp/<sessionId>`, used by the tutor): `capture_photo` and `memory_note`.
 pub async fn handle_message(session: Option<UnboundedSender<Cmd>>, msg: &Value) -> Option<Value> {
     dispatch(session, msg, false).await
 }
@@ -57,7 +76,7 @@ async fn dispatch(session: Option<UnboundedSender<Cmd>>, msg: &Value, general: b
         }
         "ping" => ok(&id, json!({})),
         "tools/list" => {
-            let tools = if general { general_tools() } else { vec![tool_def()] };
+            let tools = if general { general_tools() } else { vec![tool_def(), memory_tool_def()] };
             ok(&id, json!({"tools": tools}))
         }
         "tools/call" => {
@@ -65,10 +84,11 @@ async fn dispatch(session: Option<UnboundedSender<Cmd>>, msg: &Value, general: b
             if general && GENERAL_TOOL_NAMES.contains(&name) {
                 return Some(ok(&id, call_general(name, &msg["params"]["arguments"], session).await));
             }
-            if name != "capture_photo" {
-                return Some(err(&id, -32602, "unknown tool"));
+            match name {
+                "capture_photo" => ok(&id, capture(session).await),
+                "memory_note" if !general => ok(&id, memory_note(session, &msg["params"]["arguments"]).await),
+                _ => err(&id, -32602, "unknown tool"),
             }
-            ok(&id, capture(session).await)
         }
         _ => err(&id, -32601, "method not found"),
     })
@@ -174,6 +194,22 @@ async fn call_general(name: &str, args: &Value, session: Option<UnboundedSender<
     }
 }
 
+async fn memory_note(session: Option<UnboundedSender<Cmd>>, args: &Value) -> Value {
+    let text_err = |t: &str| json!({"content": [{"type": "text", "text": t}], "isError": true});
+    let Some(tx) = session else {
+        return text_err("Không có phiên nào đang mở.");
+    };
+    let (reply, rx) = oneshot::channel();
+    if tx.send(Cmd::MemoryNote { args: args.clone(), reply }).is_err() {
+        return text_err("Phiên đã đóng.");
+    }
+    match rx.await {
+        Ok(Ok(v)) => json!({"content": [{"type": "text", "text": v.to_string()}]}),
+        Ok(Err(msg)) => text_err(&msg),
+        Err(_) => text_err("Phiên đã đóng."),
+    }
+}
+
 async fn capture(session: Option<UnboundedSender<Cmd>>) -> Value {
     let text_err = |t: &str| json!({"content": [{"type": "text", "text": t}], "isError": true});
     let Some(tx) = session else {
@@ -234,6 +270,8 @@ mod tests {
         assert!(r["result"]["capabilities"]["tools"].is_object());
         let r = handle_message(None, &json!({"jsonrpc":"2.0","id":2,"method":"tools/list"})).await.unwrap();
         assert_eq!(r["result"]["tools"][0]["name"], "capture_photo");
+        assert_eq!(r["result"]["tools"][1]["name"], "memory_note");
+        assert_eq!(r["result"]["tools"][1]["inputSchema"]["required"], json!(["subject", "kind", "topic"]));
         assert!(handle_message(None, &json!({"jsonrpc":"2.0","method":"notifications/initialized"})).await.is_none());
     }
 
@@ -244,6 +282,24 @@ mod tests {
             .unwrap();
         assert_eq!(r["result"]["isError"], true);
         assert_eq!(r["result"]["content"][0]["type"], "text");
+    }
+
+    #[tokio::test]
+    async fn memory_note_reaches_the_session_and_is_unknown_on_the_general_route() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            if let Some(Cmd::MemoryNote { args, reply }) = rx.recv().await {
+                let _ = reply.send(if args["kind"] == "mistake" { Ok(json!({"saved": true})) } else { Err("bad kind".into()) });
+            }
+        });
+        let call = json!({"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"memory_note","arguments":{"subject":"toan","kind":"mistake","topic":"x"}}});
+        let r = handle_message(Some(tx.clone()), &call).await.unwrap();
+        assert!(r["result"]["isError"].is_null(), "{r}");
+        assert_eq!(r["result"]["content"][0]["text"], "{\"saved\":true}");
+        let r = handle_message(None, &call).await.unwrap();
+        assert_eq!(r["result"]["isError"], true);
+        let r = handle_general_message(Some(tx), &call).await.unwrap();
+        assert!(r.get("error").is_some(), "memory_note is not a phone tool: {r}");
     }
 
     #[tokio::test]
