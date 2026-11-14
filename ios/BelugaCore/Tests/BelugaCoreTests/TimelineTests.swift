@@ -127,3 +127,41 @@ private func seqs(_ actions: [TimelineAction]) -> [String] {
         do { let r = seqs(t.finishedSpeaking(seq: 2)); #expect(r == ["apply3"]) }
     }
 }
+
+@Suite struct TimelineAudioTests {
+    private func say(_ seq: Int) -> LessonEvent { LessonEvent(seq: seq, turn: 1, kind: .say(text: "x", audio: true)) }
+
+    @Test func audioArrivingEarlyAndOutOfOrderIsKeptBySeq() {
+        var t = Timeline(lastPlayed: 0)
+        #expect(t.receiveAudio(seq: 3, data: Data([3])))
+        _ = t.receive(say(1))
+        #expect(t.receiveAudio(seq: 1, data: Data([1])))
+        _ = t.receive(say(3))
+        _ = t.receive(LessonEvent(seq: 2, turn: 1, kind: .step(index: 0, title: "a")))
+        #expect(t.takeAudio(seq: 1) == Data([1]))
+        _ = t.finishedSpeaking(seq: 1)
+        #expect(t.current?.seq == 3)
+        #expect(t.takeAudio(seq: 3) == Data([3]))
+    }
+
+    @Test func lateAudioAfterFallbackIsDropped() {
+        var t = Timeline(lastPlayed: 0)
+        _ = t.receive(say(1))
+        t.abandonAudio(seq: 1)
+        let accepted = t.receiveAudio(seq: 1, data: Data([9]))
+        #expect(!accepted)
+        #expect(t.takeAudio(seq: 1) == nil)
+    }
+
+    @Test func audioForPlayedOrInterruptedSaysIsDropped() {
+        var t = Timeline(lastPlayed: 0)
+        _ = t.receive(say(1))
+        _ = t.receive(say(2))
+        _ = t.receiveAudio(seq: 2, data: Data([2]))
+        _ = t.finishedSpeaking(seq: 1)
+        _ = t.interrupt()
+        #expect(t.audio.isEmpty)
+        let accepted = t.receiveAudio(seq: 1, data: Data([1]))
+        #expect(!accepted)
+    }
+}

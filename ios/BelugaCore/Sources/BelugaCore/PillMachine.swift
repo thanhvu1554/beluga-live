@@ -23,6 +23,8 @@ public enum PillInput: Sendable, Equatable {
     case doneSettled
     case turnEnded
     case interrupted
+    /// The server heard nothing usable (`stt_empty`): back to waiting, asking again if we were.
+    case utteranceRejected
 }
 
 /// Derives the pill state from a few independent facts, so ordering of inputs rarely matters.
@@ -38,6 +40,7 @@ public struct PillMachine: Sendable {
     public private(set) var state: PillState = .offline
     public private(set) var enteredAt: Date
     private var thinkingAnnounced = false
+    private var askingBeforeSend = false
 
     public static let thinkingAnnounceDelay: TimeInterval = 4
 
@@ -51,10 +54,10 @@ public struct PillMachine: Sendable {
         case .disconnected:
             online = false; speaking = false; tool = nil; awaitingReply = false
         case .micOpened:
-            micOpen = true; asking = false; doneBeat = false
+            micOpen = true; askingBeforeSend = asking; doneBeat = false
         case .micClosed(let sent):
             micOpen = false
-            if sent { awaitingReply = true; asking = false }
+            if sent { awaitingReply = true; askingBeforeSend = asking || askingBeforeSend; asking = false }
         case .userSent:
             awaitingReply = true; asking = false; doneBeat = false
         case let .server(s, t):
@@ -65,13 +68,15 @@ public struct PillMachine: Sendable {
             default: break
             }
         case .sayStarted:
-            speaking = true; awaitingReply = false; tool = nil; asking = false
+            speaking = true; awaitingReply = false; tool = nil; asking = false; askingBeforeSend = false
         case .sayFinished: speaking = false
         case .askReached: asking = true; awaitingReply = false
         case .doneReached: doneBeat = true; asking = false
         case .doneSettled: doneBeat = false
         case .turnEnded: awaitingReply = false; tool = nil
         case .interrupted: speaking = false; awaitingReply = false; tool = nil
+        case .utteranceRejected:
+            awaitingReply = false; asking = askingBeforeSend; askingBeforeSend = false
         }
         return update(now: now)
     }

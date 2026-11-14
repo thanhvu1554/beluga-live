@@ -50,7 +50,8 @@ final class LiveController {
     @ObservationIgnored private var ready: Ready?
     @ObservationIgnored private var sessionId: String?
     @ObservationIgnored private var needsRebuild = false
-    @ObservationIgnored private var audioCache: [Int: Data] = [:]
+    @ObservationIgnored private var openingSession = false
+    @ObservationIgnored private var forceDeviceSTT = false
     @ObservationIgnored private var speakTask: Task<Void, Never>?
     @ObservationIgnored private var reconnectTask: Task<Void, Never>?
     @ObservationIgnored private var tickTask: Task<Void, Never>?
@@ -91,6 +92,8 @@ final class LiveController {
             return
         }
         sessionId = settings.lastSessionId
+        // Cold start in a known session: what was already heard is restored silently.
+        if sessionId != nil { timeline.reset(lastPlayed: settings.lastPlayedSeq) }
         Task {
             _ = await CameraController.requestAccess()
             camera?.start()
@@ -161,7 +164,9 @@ final class LiveController {
             if let token = r.pairToken, !token.isEmpty { settings.pairToken = token }
             if r.sessionId != sessionId {
                 sessionId = r.sessionId
-                if !needsRebuild { startFreshSession() }
+                startFreshSession()
+                needsRebuild = false
+                openingSession = false
             }
             settings.lastSessionId = r.sessionId
             if !r.title.isEmpty { title = r.title }
@@ -179,18 +184,34 @@ final class LiveController {
         case .event(let e):
             process(timeline.receive(e))
         case let .audio(seq, _, data):
-            audioCache[seq] = data
+            timeline.receiveAudio(seq: seq, data: data)
         case .title(let text):
             title = text
         case .captureRequest(let requestId):
             Task { await takePhoto(requestId: requestId) }
         case .snapshot(let events):
+            if openingSession {
+                // A reopened session is history: rebuild the board, speak nothing.
+                timeline.reset(lastPlayed: events.map(\.seq).max() ?? 0)
+                openingSession = false
+            }
             process(timeline.applySnapshot(events, rebuildBoard: needsRebuild))
             needsRebuild = false
         case .sessions(let items):
             sessions = items
-        case .notice(_, let text):
-            showNotice(text)
+        case let .notice(code, text):
+            switch code {
+            case "reconnected": break
+            case "stt_empty":
+                pill.handle(.utteranceRejected)
+                showNotice(strings("notice.sttEmpty"))
+            case "stt_failed":
+                // Next utterance uses on-device recognition.
+                forceDeviceSTT = true
+                pill.handle(.utteranceRejected)
+                showNotice(strings("notice.sttFailed"))
+            default: showNotice(text)
+            }
         case let .error(code, text, fatal):
             if code == "bad_pair" { settings.pairToken = nil; showNotice(strings("error.badPair")) }
             else { showNotice(text.isEmpty ? code : text) }
@@ -206,7 +227,6 @@ final class LiveController {
         boardVisible = false
         title = ""
         askPrompt = nil
-        audioCache.removeAll()
     }
 
     private func scheduleReconnect() {
@@ -299,12 +319,15 @@ final class LiveController {
         }
         guard let audio else { return }
         if serverAudio, ready?.serverTTS == true {
-            // Wait up to 3 s for the mp3 frame, then fall back to the system voice.
-            var waited = 0
-            while audioCache[seq] == nil, waited < 30, !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(100)); waited += 1
+            // The wait starts now, when this say is due; the mp3 may already be here.
+            let deadline = Date().addingTimeInterval(Double(ready?.audioWaitMs ?? 3000) / 1000)
+            var data = timeline.takeAudio(seq: seq)
+            while data == nil, Date() < deadline, !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(50))
+                data = timeline.takeAudio(seq: seq)
             }
-            if let data = audioCache.removeValue(forKey: seq), await audio.play(mp3: data) { return }
+            if let data, await audio.play(mp3: data) { return }
+            if data == nil { timeline.abandonAudio(seq: seq) }
         }
         guard !Task.isCancelled else { return }
         await audio.speak(text, lang: settings.lang)
@@ -353,7 +376,7 @@ final class LiveController {
         cue(.listen)
         Haptics.tap()
         if isMock { mockScriptedLevel = .listening; return }
-        audio?.startListening(lang: settings.lang, serverSTT: ready?.serverSTT == true)
+        audio?.startListening(lang: settings.lang, serverSTT: ready?.serverSTT == true && !forceDeviceSTT)
     }
 
     private func closeMic(send: Bool) async {
@@ -367,6 +390,7 @@ final class LiveController {
         let heard = await audio.stopListening(discard: !send)
         switch heard {
         case .text(let text):
+            forceDeviceSTT = false
             sendUtterance(text)
         case .wav(let wav):
             transport?.send(.audioStart(sampleRate: 16_000))
@@ -438,6 +462,7 @@ final class LiveController {
         sessionId = item.sessionId
         title = item.title
         needsRebuild = true
+        openingSession = true
         transport?.send(.openSession(sessionId: item.sessionId))
     }
 

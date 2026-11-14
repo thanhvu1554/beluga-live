@@ -26,6 +26,10 @@ public struct Timeline: Sendable {
     public private(set) var droppedTurn: Int = -1
     /// Highest turn seen.
     public private(set) var latestTurn: Int = -1
+    /// Server TTS audio by `say` seq. It may arrive before its turn to play and out of order.
+    public private(set) var audio: [Int: Data] = [:]
+    /// Says that gave up waiting and used the system voice: their late audio is dropped.
+    private var abandonedAudio: Set<Int> = []
 
     /// False until the first event fixes where the sequence starts (fresh session).
     public private(set) var anchored: Bool
@@ -41,6 +45,33 @@ public struct Timeline: Sendable {
     public var isIdle: Bool { current == nil && buffer.isEmpty }
     /// True when the head of the queue is missing while later events are waiting.
     public var hasGap: Bool { current == nil && !buffer.isEmpty && buffer[nextSeq] == nil }
+
+    // MARK: Server audio
+
+    /// Store an `audio` frame. Returns false when it is no longer wanted (already played,
+    /// interrupted, or its say already fell back to the system voice).
+    @discardableResult
+    public mutating func receiveAudio(seq: Int, data: Data) -> Bool {
+        guard anchored ? seq > lastPlayed : true, !abandonedAudio.contains(seq) else { return false }
+        audio[seq] = data
+        return true
+    }
+
+    /// Take the audio for a say that is now due, if it has arrived.
+    public mutating func takeAudio(seq: Int) -> Data? {
+        audio.removeValue(forKey: seq)
+    }
+
+    /// The wait for this say's audio timed out: speak it with the system voice, ignore late audio.
+    public mutating func abandonAudio(seq: Int) {
+        audio.removeValue(forKey: seq)
+        abandonedAudio.insert(seq)
+    }
+
+    private mutating func pruneAudio() {
+        audio = audio.filter { $0.key > lastPlayed }
+        abandonedAudio = abandonedAudio.filter { $0 > lastPlayed - 64 }
+    }
 
     /// Forget everything (new session).
     public mutating func reset(lastPlayed: Int? = nil) {
@@ -65,7 +96,9 @@ public struct Timeline: Sendable {
         guard let current, current.seq == seq else { return [] }
         lastPlayed = max(lastPlayed, seq)
         self.current = nil
-        return pump()
+        let actions = pump()
+        pruneAudio()
+        return actions
     }
 
     /// Give up waiting for a missing seq (call after a short timeout while `hasGap`).
@@ -83,7 +116,9 @@ public struct Timeline: Sendable {
             lastPlayed = max(lastPlayed, current.seq)
             self.current = nil
         }
-        return pump()
+        let actions = pump()
+        pruneAudio()
+        return actions
     }
 
     /// Apply a `snapshot` sent after `ready` on reconnect.

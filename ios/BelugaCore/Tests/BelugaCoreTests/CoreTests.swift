@@ -11,6 +11,9 @@ import Testing
         #expect(!r.serverSTT)
         #expect(r.boardVersion == 3)
         #expect(r.pairToken == "tok")
+        #expect(r.audioWaitMs == 3000)
+        let m2 = try ServerMessage.decode(#"{"t":"ready","v":1,"sessionId":"a","tts":"server","stt":"server","boardVersion":1,"audioWaitMs":6000}"#)
+        if case .ready(let r2) = m2 { #expect(r2.audioWaitMs == 6000 && r2.serverSTT) } else { Issue.record("not ready") }
     }
 
     @Test func decodesShowWithRawBlock() throws {
@@ -68,10 +71,21 @@ import Testing
         p.handle(.sayFinished, now: t0); #expect(p.state == .idle)
         p.handle(.askReached, now: t0); #expect(p.state == .asking)
         p.handle(.micOpened, now: t0); #expect(p.state == .listening)
-        p.handle(.micClosed(sent: false), now: t0); #expect(p.state == .idle)
+        p.handle(.micClosed(sent: false), now: t0); #expect(p.state == .asking)
         p.handle(.doneReached, now: t0); #expect(p.state == .done)
         p.handle(.doneSettled, now: t0); #expect(p.state == .idle)
         p.handle(.disconnected, now: t0); #expect(p.state == .offline)
+    }
+
+    @Test func emptyUtteranceReturnsToAsking() {
+        var p = PillMachine()
+        p.handle(.connected); p.handle(.askReached)
+        p.handle(.micOpened); #expect(p.state == .listening)
+        p.handle(.micClosed(sent: true)); #expect(p.state == .thinking)
+        p.handle(.utteranceRejected); #expect(p.state == .asking)
+        p.handle(.micOpened); p.handle(.micClosed(sent: true))
+        p.handle(.sayStarted); p.handle(.sayFinished)
+        p.handle(.utteranceRejected); #expect(p.state == .idle)
     }
 
     @Test func offlineWins() {

@@ -834,6 +834,40 @@
           }
         }
       }
+    },
+    "notice.sttEmpty": {
+      "extractionState": "manual",
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chưa nghe rõ. Bạn nói lại nhé."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Didn't catch that. Please say it again."
+          }
+        }
+      }
+    },
+    "notice.sttFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nhận dạng giọng trên máy tính lỗi. Lần sau dùng nhận dạng trên điện thoại."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech recognition on the computer failed. Using the phone next time."
+          }
+        }
+      }
     }
   }
 }

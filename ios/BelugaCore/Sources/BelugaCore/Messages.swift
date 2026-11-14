@@ -25,6 +25,8 @@ public struct Ready: Sendable, Equatable {
     public var stt: String          // "device" | "server"
     public var boardVersion: Int
     public var pairToken: String?
+    /// Max wait for a say's `audio` frame, counted from when that say is due (default 3000 ms).
+    public var audioWaitMs: Int = 3000
     public var serverTTS: Bool { tts == "server" }
     public var serverSTT: Bool { stt == "server" }
 }
@@ -136,7 +138,8 @@ public enum ServerMessage: Sendable, Equatable {
                 tts: v["tts"]?.string ?? "device",
                 stt: v["stt"]?.string ?? "device",
                 boardVersion: v["boardVersion"]?.int ?? 0,
-                pairToken: v["pairToken"]?.string))
+                pairToken: v["pairToken"]?.string,
+                audioWaitMs: v["audioWaitMs"]?.int ?? 3000))
         case "state":
             return .state(state: v["state"]?.string ?? "idle", tool: v["tool"]?.string)
         case "heard":
