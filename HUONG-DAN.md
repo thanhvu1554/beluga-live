@@ -33,11 +33,18 @@ cd C:\Users\Beluga\Desktop\Liveapp
 
 ## 4. Giọng nói
 
-- Mặc định: iPhone tự nghe (nhận dạng giọng nói của iOS) và tự đọc (giọng hệ thống).
-  Nên vào Cài đặt iOS → Trợ năng → Nội dung được đọc → Giọng nói → Tiếng Việt, tải một giọng chất lượng cao.
-- ElevenLabs: key đặt trong `server/.env` (không bao giờ commit). Gói Free không gọi được giọng thư viện
-  qua API (HTTP 402), server sẽ tự dùng giọng hệ thống. Nâng gói Starter trở lên thì giọng "Chi"
-  (`ELEVENLABS_VOICE_ID` trong `.env`) hoạt động, không cần sửa code. Đường này chưa chạy thử thành công.
+- Key đặt trong `server/.env` (không bao giờ commit): `GENVOICE_API_KEY=...`. Có key này thì server đọc
+  bằng giọng "Chi" và nghe bằng GenVoice. Mỗi ký tự đọc tốn 0,5 credit.
+- Hết credit hoặc GenVoice lỗi: iPhone tự nghe và tự đọc bằng giọng hệ thống. Nên vào Cài đặt iOS →
+  Trợ năng → Nội dung được đọc → Giọng nói → Tiếng Việt, tải một giọng chất lượng cao.
+- Đổi giọng: sửa `GENVOICE_VOICE_ID` trong `server/.env`. Ép dùng giọng iOS: `TTS_PROVIDER=device`,
+  `STT_PROVIDER=device`.
+
+## 4b. Điều khiển iPhone từ Claude Code trên PC (tùy chọn)
+
+Chạy `.\scriptsegister-mcp.ps1` một lần để đăng ký MCP `beluga` vào Claude Code của bạn. Sau đó
+phiên Claude Code bất kỳ có các tool: xem trạng thái điện thoại, chụp ảnh, cho điện thoại nói, chiếu
+nội dung lên bảng, nghe câu bạn nói. Server phải đang chạy.
 
 ## 5. Khi có trục trặc
 
