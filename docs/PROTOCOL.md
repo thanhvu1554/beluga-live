@@ -149,3 +149,38 @@ các lần sau gửi `pairToken`. Sai: `error{code:"bad_pair", fatal:true}`.
 | `asking` | vừa phát xong `ask` | đứng chờ, mời nói |
 | `done` | sau `done` | khép lại một nhịp rồi về `idle` |
 | `offline` | mất kết nối | vạch đứt, tự nối lại |
+
+## 6. Memory, ôn lại, tiến độ, module môn học
+
+**Lưu trữ** (`tutor/memory/`, đã gitignore, người dùng mở đọc và sửa tay được):
+`profile.md` (cách giảng hợp, ghi chú chung) và mỗi môn một file `<môn>.md` (ví dụ `toan.md`). Mỗi mục
+là một dòng danh sách theo khuôn cố định để server đọc lại được, dòng nào không theo khuôn thì giữ
+nguyên và bỏ qua. Server là bên duy nhất ghi file; Claude không có quyền ghi.
+
+**Tool của phiên gia sư** (cùng route MCP theo phiên với `capture_photo`):
+
+| Tool | Tham số | Tác dụng |
+|---|---|---|
+| `memory_note` | `subject, kind:"mistake"\|"mastered"\|"style"\|"progress", topic, note` | Ghi một điều đáng nhớ. `mistake` tăng số lần sai và đặt lịch ôn; `mastered` đánh dấu đã vững sau khi trả lời đúng câu ôn; `style` ghi cách giảng hợp vào `profile.md`; `progress` ghi đã học tới đâu. Trả về ngay, không chặn lời nói. |
+
+Server đính một **bản tóm tắt memory** (ngắn, vài dòng: cách giảng hợp, các chỗ yếu của môn liên quan)
+vào lượt đầu của mỗi phiên, không tốn thêm lượt Claude.
+
+**Mời ôn đầu phiên:** khi mở phiên mới mà có mục tới hạn ôn, server tự phát (không gọi Claude) một lượt
+ngắn gồm `say` + `show` kiểu `review_offer` rồi `turn_end`. Người dùng đồng ý bằng giọng thì câu đó đi
+tới Claude kèm ghi chú hệ thống về mục được mời ôn; từ chối hoặc nói chuyện khác thì bỏ qua.
+Lịch ôn: 1, 3, 7, 14 ngày sau mỗi lần sai hoặc ôn; đúng hai lần ôn liên tiếp thì coi là đã vững.
+
+Khối bảng mới: `review_offer` `{topic, subject, lastSeen, note?, fallback}` (luôn kèm `fallback`).
+
+**Tiến độ (trang chỉ đọc trong app):**
+
+| Hướng | `t` | Trường |
+|---|---|---|
+| máy → server | `get_progress` | — |
+| server → máy | `progress` | `subjects:[{id, name, weak:[{topic,note,count,lastSeen,due}], mastered:[{topic,date}], recent:[{topic,date}]}], style:[string], updatedAt` |
+
+**Module môn học:** mỗi môn là một skill của Claude Code ở `tutor/.claude/skills/<id>/SKILL.md`
+(`toan`, `ly`, `hoa`, `van`, `anh-ssat`, `duc`, `tin-cpp`, `chung`). Gia sư nhận ra môn từ ảnh hoặc lời
+nói rồi nạp đúng skill một lần mỗi phiên; môn chưa có skill thì nạp `chung`. Thêm môn = thêm một thư mục.
+
