@@ -43,6 +43,20 @@ public enum JSONValue: Sendable, Equatable, Codable {
     public var int: Int? { double.map { Int($0) } }
     public var bool: Bool? { if case .bool(let b) = self { return b }; return nil }
     public var array: [JSONValue]? { if case .array(let a) = self { return a }; return nil }
+    public var object: [String: JSONValue]? { if case .object(let o) = self { return o }; return nil }
+    public var isNull: Bool { self == .null }
+    /// A string that is not empty (nil otherwise).
+    public var nonEmptyString: String? { string.flatMap { $0.isEmpty ? nil : $0 } }
+    /// Number, or a number written as text.
+    public var numeric: Double? { double ?? string.flatMap { Double($0) } }
+    /// A date sent as text or as epoch seconds/milliseconds, kept as text.
+    public var dateText: String? {
+        if let s = nonEmptyString { return s }
+        if let n = double { return String(Int64(n)) }
+        return nil
+    }
+    /// String array; non-string items are dropped.
+    public var strings: [String] { (array ?? []).compactMap(\.string) }
 
     public static func parse(_ data: Data) throws -> JSONValue {
         try JSONDecoder().decode(JSONValue.self, from: data)

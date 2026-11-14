@@ -257,7 +257,7 @@ final class LiveController {
             if isMock && options.scene == nil { runMockStudent() }
         case let .state(state, tool):
             pill.handle(.server(state: state, tool: tool))
-        case .heard(let text):
+        case .heard(let text, _, _):
             if captionsOn { caption = text }
         case .event(let e):
             process(timeline.receive(e))
@@ -303,7 +303,7 @@ final class LiveController {
                 showSettings = true
             } else { showNotice(text.isEmpty ? code : text) }
             if fatal { fatalStop = true; transport?.disconnect(); connected = false; pill.handle(.disconnected) }
-        case .unknown:
+        case .chatDelta, .folders, .folderCreated, .ingest, .knowledge, .review, .exam, .exams, .usage, .greeting, .unknown:
             break
         }
     }
@@ -376,7 +376,7 @@ final class LiveController {
                 pill.handle(.turnEnded)
                 if settings.handsFree && handsFreeActive && askPrompt == nil { reopenHandsFree() }
             }
-        case .say:
+        case .say, .user, .chat:
             break
         }
     }
@@ -557,7 +557,7 @@ final class LiveController {
 
     func openSessions() {
         showSessions = true
-        transport?.send(.listSessions)
+        transport?.send(.listSessions())
     }
 
     func open(_ item: SessionItem) {

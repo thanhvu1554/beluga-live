@@ -37,7 +37,7 @@ import Testing
         guard case .snapshot(let ev) = snap else { Issue.record("not snapshot"); return }
         #expect(ev.map(\.seq) == [1, 2])
         let sessions = try ServerMessage.decode(#"{"t":"sessions","items":[{"sessionId":"s","title":"T","updatedAt":"2026-11-14"}]}"#)
-        #expect(sessions == .sessions([SessionItem(sessionId: "s", title: "T", updatedAt: "2026-11-14")]))
+        #expect(sessions == .sessions([SessionItem(sessionId: "s", title: "T", updatedAt: "2026-11-14", mode: .live)]))
     }
 
     @Test func encodesClientMessages() throws {
@@ -45,7 +45,7 @@ import Testing
                                         sessionId: nil, lastSeq: 4, settings: TutorSettings())
         let v = try JSONValue.parse(hello.text)
         #expect(v["t"]?.string == "hello")
-        #expect(v["v"]?.int == 1)
+        #expect(v["v"]?.int == 2)
         #expect(v["pairCode"]?.string == "123456")
         #expect(v["pairToken"] == nil)
         #expect(v["sessionId"]?.string == "")
@@ -54,8 +54,9 @@ import Testing
         #expect(v["settings"]?["rigor"]?.string == "medium")
         #expect(ClientMessage.played(seq: 9).text == #"{"seq":9,"t":"played"}"#)
         #expect(ClientMessage.interrupt.text == #"{"t":"interrupt"}"#)
-        let s = try JSONValue.parse(ClientMessage.settings(TutorSettings(lang: .en, model: .opus, rigor: .hard)).text)
+        let s = try JSONValue.parse(ClientMessage.settings(TutorSettings(lang: .en, model: "opus", rigor: .hard)).text)
         #expect(s["lang"]?.string == "en" && s["model"]?.string == "opus" && s["rigor"]?.string == "hard")
+        #expect(s["mode"]?.string == "chat" && s["sttFix"]?.bool == true && s["effort"] == .null)
     }
 }
 

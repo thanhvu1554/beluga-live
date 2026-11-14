@@ -11,7 +11,7 @@ final class AppSettings {
     var host: String { didSet { save("host", host) } }
     var pairCode: String { didSet { save("pairCode", pairCode) } }
     var lang: Lang { didSet { save("lang", lang.rawValue) } }
-    var model: ModelChoice { didSet { save("model", model.rawValue) } }
+    var model: String { didSet { save("model", model) } }
     var rigor: Rigor { didSet { save("rigor", rigor.rawValue) } }
     var handsFree: Bool { didSet { save("handsFree", handsFree) } }
     var captions: Bool { didSet { save("captions", captions) } }
@@ -28,7 +28,7 @@ final class AppSettings {
         host = defaults.string(forKey: "host") ?? bundled
         pairCode = defaults.string(forKey: "pairCode") ?? ""
         lang = defaults.string(forKey: "lang").flatMap(Lang.init(rawValue:)) ?? .vi
-        model = defaults.string(forKey: "model").flatMap(ModelChoice.init(rawValue:)) ?? .sonnet
+        model = defaults.string(forKey: "model") ?? "sonnet"
         rigor = defaults.string(forKey: "rigor").flatMap(Rigor.init(rawValue:)) ?? .medium
         handsFree = defaults.object(forKey: "handsFree") as? Bool ?? false
         captions = defaults.object(forKey: "captions") as? Bool ?? false

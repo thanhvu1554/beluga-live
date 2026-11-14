@@ -46,9 +46,9 @@ struct SettingsView: View {
 
                 Section {
                     Picker(s("settings.model"), selection: $settings.model) {
-                        Text(verbatim: "Sonnet").tag(ModelChoice.sonnet)
-                        Text(verbatim: "Opus").tag(ModelChoice.opus)
-                        Text(verbatim: "Haiku").tag(ModelChoice.haiku)
+                        Text(verbatim: "Sonnet").tag("sonnet")
+                        Text(verbatim: "Opus").tag("opus")
+                        Text(verbatim: "Haiku").tag("haiku")
                     }
                     VStack(alignment: .leading, spacing: Space.s) {
                         Text(verbatim: s("settings.rigor"))
