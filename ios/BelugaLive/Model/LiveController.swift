@@ -103,6 +103,7 @@ final class LiveController {
     func start() {
         startTicker()
         if isMock {
+            signalCaptureReady()
             let mock = MockTransport()
             if options.scene == .offline { mock.reachable = false }
             attach(mock)
@@ -119,6 +120,21 @@ final class LiveController {
             if granted { self.camera?.start() } else { self.permissionIssue = .camera }
         }
         if hasHost { connect() } else { showSettings = true }
+    }
+
+    /// Mock runs only: once the board web view is ready and had time to paint, drop a marker file so the
+    /// screenshot script can capture a settled frame instead of guessing a delay.
+    private func signalCaptureReady() {
+        let marker = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("shot-ready")
+        try? FileManager.default.removeItem(at: marker)
+        Task { [weak self] in
+            for _ in 0..<150 {
+                if self?.board.ready == true { break }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            try? await Task.sleep(for: .milliseconds(1500))
+            try? Data("ready".utf8).write(to: marker)
+        }
     }
 
     /// Back in the foreground: pick up permissions changed in Settings and retry a dropped connection.

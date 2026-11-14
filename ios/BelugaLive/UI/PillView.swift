@@ -117,7 +117,7 @@ struct PillView: View {
             line(from: w * 0.6, to: w, shading: .color(.primary.opacity(0.7)))
 
         case .offline:
-            line(from: w * 0.15, to: w * 0.85, shading: .color(.primary.opacity(0.4)), width: Stroke.thin, dash: [3, 5])
+            line(from: w * 0.15, to: w * 0.85, shading: .color(.primary.opacity(0.6)), width: Stroke.thin, dash: [3, 5])
 
         case .thinking:
             // Three dots that swell in turn (1.5 s cycle): unlike every other state, no line at all.

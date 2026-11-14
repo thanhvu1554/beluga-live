@@ -17,12 +17,15 @@ struct RootView: View {
                 ShutterFlash(tick: controller.shutterTick)
                     .ignoresSafeArea()
 
-                if controller.boardVisible {
-                    BoardPanel(controller: controller)
-                        .frame(height: geo.size.height * 0.6 + geo.safeAreaInsets.bottom)
-                        .transition(.move(edge: .bottom))
-                        .ignoresSafeArea(edges: .bottom)
-                }
+                // Always in the hierarchy (the web view stays loaded); slid off-screen when hidden.
+                let boardHeight = geo.size.height * 0.6 + geo.safeAreaInsets.bottom
+                BoardPanel(controller: controller)
+                    .frame(height: boardHeight)
+                    .offset(y: controller.boardVisible ? 0 : boardHeight + 48)
+                    .animation(Motion.panel, value: controller.boardVisible)
+                    .allowsHitTesting(controller.boardVisible)
+                    .accessibilityHidden(!controller.boardVisible)
+                    .ignoresSafeArea(edges: .bottom)
 
                 VStack(spacing: Space.m) {
                     TopBar(controller: controller)

@@ -26,8 +26,12 @@ for MODE in light dark; do
   xcrun simctl ui "$UDID" appearance "$MODE"
   for SCENE in $SCENES; do
     xcrun simctl terminate "$UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
+    CONTAINER=$(xcrun simctl get_app_container "$UDID" "$BUNDLE_ID" data)
+    rm -f "$CONTAINER/tmp/shot-ready"
     xcrun simctl launch "$UDID" "$BUNDLE_ID" -mock 1 -mockScene "$SCENE" >/dev/null
-    sleep "${SHOT_DELAY:-4}"
+    # The app drops tmp/shot-ready once the board is ready and painted; fall back to a fixed wait.
+    for _ in $(seq 1 60); do [ -f "$CONTAINER/tmp/shot-ready" ] && break; sleep 0.5; done
+    sleep "${SHOT_DELAY:-1}"
     xcrun simctl io "$UDID" screenshot "$OUT/${SCENE}-${MODE}.png" >/dev/null
     echo "shot $SCENE-$MODE"
   done
