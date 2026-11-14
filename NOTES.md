@@ -13,26 +13,72 @@
 
 ## iOS (`ios/`, `shared/board/`)
 
-Agent làm phần này dừng giữa chừng vì chạm giới hạn 5 giờ của gói Pro, nên mục này do người điều phối
-viết từ những gì kiểm chứng được, không phải báo cáo đầy đủ của agent.
+Cập nhật 14/11/2026. CI xanh ở run 43591800568 (commit f640c8b): `swift test` BelugaCore, IPA unsigned
+(đúng cấu trúc, không `_CodeSignature`, không provisioning profile), 30 screenshot simulator, video demo.
 
-**Đã kiểm chứng**
-- CI xanh trên runner `xcode-27`: `swift test` cho BelugaCore, build simulator, build IPA unsigned.
-- IPA: chỉ có `Payload/BelugaLive.app`, có `Info.plist`, không có `_CodeSignature` hay provisioning
-  profile, có kèm gói bảng (34 file).
-- Screenshot đã tự xem (4 trong 26): bài giảng sáng và tối, điểm dừng "vặn lại", cài đặt. Camera
-  phía trên, bảng trượt lên khoảng 60%, đồ thị, bảng xét dấu và công thức KaTeX vẽ đúng, điều khiển
-  dùng Liquid Glass, không có màu nhấn.
+**Đã kiểm chứng bằng screenshot và video trên simulator (mock, `-mock 1`)**
+- Đã xem cả 24 ảnh cảnh (12 cảnh x sáng/tối), 6 ảnh flow và 3 bản icon.
+- Phụ đề nằm ở vùng camera ngay trên mép bảng, không còn che bảng; cuối bảng có đệm 128 px nên không
+  khuất sau nút chụp, pill, nút thu bảng (thấy ở cảnh lesson, ask, done và trong video).
+- Đồ thị: nhãn điểm "2", "3" đặt cách xa đường cong và trục (tự chọn vị trí thoáng nhất quanh điểm),
+  nhãn trục trùng với nhãn điểm đã bỏ.
+- Pill: 8 trạng thái nhìn phân biệt được. idle = vạch ngắn; thinking = ba chấm lần lượt phồng lên;
+  tool = vạch mờ có đoạn đậm quét ngang; listening = cột nhảy kín chiều ngang; speaking = biểu tượng loa
+  + cột đối xứng; asking = micro + vạch đứt quãng; done = dấu tick + vạch; offline = vạch đứt nét + biểu
+  tượng mất sóng. (Trước đó thinking và idle nhìn gần như giống nhau, listening và speaking chỉ khác
+  độ đậm.)
+- Trang tiến độ (từ danh sách phiên hoặc cài đặt, hoặc `-mockScene progress`): từng môn với Đang yếu
+  (chủ đề, ghi chú, số lần sai, ngày ôn hoặc "Đến hạn ôn"), Đã vững, Đã học gần đây, rồi Cách giảng hợp.
+  Trạng thái rỗng, đang tải và chưa kết nối viết riêng. Chữ phẳng trên nền hệ thống, không thẻ.
+- Khối `review_offer` (thẻ "Ôn lại": chủ đề, môn, lần cuối, ghi chú) và cảnh `-mockScene review`. Gói bảng
+  tăng lên `version 2`; server đọc version từ `shared/board/version.json` nên tự báo 2.
+- Video `demo-video` (33,6 s, h264, 1206x2622, khoảng 18 MB): trích khung hình mỗi 2 giây thấy đúng
+  trình tự idle, nghe, nghĩ, bảng trượt lên từng bước (Đọc đề, Tìm nghiệm, Xét dấu), pill "đến lượt
+  bạn", nghe câu trả lời, nghĩ, nói, Kết luận, Xong bài, về idle.
+- Icon mới: hình beluga đặc (trán bầu, không vây lưng, đuôi khía), bản sáng, tối, tinted đều đọc được
+  ở cỡ 40 px. Vẫn hơi "hoạt hình" so với hình học tối giản; chủ nhà có thể muốn chỉnh tay.
+- Tương phản: `Ink.tertiary` 0,38 lên 0,55, `Ink.secondary` 0,62 lên 0,68; `--ink-3` của bảng 0,38 lên 0,6
+  (trước đó nhãn nhỏ chỉ khoảng 2,7:1).
 
-**Chưa kiểm chứng**
-- Mọi thứ cần thiết bị thật: camera, micro, nhận dạng giọng nói, phát tiếng, khử vọng, ngắt lời,
-  rảnh tay, âm thanh trạng thái, rung, kết nối WebSocket qua Tailscale, ghép đôi, tự nối lại.
-- Đường nghe qua server (gửi WAV) và phát mp3 từ server có mã nhưng chưa chạy với server thật.
-- 22 screenshot còn lại chưa ai xem kỹ; icon app chưa được xem lại.
+**Sửa sau khi đọc mã đường chạy thật (chưa chạy được trên thiết bị)**
+- Quyền: camera xin lúc mở app; micro và nhận dạng giọng xin ở lần chạm pill đầu tiên (lần đó chỉ xin quyền,
+  hiện thông báo "chạm giữ lần nữa"). Bị từ chối thì hiện khung điềm đạm có nút "Mở Cài đặt"; quay lại app
+  từ Cài đặt thì tự gỡ khung và bật lại camera.
+- `bad_pair` mở thẳng Cài đặt (ô mã ghép đôi); nhập lại cùng mã vẫn nối lại được (trước đó bị bỏ qua).
+  Vào foreground thì nối lại ngay, không chờ backoff.
+- Ảnh chụp: đặt `videoRotationAngle = 90` cho photo output (app chỉ dọc; trước đó ảnh có thể ra ngang).
+  Chụp lỗi thì báo nhẹ trên màn hình thay vì im lặng.
+- Chạm pill khi đang nói: dừng tiếng ngay, rồi mở mic (giữ để nói) hoặc giữ nghe rảnh tay đang bật.
+- AVAudioEngine: khởi động lại khi đổi route và sau cuộc gọi; đầu vào voice processing được tắt tiếng
+  (`isVoiceProcessingInputMuted`) trừ lúc đang nghe.
+- Bảng luôn nằm trong cây view và trượt ra ngoài màn hình khi ẩn (cách cũ chèn/gỡ bằng transition làm bảng
+  không hiện trong luồng mock). Lịch sử/snapshot vẽ không animation.
 
-**Lỗi giao diện đã thấy, chưa sửa**
-- Khi bật phụ đề, khung phụ đề đè lên phần cuối của bảng (che một hàng của bảng xét dấu).
-- Nhãn điểm trên đồ thị ("2", "3") trùng với số trên trục và chạm vào đường cong.
+**Đã đọc mã và thấy đúng (không đổi)**: `hello` gửi `pairCode`/`pairToken`, `sessionId`, `lastSeq`, `settings`;
+`pairToken` lưu Keychain; backoff 0,5 s tới 15 s có nhiễu, gửi `lastSeq`; `played{seq}` gửi sau mỗi câu và mỗi
+sự kiện bảng; WAV PCM16 mono 16 kHz header RIFF đủ 44 byte, gửi từng khúc 64 KB; không có tap micro khi
+không nghe.
+
+**Chưa kiểm chứng (cần iPhone thật)**
+- Camera, micro, nhận dạng giọng, phát tiếng thật, khử vọng, ngắt lời, rảnh tay, âm báo, rung, WebSocket
+  qua Tailscale, ghép đôi, tự nối lại, chụp theo `capture_request` trong 8 giây.
+- Đường nghe qua server (WAV) và phát mp3 từ server: có mã, chưa chạy với server thật.
+- Hộp xin quyền và hành vi sau khi từ chối: chỉ đọc mã.
+
+**Nghi vấn còn mở**
+- Mic cam: `AVAudioEngine` với voice processing chạy suốt phiên nên chấm cam/micro của hệ thống có thể sáng
+  cả khi không nghe, dù tiếng vào đã tắt. Nếu phiền thì phải dựng lại engine mỗi lần nghe.
+- Audio session dùng mode `.default` + `defaultToSpeaker` + voice processing của engine. Nếu tiếng ra loa nhỏ
+  hoặc còn vọng, thử đổi sang mode `.voiceChat`.
+- `AVSpeechSynthesizer.write` với giọng vi-VN: nếu máy chưa tải giọng thì không có tiếng, watchdog 4 giây
+  cho bài giảng đi tiếp (không đọc được câu đó).
+- Tiếng mp3 dừng giữa chừng (`fileNode.stop()`): giả định completion handler vẫn được gọi; nếu không thì
+  task phát bị treo nhưng không chặn câu sau.
+- Nhận dạng giọng trên máy với `requiresOnDeviceRecognition`: vi-VN có thể không hỗ trợ on-device trên máy cũ.
+- Phụ đề dài 3 dòng khi bảng đang mở có thể chạm thanh tiêu đề trên iPhone nhỏ (mới xem ở simulator iPhone 17).
+- Tiêu đề bước trong bảng đứng sát hàng tên bài khi trang đã cuộn; có thể thêm khoảng đệm.
+- Định dạng ngày của `progress` (server gửi `YYYY-MM-DD`) đã khớp mã server; phần còn lại của khung progress
+  đọc theo PROTOCOL, chưa thử với server thật.
 
 ## Quyết định đã chọn
 
