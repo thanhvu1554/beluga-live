@@ -1,12 +1,38 @@
 # NOTES — quyết định và tiến độ
 
 ## Tiến độ
-(cập nhật ở cuối mỗi giai đoạn)
+(cập nhật 14/11/2026, 18:15)
 
-- [ ] 1. Khung app, giao diện lofi trắng đen (sáng/tối), mock, CI ra IPA unsigned
-- [ ] 2. Server PC, luồng giọng nói (mock), trình chiếu bài giảng từng bước
-- [ ] 3. Điểm dừng "vặn lại"
-- [ ] Để sau: memory, ôn lại, màn hình tiến độ, module môn học
+- [x] 1. Khung app, giao diện lofi trắng đen (sáng/tối), mock, CI ra IPA unsigned.
+      CI xanh (run 43572866046): test BelugaCore, IPA unsigned, 26 screenshot simulator.
+- [x] 2. Server PC (Rust) và luồng giọng nói, trình chiếu bài giảng từng bước.
+      Server đã chạy với Claude Code thật và GenVoice thật; app mới chạy ở chế độ mock trên simulator.
+- [x] 3. Điểm dừng "vặn lại": có ở server (parser, lượt dừng sau `@ask`) và ở app (thẻ "Đến lượt bạn").
+- [ ] **Chưa làm lần nào: app thật nói chuyện với server thật trên iPhone.** Đây là việc kế tiếp.
+- [ ] Để sau: memory, ôn lại, màn hình tiến độ, module môn học (`tutor/.claude/skills/`).
+
+## iOS (`ios/`, `shared/board/`)
+
+Agent làm phần này dừng giữa chừng vì chạm giới hạn 5 giờ của gói Pro, nên mục này do người điều phối
+viết từ những gì kiểm chứng được, không phải báo cáo đầy đủ của agent.
+
+**Đã kiểm chứng**
+- CI xanh trên runner `xcode-27`: `swift test` cho BelugaCore, build simulator, build IPA unsigned.
+- IPA: chỉ có `Payload/BelugaLive.app`, có `Info.plist`, không có `_CodeSignature` hay provisioning
+  profile, có kèm gói bảng (34 file).
+- Screenshot đã tự xem (4 trong 26): bài giảng sáng và tối, điểm dừng "vặn lại", cài đặt. Camera
+  phía trên, bảng trượt lên khoảng 60%, đồ thị, bảng xét dấu và công thức KaTeX vẽ đúng, điều khiển
+  dùng Liquid Glass, không có màu nhấn.
+
+**Chưa kiểm chứng**
+- Mọi thứ cần thiết bị thật: camera, micro, nhận dạng giọng nói, phát tiếng, khử vọng, ngắt lời,
+  rảnh tay, âm thanh trạng thái, rung, kết nối WebSocket qua Tailscale, ghép đôi, tự nối lại.
+- Đường nghe qua server (gửi WAV) và phát mp3 từ server có mã nhưng chưa chạy với server thật.
+- 22 screenshot còn lại chưa ai xem kỹ; icon app chưa được xem lại.
+
+**Lỗi giao diện đã thấy, chưa sửa**
+- Khi bật phụ đề, khung phụ đề đè lên phần cuối của bảng (che một hàng của bảng xét dấu).
+- Nhãn điểm trên đồ thị ("2", "3") trùng với số trên trục và chạm vào đường cong.
 
 ## Quyết định đã chọn
 
@@ -20,8 +46,9 @@
 - **Đồng bộ lời nói với bảng** làm ở điện thoại bằng timeline theo `seq`.
 - **Bảng là gói web trong WKWebView** (KaTeX + mhchem), server cũng phục vụ gói này, nên thêm kiểu
   khối mới không phải build lại app.
-- **Chưa có key ElevenLabs:** nghe bằng nhận dạng giọng nói của iOS, đọc bằng giọng hệ thống iOS.
-  Điền key vào `server/.env` thì server chuyển sang ElevenLabs (chưa chạy thử với key thật).
+- **Giọng nói:** GenVoice (bên thứ ba bán lại ElevenLabs, API bất đồng bộ) là lựa chọn số 1 vì gói
+  Free của ElevenLabs không cho gọi giọng thư viện qua API (HTTP 402). Thứ tự: GenVoice, ElevenLabs
+  trực tiếp, cuối cùng là giọng và nhận dạng của iOS. Giọng mặc định: "Chi" (nữ trẻ, giọng Bắc).
 - **Địa chỉ PC mặc định không nằm trong repo public:** đưa vào app lúc build qua secret
   `BELUGA_DEFAULT_HOST` của GitHub Actions; sửa được trong cài đặt app.
 - **Claude Code không có quyền ghi:** chạy với danh sách tool tối thiểu, cwd là `tutor/`.
