@@ -6,7 +6,7 @@ import BelugaCore
 struct Strings: Sendable {
     let lang: Lang
 
-    private static let bundles: [Lang: Bundle] = {
+    nonisolated(unsafe) private static let bundles: [Lang: Bundle] = {
         var out: [Lang: Bundle] = [:]
         for l in Lang.allCases {
             if let path = Bundle.main.path(forResource: l.rawValue, ofType: "lproj"), let b = Bundle(path: path) {

@@ -17,8 +17,8 @@ final class AppSettings {
     var captions: Bool { didSet { save("captions", captions) } }
     var haptics: Bool { didSet { save("haptics", haptics) } }
 
-    @ObservationIgnored private let defaults: UserDefaults
-    @ObservationIgnored private let persist: Bool
+    private let defaults: UserDefaults
+    private let persist: Bool
 
     init(defaults: UserDefaults = .standard, persist: Bool = true) {
         self.defaults = defaults

@@ -10,7 +10,7 @@ final class BoardBridge: NSObject, @preconcurrency WKScriptMessageHandler {
     private(set) var currentStep = 0
     private(set) var hasContent = false
 
-    @ObservationIgnored let webView: WKWebView
+    let webView: WKWebView
     @ObservationIgnored private var queue: [String] = []
     @ObservationIgnored private var theme = "light"
     @ObservationIgnored private var lang = "vi"

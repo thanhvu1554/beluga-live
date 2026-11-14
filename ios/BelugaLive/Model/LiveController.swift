@@ -59,7 +59,7 @@ final class LiveController {
     @ObservationIgnored private var fatalStop = false
     @ObservationIgnored private var vad = VoiceActivityDetector()
     @ObservationIgnored private(set) var audio: AudioHub?
-    @ObservationIgnored let camera: CameraController?
+    let camera: CameraController?
     @ObservationIgnored private let mockLevels = MockLevels()
     @ObservationIgnored private var mockScriptedLevel: PillState?
 

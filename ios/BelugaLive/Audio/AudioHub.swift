@@ -26,6 +26,13 @@ final class LevelMeter: Sendable {
     }
 }
 
+/// True the first time `take()` is called (feeds a converter exactly one buffer).
+final class OnceFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var used = false
+    func take() -> Bool { lock.lock(); defer { lock.unlock() }; if used { return false }; used = true; return true }
+}
+
 /// Collects mic audio as 16 kHz mono PCM16 for server-side STT.
 final class PCMCollector: @unchecked Sendable {
     private let lock = NSLock()
@@ -41,11 +48,10 @@ final class PCMCollector: @unchecked Sendable {
         guard let converter else { return }
         let capacity = AVAudioFrameCount(Double(buffer.frameLength) * outFormat.sampleRate / buffer.format.sampleRate) + 32
         guard let out = AVAudioPCMBuffer(pcmFormat: outFormat, frameCapacity: capacity) else { return }
-        let fed = Mutex(false)
+        let fed = OnceFlag()
         var error: NSError?
         converter.convert(to: out, error: &error) { _, status in
-            let first = fed.withLock { f -> Bool in defer { f = true }; return !f }
-            if first { status.pointee = .haveData; return buffer }
+            if fed.take() { status.pointee = .haveData; return buffer }
             status.pointee = .noDataNow; return nil
         }
         if let p = out.int16ChannelData?[0], out.frameLength > 0 {
@@ -115,11 +121,10 @@ final class TTSFeeder: @unchecked Sendable {
         guard let converter else { return nil }
         let cap = AVAudioFrameCount(Double(pcm.frameLength) * format.sampleRate / pcm.format.sampleRate) + 64
         guard let out = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: cap) else { return nil }
-        let fed = Mutex(false)
+        let fed = OnceFlag()
         var err: NSError?
         converter.convert(to: out, error: &err) { _, status in
-            let first = fed.withLock { f -> Bool in defer { f = true }; return !f }
-            if first { status.pointee = .haveData; return pcm }
+            if fed.take() { status.pointee = .haveData; return pcm }
             status.pointee = .noDataNow; return nil
         }
         return out.frameLength > 0 ? out : nil

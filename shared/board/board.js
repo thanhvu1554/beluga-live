@@ -153,10 +153,17 @@
   root.addEventListener("scroll", function () {
     clearTimeout(scrollTimer);
     scrollTimer = setTimeout(function () {
+      if (root.clientWidth < 10) return;
       var i = Math.round(root.scrollLeft / Math.max(1, root.clientWidth));
       if (i !== current) settle(i);
     }, 90);
   }, { passive: true });
+
+  // The web view may be laid out after content arrived (panel hidden): keep the current page in view.
+  global.addEventListener("resize", function () {
+    var s = steps[current];
+    if (s) root.scrollTo({ left: s.el.offsetLeft, behavior: "auto" });
+  });
 
   var board = {
     version: VERSION,

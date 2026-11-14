@@ -10,7 +10,7 @@ enum Earcon: CaseIterable {
     case offline     // connection lost
     case shutter     // photo taken
 
-    static let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!
+    nonisolated(unsafe) static let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!
 
     /// (frequency Hz, start s, duration s, gain)
     private var notes: [(Double, Double, Double, Float)] {

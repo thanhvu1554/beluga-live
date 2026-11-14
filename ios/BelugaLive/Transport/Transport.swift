@@ -22,7 +22,8 @@ final class WebSocketTransport: Transport {
     private let url: URL
     private var task: URLSessionWebSocketTask?
     private var generation = 0
-    private var pingTask: Task<Void, Never>?
+    private var tasks: [Task<Void, Never>] = []
+    private var outbox: AsyncStream<URLSessionWebSocketTask.Message>.Continuation?
     private let session: URLSession = {
         let c = URLSessionConfiguration.default
         c.timeoutIntervalForRequest = 10
@@ -34,7 +35,6 @@ final class WebSocketTransport: Transport {
 
     func connect() {
         disconnect()
-        generation += 1
         let gen = generation
         var request = URLRequest(url: url)
         request.timeoutInterval = 8
@@ -42,52 +42,20 @@ final class WebSocketTransport: Transport {
         task.maximumMessageSize = 32 * 1024 * 1024
         self.task = task
         task.resume()
-        receiveLoop(task, gen: gen)
-        pingTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(15))
-                guard let self, !Task.isCancelled else { return }
-                self.ping(gen: gen)
+
+        // Ordered sender.
+        let (stream, continuation) = AsyncStream<URLSessionWebSocketTask.Message>.makeStream()
+        outbox = continuation
+        tasks.append(Task { [weak self] in
+            for await message in stream {
+                do { try await task.send(message) } catch {
+                    self?.fail(gen: gen, error.localizedDescription); return
+                }
             }
-        }
-    }
-
-    func disconnect() {
-        pingTask?.cancel(); pingTask = nil
-        generation += 1
-        task?.cancel(with: .goingAway, reason: nil)
-        task = nil
-    }
-
-    func send(_ message: ClientMessage) {
-        guard let task else { return }
-        let gen = generation
-        task.send(.string(message.text)) { [weak self] error in
-            guard let error else { return }
-            Task { @MainActor in self?.fail(gen: gen, error.localizedDescription) }
-        }
-    }
-
-    func sendBinary(_ data: Data) {
-        guard let task else { return }
-        let gen = generation
-        task.send(.data(data)) { [weak self] error in
-            guard let error else { return }
-            Task { @MainActor in self?.fail(gen: gen, error.localizedDescription) }
-        }
-    }
-
-    private func ping(gen: Int) {
-        guard gen == generation, let task else { return }
-        task.sendPing { [weak self] error in
-            guard let error else { return }
-            Task { @MainActor in self?.fail(gen: gen, error.localizedDescription) }
-        }
-    }
-
-    private func receiveLoop(_ task: URLSessionWebSocketTask, gen: Int) {
-        Task { [weak self] in
-            while true {
+        })
+        // Receiver.
+        tasks.append(Task { [weak self] in
+            while !Task.isCancelled {
                 do {
                     let msg = try await task.receive()
                     guard let self, gen == self.generation else { return }
@@ -103,7 +71,40 @@ final class WebSocketTransport: Transport {
                     return
                 }
             }
+        })
+        // Keepalive: detects a dead link (Wi-Fi switch, PC asleep) within ~20 s.
+        tasks.append(Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(15))
+                guard !Task.isCancelled else { return }
+                Self.ping(task) { reason in
+                    Task { @MainActor in self?.fail(gen: gen, reason) }
+                }
+            }
+        })
+    }
+
+    private nonisolated static func ping(_ task: URLSessionWebSocketTask, onError: @escaping @Sendable (String) -> Void) {
+        task.sendPing { error in
+            if let error { onError(error.localizedDescription) }
         }
+    }
+
+    func disconnect() {
+        generation += 1
+        for t in tasks { t.cancel() }
+        tasks.removeAll()
+        outbox?.finish(); outbox = nil
+        task?.cancel(with: .goingAway, reason: nil)
+        task = nil
+    }
+
+    func send(_ message: ClientMessage) {
+        outbox?.yield(.string(message.text))
+    }
+
+    func sendBinary(_ data: Data) {
+        outbox?.yield(.data(data))
     }
 
     private func fail(gen: Int, _ reason: String) {

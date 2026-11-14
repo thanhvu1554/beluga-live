@@ -63,6 +63,7 @@ final class CameraController: NSObject, @unchecked Sendable, AVCapturePhotoCaptu
     }
 }
 
+@MainActor
 enum PhotoEncoder {
     /// JPEG with the long side scaled to ~2000 px.
     static func jpeg(_ image: UIImage, longSide: CGFloat = 2000, quality: CGFloat = 0.82) -> (Data, Int, Int)? {
