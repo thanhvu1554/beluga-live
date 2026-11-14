@@ -151,6 +151,7 @@ struct Driver {
     interrupt_deadline: Option<Instant>,
     last_active: Instant,
     in_text_block: bool,
+    init_logged: u64,
     stderr_tail: Arc<Mutex<String>>,
     ptx: UnboundedSender<(u64, ProcEvent)>,
 }
@@ -172,6 +173,7 @@ async fn run(cfg: ClaudeCfg, session_id: String, started: bool, sink: Sink, mut 
         interrupt_deadline: None,
         last_active: Instant::now(),
         in_text_block: false,
+        init_logged: 0,
         stderr_tail: Arc::new(Mutex::new(String::new())),
         ptx,
     };
@@ -417,6 +419,7 @@ impl Driver {
                     "content_block_delta" if e["delta"]["type"] == "text_delta" => {
                         if let (Some(txt), Some(inf)) = (e["delta"]["text"].as_str(), self.inflight.as_mut()) {
                             if !txt.is_empty() {
+                                tracing::debug!("claude text_delta: {} chars", txt.chars().count());
                                 inf.got_text = true;
                                 let turn = inf.input.turn;
                                 self.emit(turn, BrainEvent::Text(txt.to_string()));
@@ -439,7 +442,11 @@ impl Driver {
                 let names = |k: &str| -> String {
                     v[k].as_array().map(|a| a.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(",")).unwrap_or_default()
                 };
-                tracing::info!("claude init: model={} tools=[{}] skills=[{}]", v["model"].as_str().unwrap_or("?"), names("tools"), names("skills"));
+                // The CLI repeats `init` for every turn; log it once per process.
+                if self.init_logged != self.gen {
+                    self.init_logged = self.gen;
+                    tracing::info!("claude init: model={} tools=[{}] skills=[{}]", v["model"].as_str().unwrap_or("?"), names("tools"), names("skills"));
+                }
                 if let Some(arr) = v["mcp_servers"].as_array() {
                     for s in arr {
                         if s["status"] != "connected" {

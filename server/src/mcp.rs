@@ -22,7 +22,7 @@ fn tool_def() -> Value {
 fn memory_tool_def() -> Value {
     json!({
         "name": "memory_note",
-        "description": "Remember something about the student for next time. kind=mistake: the student got a key step wrong (topic = short name of the kind of error, reuse the exact old name if [memory] already has it; note = how it went wrong). kind=mastered: the student did a previously weak topic right on their own. kind=style: a way of teaching that works for this student. kind=progress: a lesson is finished (topic = what was covered). Returns immediately; keep talking, do not mention it.",
+        "description": "Remember something about the student for next time. Call it only AFTER you have already spoken your first lines of this turn (the student is waiting to hear you; never make this the first thing you do in a turn), at most twice per turn, then keep talking and never mention it. kind=mistake: the student got a key step wrong (topic = short name of the kind of error, reuse the exact old name if [memory] already has it; note = how it went wrong). kind=mastered: the student did a previously weak topic right on their own, e.g. the review question. kind=style: a way of teaching that works for this student. kind=progress: ONLY when a whole lesson is finished and you are about to send @done (topic = what was covered); never at the start of a lesson.",
         "inputSchema": {
             "type": "object",
             "properties": {
