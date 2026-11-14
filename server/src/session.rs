@@ -33,7 +33,21 @@ pub enum Cmd {
     Played(u64),
     Photo { request_id: Option<String>, jpeg: Vec<u8> },
     Audio { seq: u64, data: Vec<u8> },
+    /// TTS was just switched off (already recorded in `Voice`): tell the phone once.
     TtsFailed,
+    /// Forward a frame to the attached phone (used by background tasks such as STT).
+    Notice(Value),
+    /// The server gave up on audio for this sentence: the phone should speak it itself.
+    AudioSkip { seq: u64 },
+    // ---- general MCP (any Claude Code session talking to the phone) ----
+    Status { reply: oneshot::Sender<Value> },
+    /// Speak plain text (several sentences allowed).
+    Speak { text: String, reply: oneshot::Sender<Result<Value, String>> },
+    /// Show/say text in the lesson line format (PROTOCOL section 2).
+    Present { lines: String, reply: oneshot::Sender<Result<Value, String>> },
+    /// Wait for the student's next utterance instead of handing it to the tutor.
+    Listen { reply: oneshot::Sender<Result<oneshot::Receiver<String>, String>> },
+    McpInterrupt { reply: oneshot::Sender<Value> },
     Capture { reply: oneshot::Sender<Result<Vec<u8>, String>> },
     CaptureTimeout { request_id: String },
 }
@@ -76,6 +90,11 @@ struct Session {
     capture: Option<PendingCapture>,
     played: u64,
     interrupt_note: Option<String>,
+    /// Running TTS tasks; aborted when the turn is interrupted.
+    tts_tasks: Vec<tokio::task::AbortHandle>,
+    /// `audio` frames with a seq below this belong to an interrupted turn and are dropped.
+    audio_floor: u64,
+    listener: Option<oneshot::Sender<String>>,
     brain: Brain,
     self_tx: UnboundedSender<Cmd>,
 }
@@ -132,6 +151,9 @@ pub fn spawn_session(id: String, deps: Deps) -> UnboundedSender<Cmd> {
         capture: None,
         played: 0,
         interrupt_note: None,
+        tts_tasks: Vec::new(),
+        audio_floor: 0,
+        listener: None,
         brain,
         self_tx: tx.clone(),
     };
@@ -213,13 +235,44 @@ impl Session {
             Cmd::Interrupt => self.interrupt(),
             Cmd::Played(seq) => self.played = self.played.max(seq),
             Cmd::Photo { request_id, jpeg } => self.photo(request_id, jpeg),
-            Cmd::Audio { seq, data } => self.send(json!({
-                "t": "audio", "seq": seq, "mime": "audio/mpeg",
-                "data": base64::engine::general_purpose::STANDARD.encode(data)})),
-            Cmd::TtsFailed => {
-                if self.deps.voice.disable_tts() {
-                    self.send(tts_fallback_notice());
+            Cmd::Audio { seq, data } => {
+                if seq >= self.audio_floor {
+                    self.send(json!({
+                        "t": "audio", "seq": seq, "mime": "audio/mpeg",
+                        "data": base64::engine::general_purpose::STANDARD.encode(data)}));
                 }
+            }
+            Cmd::TtsFailed => self.send(tts_fallback_notice()),
+            Cmd::Notice(v) => self.send(v),
+            Cmd::AudioSkip { seq } => {
+                if seq >= self.audio_floor {
+                    self.send(json!({"t": "audio_skip", "seq": seq}));
+                }
+            }
+            Cmd::Status { reply } => {
+                let _ = reply.send(self.status());
+            }
+            Cmd::Speak { text, reply } => {
+                // Plain speech: a leading '@' must not turn a sentence into a directive.
+                let lines: Vec<String> = text.lines().map(|l| l.trim().trim_start_matches('@').to_string()).collect();
+                let _ = reply.send(self.present(lines.join("
+")));
+            }
+            Cmd::Present { lines, reply } => {
+                let _ = reply.send(self.present(lines));
+            }
+            Cmd::Listen { reply } => {
+                let r = if self.conn.is_none() {
+                    Err("Điện thoại đang không kết nối.".to_string())
+                } else {
+                    let (tx, rx) = oneshot::channel();
+                    self.listener = Some(tx); // replaces (and cancels) an older listen
+                    Ok(rx)
+                };
+                let _ = reply.send(r);
+            }
+            Cmd::McpInterrupt { reply } => {
+                let _ = reply.send(self.mcp_interrupt());
             }
             Cmd::Capture { reply } => self.start_capture(reply),
             Cmd::CaptureTimeout { request_id } => {
@@ -245,6 +298,9 @@ impl Session {
             "stt": if voice.stt_enabled() { "server" } else { "device" },
             "boardVersion": self.deps.cfg.board_version(),
         });
+        if let Some(ms) = voice.audio_wait_ms() {
+            ready["audioWaitMs"] = json!(ms);
+        }
         if let Some(t) = pair_token {
             ready["pairToken"] = Value::String(t);
         }
@@ -270,9 +326,16 @@ impl Session {
     // ----- turns -----
 
     fn user_text(&mut self, text: String) {
-        let text = text.trim().to_string();
+        let mut text = text.trim().to_string();
         if text.is_empty() {
             return;
+        }
+        // A waiting `listen` (general MCP) gets the utterance instead of the tutor.
+        if let Some(l) = self.listener.take() {
+            match l.send(text) {
+                Ok(()) => return,
+                Err(back) => text = back, // the listener gave up (timeout): normal turn
+            }
         }
         self.pending.push_back(text);
         self.try_start_turn();
@@ -391,28 +454,44 @@ impl Session {
         self.send(out);
     }
 
-    fn spawn_tts(&self, seq: u64, text: String) {
+    /// Start synthesizing one sentence right away (parallel, bounded by `Voice::gate`).
+    /// Success -> `Cmd::Audio`; failures only mean "no audio for this sentence" (the phone speaks
+    /// it itself) unless they switch TTS off, which is announced once.
+    fn spawn_tts(&mut self, seq: u64, text: String) {
         let voice = self.deps.voice.clone();
         let tx = self.self_tx.clone();
         let lang = self.settings.lang.clone();
-        tokio::spawn(async move {
-            let Some(tts) = voice.tts.clone() else { return };
+        let wait = voice.tts_deadline(&text);
+        let handle = tokio::spawn(async move {
+            let Some(tts) = voice.tts.clone() else {
+                let _ = tx.send(Cmd::AudioSkip { seq });
+                return;
+            };
             let _permit = voice.gate.acquire().await;
             if !voice.tts_enabled() {
+                let _ = tx.send(Cmd::AudioSkip { seq });
                 return;
             }
-            match tts.synth(&text, &lang).await {
+            let result = match tokio::time::timeout(wait, tts.synth(&text, &lang)).await {
+                Ok(r) => r,
+                Err(_) => Err(crate::voice::VoiceError::timeout()),
+            };
+            match result {
                 Ok(data) => {
+                    voice.record_ok();
                     let _ = tx.send(Cmd::Audio { seq, data });
                 }
                 Err(e) => {
-                    tracing::warn!("tts failed: {}", e.message);
-                    if e.disables_tts() {
+                    tracing::warn!("tts failed for seq {seq}: {}", e.message);
+                    let _ = tx.send(Cmd::AudioSkip { seq });
+                    if voice.record_failure(&e) {
                         let _ = tx.send(Cmd::TtsFailed);
                     }
                 }
             }
         });
+        self.tts_tasks.retain(|h| !h.is_finished());
+        self.tts_tasks.push(handle.abort_handle());
     }
 
     fn interrupt(&mut self) {
@@ -424,10 +503,88 @@ impl Session {
         let seq = self.alloc_seq();
         self.emit_frame(json!({"t": "turn_end", "seq": seq, "turn": r.turn, "interrupted": true}));
         self.send(state_frame("idle", None));
+        for h in self.tts_tasks.drain(..) {
+            h.abort();
+        }
+        self.audio_floor = self.next_seq;
         if let Some(p) = self.capture.take() {
             let _ = p.reply.send(Err("Học sinh đã ngắt lời, bỏ việc chụp ảnh.".into()));
         }
         self.brain.interrupt();
+    }
+
+    // ----- general MCP helpers -----
+
+    fn status(&self) -> Value {
+        let busy = self.running.is_some() || self.brain_busy || !self.pending.is_empty();
+        let state = if busy {
+            "busy"
+        } else if self.listener.as_ref().map(|l| !l.is_closed()).unwrap_or(false) {
+            "listening"
+        } else {
+            "idle"
+        };
+        let v = &self.deps.voice;
+        json!({
+            "connected": self.conn.is_some(),
+            "sessionId": self.id,
+            "title": self.meta.title,
+            "state": state,
+            "tts": if v.tts_enabled() { v.tts_provider } else { "device" },
+            "stt": if v.stt_enabled() { v.stt_provider } else { "device" },
+            "lang": self.settings.lang,
+            "lastSeq": self.next_seq.saturating_sub(1),
+        })
+    }
+
+    /// Run `lines` through the real parser as one self-contained "turn" and send the events.
+    fn present(&mut self, lines: String) -> Result<Value, String> {
+        if self.conn.is_none() {
+            return Err("Điện thoại đang không kết nối.".into());
+        }
+        if self.running.is_some() || self.brain_busy || !self.pending.is_empty() {
+            return Err("Gia sư đang bận (đang giảng hoặc đang xử lý lời học sinh). Gọi interrupt trước nếu muốn chen ngang.".into());
+        }
+        if lines.trim().is_empty() {
+            return Err("Không có nội dung.".into());
+        }
+        self.turn += 1;
+        let turn = self.turn;
+        let mut p = LessonParser::new(turn, self.next_seq, self.steps);
+        let mut evs = p.push_str(&lines);
+        evs.extend(p.push_str("
+"));
+        evs.extend(p.finish());
+        self.next_seq = p.next_seq();
+        self.steps = p.steps();
+        let dropped = p.take_dropped();
+        let count = evs.iter().filter(|e| e.seq().is_some()).count();
+        if evs.iter().any(|e| matches!(e, Event::Say { .. })) {
+            self.send(state_frame("speaking", None));
+        }
+        self.emit_events(evs);
+        let seq = self.alloc_seq();
+        self.emit_frame(json!({"t": "turn_end", "seq": seq, "turn": turn}));
+        self.send(state_frame("idle", None));
+        Ok(json!({"turn": turn, "events": count, "dropped": dropped}))
+    }
+
+    /// Stop the tutor turn if one is running; otherwise cut off what an MCP caller queued.
+    fn mcp_interrupt(&mut self) -> Value {
+        if self.running.is_some() {
+            self.interrupt();
+            return json!({"interrupted": true, "was": "tutor_turn"});
+        }
+        for h in self.tts_tasks.drain(..) {
+            h.abort();
+        }
+        self.audio_floor = self.next_seq;
+        if self.turn > 0 && self.conn.is_some() {
+            let seq = self.alloc_seq();
+            let turn = self.turn;
+            self.emit_frame(json!({"t": "turn_end", "seq": seq, "turn": turn, "interrupted": true}));
+        }
+        json!({"interrupted": true, "was": "queued_playback"})
     }
 
     // ----- photos -----

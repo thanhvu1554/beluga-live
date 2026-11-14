@@ -69,11 +69,25 @@ pub fn build_args(cfg: &ClaudeCfg, session_id: &str, resume: bool, model: &str) 
     a.extend(["--tools", "Read,Skill"].map(String::from));
     a.extend(["--allowedTools", "Read", "Skill", CAPTURE_TOOL].map(String::from));
     a.extend(["--permission-mode", "dontAsk", "--permission-prompts", "none"].map(String::from));
-    if let Some(e) = &cfg.effort {
+    if let Some(e) = effort_for(cfg, model) {
         a.push("--effort".into());
-        a.push(e.clone());
+        a.push(e);
     }
     a
+}
+
+/// Reasoning effort per model: sonnet medium, opus low (it is slow), haiku none.
+/// `BELUGA_EFFORT` (cfg.effort) overrides for every model. Values are the ones `claude --help`
+/// lists for `--effort`: low, medium, high, xhigh, max.
+pub fn effort_for(cfg: &ClaudeCfg, model: &str) -> Option<String> {
+    if let Some(e) = &cfg.effort {
+        return Some(e.clone());
+    }
+    match model {
+        "sonnet" => Some("medium".into()),
+        "opus" => Some("low".into()),
+        _ => None,
+    }
 }
 
 impl ClaudeDriver {
@@ -503,6 +517,22 @@ mod tests {
         assert_eq!(r[pos + 1], "sid");
         assert!(!r.contains(&"--session-id".to_string()));
         assert_eq!(r[r.iter().position(|x| x == "--model").unwrap() + 1], "haiku");
+    }
+
+    #[test]
+    fn effort_depends_on_model_unless_overridden() {
+        let flag = |c: &ClaudeCfg, m: &str| {
+            let a = build_args(c, "sid", false, m);
+            a.iter().position(|x| x == "--effort").map(|i| a[i + 1].clone())
+        };
+        let c = cfg();
+        assert_eq!(flag(&c, "sonnet").as_deref(), Some("medium"));
+        assert_eq!(flag(&c, "opus").as_deref(), Some("low"));
+        assert_eq!(flag(&c, "haiku"), None);
+        let o = ClaudeCfg { effort: Some("high".into()), ..cfg() };
+        for m in ["sonnet", "opus", "haiku"] {
+            assert_eq!(flag(&o, m).as_deref(), Some("high"));
+        }
     }
 
     #[test]

@@ -41,6 +41,13 @@ async fn harness_with(voice: Arc<Voice>, delay_ms: u64, capture_ms: u64) -> Harn
         claude_bin: "claude".into(),
         claude_effort: None,
         eleven: None,
+        genvoice: None,
+        tts_provider: "auto".into(),
+        stt_provider: "auto".into(),
+        tts_base_ms: 8000,
+        tts_per_char_ms: 60,
+        stt_base_ms: 8000,
+        stt_per_sec_ms: 1500,
         fixed_pair_code: Some(CODE.into()),
     };
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -312,7 +319,7 @@ async fn capture_times_out_with_text_error() {
 
 #[tokio::test]
 async fn tts_fallback_when_probe_fails() {
-    let voice = Arc::new(Voice::build(Some(Arc::new(FakeVoice { fail_status: Some(402), transcript: String::new() })), None));
+    let voice = Arc::new(Voice::build(Some(Arc::new(FakeVoice { fail_status: Some(402), transcript: String::new() })), None, 3000));
     let h = harness_with(voice, 5, 8000).await;
     let mut p = Phone::connect(&h).await;
     let ready = p.hello(json!({"pairCode":CODE})).await;
@@ -332,7 +339,7 @@ async fn tts_fallback_when_probe_fails() {
 
 #[tokio::test]
 async fn tts_audio_frames_follow_say_when_enabled() {
-    let voice = Arc::new(Voice::build(Some(Arc::new(FakeVoice { fail_status: None, transcript: String::new() })), None));
+    let voice = Arc::new(Voice::build(Some(Arc::new(FakeVoice { fail_status: None, transcript: String::new() })), None, 3000));
     let h = harness_with(voice, 5, 8000).await;
     let mut p = Phone::connect(&h).await;
     let ready = p.hello(json!({"pairCode":CODE})).await;
@@ -357,6 +364,7 @@ async fn server_stt_turns_audio_into_heard_and_a_turn() {
     let voice = Arc::new(Voice::build(
         None,
         Some(Arc::new(FakeVoice { fail_status: None, transcript: "giảng bài này đi".into() })),
+        3000,
     ));
     let h = harness_with(voice, 5, 8000).await;
     let mut p = Phone::connect(&h).await;

@@ -34,6 +34,13 @@ async fn real_claude_turn_with_capture_photo_tool() {
         claude_bin: "claude".into(),
         claude_effort: std::env::var("BELUGA_EFFORT").ok(),
         eleven: None,
+        genvoice: None,
+        tts_provider: "auto".into(),
+        stt_provider: "auto".into(),
+        tts_base_ms: 8000,
+        tts_per_char_ms: 60,
+        stt_base_ms: 8000,
+        stt_per_sec_ms: 1500,
         fixed_pair_code: Some("111111".into()),
     };
     tokio::spawn(async move {
@@ -94,6 +101,13 @@ async fn real_server(data: &std::path::Path) -> std::net::SocketAddr {
         claude_bin: "claude".into(),
         claude_effort: None,
         eleven: None,
+        genvoice: None,
+        tts_provider: "auto".into(),
+        stt_provider: "auto".into(),
+        tts_base_ms: 8000,
+        tts_per_char_ms: 60,
+        stt_base_ms: 8000,
+        stt_per_sec_ms: 1500,
         fixed_pair_code: Some("111111".into()),
     };
     tokio::spawn(async move {

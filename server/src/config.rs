@@ -12,6 +12,19 @@ pub struct ElevenCfg {
     pub stt_model: Option<String>,
 }
 
+/// GenVoice (https://genvoice.pro): async ElevenLabs-compatible TTS and STT.
+#[derive(Clone)]
+pub struct GenvoiceCfg {
+    pub api_key: String,
+    pub voice_id: String,
+    pub tts_model: String,
+    pub base_url: String,
+    /// Poll interval for async tasks.
+    pub poll_ms: u64,
+    /// Max time the phone waits for one sentence's audio (sent as `ready.audioWaitMs`).
+    pub audio_wait_ms: u64,
+}
+
 #[derive(Clone)]
 pub struct Config {
     pub port: u16,
@@ -26,6 +39,16 @@ pub struct Config {
     pub claude_bin: String,
     pub claude_effort: Option<String>,
     pub eleven: Option<ElevenCfg>,
+    pub genvoice: Option<GenvoiceCfg>,
+    /// `auto`, `genvoice`, `elevenlabs` or `device`.
+    pub tts_provider: String,
+    pub stt_provider: String,
+    /// Per-sentence TTS deadline: `tts_base_ms + tts_per_char_ms * chars`.
+    pub tts_base_ms: u64,
+    pub tts_per_char_ms: u64,
+    /// Server-side STT deadline: `stt_base_ms + stt_per_sec_ms * seconds of audio`.
+    pub stt_base_ms: u64,
+    pub stt_per_sec_ms: u64,
     /// Fixed pairing code (tests); normally generated and persisted.
     pub fixed_pair_code: Option<String>,
 }
@@ -84,7 +107,7 @@ impl Config {
             .map(|t| parse_dotenv(&t))
             .unwrap_or_default();
         for (k, v) in std::env::vars() {
-            if k.starts_with("ELEVENLABS_") || k == "PORT" || k.starts_with("BELUGA_") {
+            if k.starts_with("ELEVENLABS_") || k.starts_with("GENVOICE_") || k == "TTS_PROVIDER" || k == "STT_PROVIDER" || k == "PORT" || k.starts_with("BELUGA_") {
                 env.insert(k, v);
             }
         }
@@ -120,8 +143,17 @@ impl Config {
             }),
             _ => None,
         };
-        // Mock mode must never spend ElevenLabs quota unless explicitly asked.
-        let eleven = if mock && get("BELUGA_VOICE_IN_MOCK").is_none() { None } else { eleven };
+        let genvoice = get("GENVOICE_API_KEY").map(|api_key| GenvoiceCfg {
+            api_key,
+            voice_id: get("GENVOICE_VOICE_ID").unwrap_or_else(|| "5yEPTrA0uAhZsBEhHjfi".into()),
+            tts_model: get("GENVOICE_TTS_MODEL").unwrap_or_else(|| "eleven_flash_v2_5".into()),
+            base_url: get("GENVOICE_BASE_URL").unwrap_or_else(|| "https://api.genvoice.pro".into()),
+            poll_ms: 220,
+            audio_wait_ms: crate::voice::GENVOICE_WAIT_MS,
+        });
+        // Mock mode must never spend voice credits unless explicitly asked.
+        let voice_off = mock && get("BELUGA_VOICE_IN_MOCK").is_none();
+        let (eleven, genvoice) = if voice_off { (None, None) } else { (eleven, genvoice) };
 
         Config {
             port,
@@ -134,6 +166,13 @@ impl Config {
             claude_bin: get("BELUGA_CLAUDE_BIN").unwrap_or_else(|| "claude".into()),
             claude_effort: get("BELUGA_EFFORT"),
             eleven,
+            genvoice,
+            tts_provider: get("TTS_PROVIDER").unwrap_or_else(|| "auto".into()),
+            stt_provider: get("STT_PROVIDER").unwrap_or_else(|| "auto".into()),
+            tts_base_ms: get("BELUGA_TTS_BASE_MS").and_then(|v| v.parse().ok()).unwrap_or(crate::voice::DEFAULT_TTS_BASE_MS),
+            tts_per_char_ms: get("BELUGA_TTS_PER_CHAR_MS").and_then(|v| v.parse().ok()).unwrap_or(crate::voice::DEFAULT_TTS_PER_CHAR_MS),
+            stt_base_ms: get("BELUGA_STT_BASE_MS").and_then(|v| v.parse().ok()).unwrap_or(crate::voice::DEFAULT_STT_BASE_MS),
+            stt_per_sec_ms: get("BELUGA_STT_PER_SEC_MS").and_then(|v| v.parse().ok()).unwrap_or(crate::voice::DEFAULT_STT_PER_SEC_MS),
             fixed_pair_code: None,
         }
     }

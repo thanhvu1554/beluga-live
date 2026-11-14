@@ -27,11 +27,30 @@ pub struct AppState {
     pub deps: Deps,
     sessions: Mutex<HashMap<String, UnboundedSender<Cmd>>>,
     next_conn: AtomicU64,
+    /// The phone connection attached most recently: (connection id, session id).
+    active: Mutex<Option<(u64, String)>>,
 }
 
 impl AppState {
     pub fn new(deps: Deps) -> Arc<AppState> {
-        Arc::new(AppState { deps, sessions: Mutex::new(HashMap::new()), next_conn: AtomicU64::new(1) })
+        Arc::new(AppState { deps, sessions: Mutex::new(HashMap::new()), next_conn: AtomicU64::new(1), active: Mutex::new(None) })
+    }
+
+    pub fn set_active(&self, conn: u64, session_id: &str) {
+        *self.active.lock().unwrap() = Some((conn, session_id.to_string()));
+    }
+
+    pub fn clear_active(&self, conn: u64) {
+        let mut a = self.active.lock().unwrap();
+        if a.as_ref().map(|(c, _)| *c) == Some(conn) {
+            *a = None;
+        }
+    }
+
+    /// Session of the newest live phone connection (target of the general MCP tools).
+    pub fn active_session(&self) -> Option<UnboundedSender<Cmd>> {
+        let id = self.active.lock().unwrap().as_ref().map(|(_, s)| s.clone())?;
+        self.existing_session(&id)
     }
 
     pub fn existing_session(&self, id: &str) -> Option<UnboundedSender<Cmd>> {
@@ -51,10 +70,7 @@ impl AppState {
 
 /// Build state from `cfg` (probing ElevenLabs once if configured) and serve forever.
 pub async fn start(cfg: Config, listener: TcpListener) -> std::io::Result<()> {
-    let voice = match &cfg.eleven {
-        Some(e) => Arc::new(Voice::from_eleven(e)),
-        None => Voice::none(),
-    };
+    let voice = Arc::new(Voice::from_config(&cfg));
     start_with(cfg, listener, voice).await
 }
 
@@ -68,6 +84,7 @@ pub async fn start_with(cfg: Config, listener: TcpListener, voice: Arc<Voice>) -
     let app = Router::new()
         .route("/health", get(health))
         .route("/ws", get(ws_upgrade))
+        .route("/mcp", post(mcp_general_post).get(mcp_get).delete(mcp_delete))
         .route("/mcp/{sid}", post(mcp_post).get(mcp_get).delete(mcp_delete))
         .nest_service("/board", tower_http::services::ServeDir::new(board_dir))
         .with_state(state);
@@ -98,6 +115,24 @@ async fn mcp_post(
     }
 }
 
+/// General MCP for any Claude Code session on this PC: talks to the newest live phone.
+async fn mcp_general_post(
+    State(st): State<Arc<AppState>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    body: String,
+) -> Response {
+    if !peer.ip().is_loopback() {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let Ok(req) = serde_json::from_str::<Value>(&body) else {
+        return (StatusCode::BAD_REQUEST, "bad json").into_response();
+    };
+    match crate::mcp::handle_general_body(st.active_session(), req).await {
+        Some(resp) => Json(resp).into_response(),
+        None => StatusCode::ACCEPTED.into_response(),
+    }
+}
+
 async fn mcp_get() -> StatusCode {
     StatusCode::METHOD_NOT_ALLOWED // no server-initiated SSE stream
 }
@@ -118,6 +153,7 @@ fn err_frame(code: &str, text: &str, fatal: bool) -> Value {
 
 struct AudioBuf {
     data: Vec<u8>,
+    sample_rate: u32,
 }
 
 async fn handle_socket(st: Arc<AppState>, socket: WebSocket) {
@@ -188,8 +224,11 @@ async fn handle_socket(st: Arc<AppState>, socket: WebSocket) {
         pair_token: new_token,
     });
     drop(otx);
+    st.set_active(conn, &sid);
 
     let mut audio: Option<AudioBuf> = None;
+    // Language for server-side STT; follows the phone's settings.
+    let mut lang = hello["settings"]["lang"].as_str().filter(|l| *l == "en").unwrap_or("vi").to_string();
     while let Some(Ok(msg)) = stream.next().await {
         match msg {
             Message::Binary(b) => {
@@ -203,6 +242,9 @@ async fn handle_socket(st: Arc<AppState>, socket: WebSocket) {
                 let Ok(v) = serde_json::from_str::<Value>(t.as_str()) else { continue };
                 match v["t"].as_str().unwrap_or("") {
                     "settings" => {
+                        if let Some(l) = v["lang"].as_str().filter(|l| *l == "vi" || *l == "en") {
+                            lang = l.to_string();
+                        }
                         let _ = session.send(Cmd::Settings(v));
                     }
                     "user_text" => {
@@ -232,26 +274,45 @@ async fn handle_socket(st: Arc<AppState>, socket: WebSocket) {
                             None => reply(json!({"t": "notice", "code": "bad_photo", "text": "Ảnh không đọc được."})),
                         }
                     }
-                    "audio_start" => audio = Some(AudioBuf { data: Vec::new() }),
+                    "audio_start" => {
+                        let rate = v["sampleRate"].as_u64().filter(|r| (8000..=48000).contains(r)).unwrap_or(16000);
+                        audio = Some(AudioBuf { data: Vec::new(), sample_rate: rate as u32 });
+                    }
                     "audio_end" => {
                         let Some(buf) = audio.take() else { continue };
-                        match st.deps.voice.stt.clone() {
-                            Some(stt) => {
-                                let session = session.clone();
-                                let lang = v["lang"].as_str().unwrap_or("vi").to_string();
-                                let reply_tx = session.clone();
-                                tokio::spawn(async move {
-                                    match stt.transcribe(buf.data, &lang).await {
-                                        Ok(text) if !text.is_empty() => {
-                                            let _ = reply_tx.send(Cmd::Heard { text });
-                                        }
-                                        Ok(_) => {}
-                                        Err(e) => tracing::warn!("stt failed: {}", e.message),
-                                    }
-                                });
+                        let Some(stt) = st.deps.voice.stt.clone() else {
+                            reply(json!({"t": "notice", "code": "stt_unavailable", "text": "Server chưa nhận dạng giọng nói."}));
+                            continue;
+                        };
+                        let tx = session.clone();
+                        let lang = lang.clone();
+                        let pcm_len = if buf.data.starts_with(b"RIFF") { buf.data.len().saturating_sub(44) } else { buf.data.len() };
+                        let secs = pcm_len as f64 / (buf.sample_rate as f64 * 2.0);
+                        let limit = st.deps.voice.stt_deadline(secs);
+                        tokio::spawn(async move {
+                            let notice = |code: &str, text: &str| Cmd::Notice(json!({"t": "notice", "code": code, "text": text}));
+                            if buf.data.is_empty() {
+                                let _ = tx.send(notice("stt_empty", "Không nghe thấy gì."));
+                                return;
                             }
-                            None => reply(json!({"t": "notice", "code": "stt_unavailable", "text": "Server chưa nhận dạng giọng nói."})),
-                        }
+                            let wav = crate::voice::ensure_wav(buf.data, buf.sample_rate);
+                            match tokio::time::timeout(limit, stt.transcribe(wav, &lang)).await {
+                                Ok(Ok(text)) if !text.trim().is_empty() => {
+                                    let _ = tx.send(Cmd::Heard { text });
+                                }
+                                Ok(Ok(_)) => {
+                                    let _ = tx.send(notice("stt_empty", "Không nghe rõ, cậu nói lại nhé."));
+                                }
+                                Ok(Err(e)) => {
+                                    tracing::warn!("stt failed: {}", e.message);
+                                    let _ = tx.send(notice("stt_failed", "Nhận dạng giọng nói lỗi, thử lại nhé."));
+                                }
+                                Err(_) => {
+                                    tracing::warn!("stt timed out");
+                                    let _ = tx.send(notice("stt_failed", "Nhận dạng giọng nói quá lâu, thử lại nhé."));
+                                }
+                            }
+                        });
                     }
                     "list_sessions" => {
                         let items: Vec<Value> = st
@@ -272,6 +333,7 @@ async fn handle_socket(st: Arc<AppState>, socket: WebSocket) {
                         let _ = session.send(Cmd::Detach { conn });
                         sid = id.to_string();
                         session = st.session(&sid);
+                        st.set_active(conn, &sid);
                         // The writer only stays open while some session holds a sender; get a fresh one.
                         let Some(tx) = weak.upgrade() else { break };
                         let _ = session.send(Cmd::Attach {
@@ -290,4 +352,5 @@ async fn handle_socket(st: Arc<AppState>, socket: WebSocket) {
         }
     }
     let _ = session.send(Cmd::Detach { conn });
+    st.clear_active(conn);
 }

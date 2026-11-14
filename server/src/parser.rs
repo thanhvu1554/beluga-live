@@ -62,6 +62,7 @@ pub struct LessonParser {
     line: String,
     pending_bytes: Vec<u8>,
     stopped: bool,
+    dropped: Vec<String>,
 }
 
 impl LessonParser {
@@ -76,7 +77,18 @@ impl LessonParser {
             line: String::new(),
             pending_bytes: Vec::new(),
             stopped: false,
+            dropped: Vec::new(),
         }
+    }
+
+    /// Directive lines that were dropped (bad JSON, unknown command...), with the reason.
+    pub fn take_dropped(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.dropped)
+    }
+
+    fn drop_line(&mut self, line: &str, why: &str) {
+        tracing::warn!("lesson parser: dropped line ({why}): {}", truncate(line, 120));
+        self.dropped.push(format!("{why}: {}", truncate(line, 120)));
     }
 
     pub fn next_seq(&self) -> u64 {
@@ -208,7 +220,7 @@ impl LessonParser {
             parse_json_lenient(rest)
         };
         let Some(data) = parsed else {
-            tracing::warn!("lesson parser: dropped line with bad or missing JSON: {}", truncate(line, 120));
+            self.drop_line(line, "bad or missing JSON");
             return;
         };
         let str_field = |k: &str| data.get(k).and_then(|v| v.as_str()).map(|s| s.trim().to_string());
@@ -216,7 +228,7 @@ impl LessonParser {
         match name {
             "title" => match str_field("text") {
                 Some(t) if !t.is_empty() => out.push(Event::Title { text: t }),
-                _ => tracing::warn!("lesson parser: @title without text"),
+                _ => self.drop_line(line, "@title without text"),
             },
             "step" => {
                 let title = str_field("title").unwrap_or_default();
@@ -225,7 +237,7 @@ impl LessonParser {
             "show" => {
                 let Some(mut obj) = data.as_object().cloned() else { return };
                 if !obj.get("type").map(|t| t.is_string()).unwrap_or(false) {
-                    tracing::warn!("lesson parser: @show without type");
+                    self.drop_line(line, "@show without type");
                     return;
                 }
                 let step = match self.current_step {
@@ -253,7 +265,7 @@ impl LessonParser {
                 let seq = self.alloc_seq();
                 out.push(Event::Done { seq, turn: self.turn });
             }
-            other => tracing::warn!("lesson parser: unknown directive @{other}"),
+            other => self.drop_line(line, &format!("unknown directive @{other}")),
         }
     }
 }
@@ -520,6 +532,20 @@ mod tests {
         ]);
         assert_eq!(says(&ev), vec!["Trước.", "Sau."]);
         assert_eq!(ev.len(), 2);
+    }
+
+    #[test]
+    fn dropped_lines_are_reported() {
+        let mut p = LessonParser::new(1, 1, 0);
+        p.push_str("ok.
+@bogus {}
+@step nope
+@show {\"x\":1}
+");
+        let d = p.take_dropped();
+        assert_eq!(d.len(), 3);
+        assert!(d[0].contains("unknown directive @bogus"));
+        assert!(p.take_dropped().is_empty());
     }
 
     #[test]
