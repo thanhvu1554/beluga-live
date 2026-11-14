@@ -41,7 +41,7 @@ struct BoardPanel: View {
             }
             .padding(.horizontal, Space.xl)
         }
-        .padding(.bottom, Space.xs)
+        .padding(.bottom, Space.s)
         .contentShape(.rect)
         .gesture(
             DragGesture()

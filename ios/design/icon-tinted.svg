@@ -1,24 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <!-- Beluga Live app icon: solid geometric beluga (melon forehead, no dorsal fin, notched flukes). -->
+  <!-- Beluga Live app icon: geometric beluga. Body, melon forehead, two-lobed tail, one eye. No mouth, no dorsal fin. -->
   <rect width="1024" height="1024" fill="#000000"/>
-  <g transform="translate(512 540) scale(1.04) translate(-549 -540)">
-  <g fill="#FFFFFF" stroke="#FFFFFF" stroke-width="28" stroke-linejoin="round" stroke-linecap="round">
-    <path d="M168 610
-             C150 520 222 404 340 372
-             C430 348 498 380 520 424
-             C610 414 722 446 800 520
-             L902 456 C920 446 936 458 930 476
-             C918 512 884 540 862 560
-             C884 580 918 608 930 644
-             C936 662 920 674 902 664
-             L790 604
-             C700 690 560 722 424 714
-             C290 706 184 690 168 610 Z"/>
+  <g transform="translate(-56 -4)">
+  <g fill="#FFFFFF">
+    <rect x="196" y="452" width="520" height="236" rx="118"/>
+    <circle cx="336" cy="498" r="132"/>
+    <path d="M670 566 C760 566 806 540 826 490 L878 508 C860 586 800 642 670 668 Z"/>
+    <ellipse cx="806" cy="462" rx="72" ry="30" transform="rotate(-22 806 462)"/>
+    <ellipse cx="898" cy="462" rx="72" ry="30" transform="rotate(22 898 462)"/>
   </g>
-  <g fill="none" stroke="#000000" stroke-width="22" stroke-linecap="round">
-    <path d="M196 640 C240 672 314 674 362 646"/>
-    <path d="M468 620 C490 664 528 690 572 694"/>
-  </g>
-  <circle cx="318" cy="532" r="26" fill="#000000"/>
+  <circle cx="300" cy="506" r="21" fill="#000000"/>
   </g>
 </svg>

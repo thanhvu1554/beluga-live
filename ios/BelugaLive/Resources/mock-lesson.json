@@ -90,7 +90,7 @@
     ]
   },
   "review": [
-    {"t": "say", "seq": 1, "turn": 0, "text": "Lần trước cậu còn nhầm dấu ở phần xét dấu tam thức. Mình ôn lại một chút nhé?", "audio": false},
+    {"t": "say", "seq": 1, "turn": 0, "text": "Lần trước cậu còn nhầm dấu ở phần xét dấu tam thức. Tớ ôn lại với cậu một chút nhé?", "audio": false},
     {"t": "show", "seq": 2, "turn": 0, "step": 0, "block": {"type": "review_offer", "id": "r1", "topic": "Xét dấu tam thức bậc hai", "subject": "Toán", "lastSeen": "2026-11-12", "note": "Hay nhầm dấu khi hệ số a âm.", "fallback": "Ôn lại: Xét dấu tam thức bậc hai (Toán), lần cuối 12/11."}},
     {"t": "turn_end", "seq": 3, "turn": 0}
   ],
@@ -103,7 +103,7 @@
         {"after": 200, "frame": {"t": "capture_request", "requestId": "mock-r1"}},
         {"after": 900, "frame": {"t": "title", "text": "Toán · Bất phương trình bậc hai"}},
         {"after": 0, "frame": {"t": "state", "state": "speaking"}},
-        {"after": 0, "frame": {"t": "say", "seq": 1, "turn": 1, "text": "Mình thấy đề rồi, câu a là bất phương trình bậc hai.", "audio": true}},
+        {"after": 0, "frame": {"t": "say", "seq": 1, "turn": 1, "text": "Tớ thấy đề rồi, câu a là bất phương trình bậc hai.", "audio": true}},
         {"after": 800, "frame": {"t": "audio_skip", "seq": 1}},
         {"after": 100, "frame": {"t": "step", "seq": 2, "turn": 1, "index": 0, "title": "Đọc đề"}},
         {"after": 50, "frame": {"t": "show", "seq": 3, "turn": 1, "step": 0, "block": {"type": "math", "id": "b1", "tex": "x^2 - 5x + 6 > 0"}}},

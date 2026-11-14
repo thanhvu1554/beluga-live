@@ -44,7 +44,7 @@ struct RootView: View {
                         .padding(.horizontal, Space.l)
                         .padding(.bottom, controller.boardVisible
                                  ? geo.size.height * 0.6 + Space.m
-                                 : Size.control + Space.s + Space.m)
+                                 : Size.pillHeight + Space.s + Space.m)
                         .transition(.opacity)
                 }
 

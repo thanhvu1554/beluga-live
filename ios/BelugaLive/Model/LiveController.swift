@@ -612,6 +612,8 @@ final class LiveController {
 
     func level(at date: Date) -> Float {
         if isMock {
+            // Screenshot scenes hold a steady mid level so the frame shows the glow; live mock runs use speech-like levels.
+            if options.scene != nil { return mockScriptedLevel == nil ? 0 : 0.6 }
             switch mockScriptedLevel {
             case .listening: return mockLevels.voice(at: date.timeIntervalSinceReferenceDate, rate: 1.0)
             case .speaking: return mockLevels.voice(at: date.timeIntervalSinceReferenceDate, rate: 1.3)
@@ -754,9 +756,11 @@ final class LiveController {
 final class MockLevels {
     func voice(at t: Double, rate: Double) -> Float {
         let tt = t * rate
-        let syllable = abs(sin(tt * 6.8)) * (0.55 + 0.45 * sin(tt * 1.9 + 1.3))
-        let phrase = sin(tt * 0.9) > -0.75 ? 1.0 : 0.15
-        let jitter = 0.08 * sin(tt * 23.0)
-        return Float(max(0, min(1, (0.15 + 0.75 * syllable) * phrase + jitter)))
+        // Syllables (about 5 per second, wobbling), loud and soft words, and real pauses between phrases.
+        let syllable = pow(abs(sin(tt * 5.6 + 0.8 * sin(tt * 0.9))), 1.3)
+        let word = 0.45 + 0.55 * abs(sin(tt * 1.7 + 1.1))
+        let speaking = sin(tt * 0.75) > -0.5
+        guard speaking else { return 0 }
+        return Float(max(0, min(1, 0.08 + 0.85 * syllable * word)))
     }
 }

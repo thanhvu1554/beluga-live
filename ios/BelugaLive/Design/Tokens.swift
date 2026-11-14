@@ -27,9 +27,10 @@ enum Stroke {
 }
 
 enum Size {
-    static let control: CGFloat = 52
-    static let pillWidth: CGFloat = 168
-    static let pillHeight: CGFloat = 52
+    /// Row height of the floating controls; round buttons are `control - Space.s` (48 pt, above the 44 pt minimum).
+    static let control: CGFloat = 56
+    static let pillWidth: CGFloat = 200
+    static let pillHeight: CGFloat = 64
     static let icon: CGFloat = 17
 }
 
@@ -41,6 +42,14 @@ enum TypeScale {
     static let callout = Font.system(size: 15, weight: .regular)
     static let caption = Font.system(size: 13, weight: .regular)
     static let micro = Font.system(size: 11, weight: .medium)
+}
+
+/// Colours that are not ink. The pill's light is one token: swap `glow` to retint it.
+enum Palette {
+    /// The light inside the voice pill (monochrome by design).
+    static let glow = Color(white: 0.96)
+    /// The dark the light reads against, in both appearances.
+    static let scrim = Color.black
 }
 
 /// Neutral ink levels that adapt to light/dark.

@@ -1,61 +1,79 @@
 import SwiftUI
 import BelugaCore
 
-/// Rolling history of real audio levels so the bars show what was actually heard/played.
+/// Smooths a raw audio level into the value that drives the glow: fast attack (~60 ms), slow release
+/// (~250 ms). It also keeps the phase of the soft ripples, which only advances while there is sound,
+/// so a silent pill is completely still.
 @MainActor
-final class LevelHistory {
-    private(set) var values: [Float]
-    private var last: Date = .distantPast
-    private var smoothed: Float = 0
+final class GlowModel {
+    private(set) var level: CGFloat = 0
+    private(set) var phase: CGFloat = 0
+    private var last: Date?
 
-    init(count: Int) { values = Array(repeating: 0, count: count) }
-
-    func push(_ level: Float, at date: Date) {
-        guard date.timeIntervalSince(last) >= 1.0 / 30 else { return }
+    func update(raw: Float, at date: Date) {
+        let dt = last.map { min(0.1, max(0, date.timeIntervalSince($0))) } ?? 0
         last = date
-        // Fast attack, slower release: reads as voice, not jitter.
-        smoothed = level > smoothed ? smoothed + (level - smoothed) * 0.6 : smoothed + (level - smoothed) * 0.25
-        values.removeFirst()
-        values.append(smoothed)
+        let target = CGFloat(raw)
+        let tau = target > level ? 0.06 : 0.25
+        let alpha = dt > 0 ? CGFloat(1 - exp(-dt / tau)) : 0
+        level += (target - level) * alpha
+        if target == 0, level < 0.01 { level = 0 }
+        if level > 0.03 { phase += CGFloat(dt) * (1.2 + 5 * level) }
     }
 
-    func clear() {
-        smoothed = 0
-        for i in values.indices { values[i] = 0 }
+    func reset() {
+        level = 0
+        last = nil
     }
 }
 
-/// The voice pill: one glass capsule whose single drawing changes per state.
+/// The voice pill. Outer layer: system Liquid Glass (dark, in both appearances so the light reads on any
+/// camera image). Inner layer: a soft glow rising from the bottom edge, clipped to the capsule. Height and
+/// brightness follow the real, smoothed audio level; thinking, tool and asking have their own quiet shapes.
 struct PillView: View {
     let controller: LiveController
     @Environment(\.strings) private var s
-    @State private var history = LevelHistory(count: 23)
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var glow = GlowModel()
     @State private var pressing = false
 
     private var state: PillState { controller.pillState }
 
+    /// One soft-edged vertical ramp, reused every frame (opacity is applied on the layer).
+    private static let ramp = Gradient(stops: [
+        .init(color: Palette.glow.opacity(0), location: 0),
+        .init(color: Palette.glow.opacity(0.45), location: 0.55),
+        .init(color: Palette.glow.opacity(1), location: 1),
+    ])
+
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !animates)) { context in
             let date = context.date
-            let _ = history.push(controller.level(at: date), at: date)
-            HStack(spacing: Space.s) {
-                if let symbol {
-                    Image(systemName: symbol)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Ink.secondary)
-                        .contentTransition(.symbolEffect(.replace))
-                }
+            let _ = glow.update(raw: audioDriven ? controller.level(at: date) : 0, at: date)
+            ZStack {
                 Canvas { ctx, size in
                     draw(in: &ctx, size: size, date: date)
                 }
-                .frame(maxWidth: .infinity)
+                .allowsHitTesting(false)
+
+                outline
+
+                if let symbol {
+                    Image(systemName: symbol)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Palette.glow.opacity(0.85))
+                        .contentTransition(.symbolEffect(.replace))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                        .padding(.leading, Space.xl - Space.xs)
+                }
             }
-            .padding(.horizontal, Space.l)
             .frame(width: Size.pillWidth, height: Size.pillHeight)
+            .clipShape(.capsule)
         }
-        .scaleEffect(pressing ? 0.96 : 1)
+        .scaleEffect(pressing ? 0.97 : 1)
         .animation(.spring(response: 0.25, dampingFraction: 0.8), value: pressing)
-        .glassEffect(.regular.interactive(), in: .capsule)
+        .glassEffect(.regular.tint(Palette.scrim.opacity(0.55)).interactive(), in: .capsule)
+        .environment(\.colorScheme, .dark)
         .contentShape(.capsule)
         .gesture(
             DragGesture(minimumDistance: 0)
@@ -69,17 +87,34 @@ struct PillView: View {
                     controller.pillPressEnded()
                 }
         )
-        .onChange(of: state) { _, _ in history.clear() }
+        .onChange(of: state) { _, _ in glow.reset() }
         .accessibilityElement()
         .accessibilityLabel(s("pill.a11y.\(state.rawValue)"))
         .accessibilityHint(s(controller.settings.handsFree ? "pill.hint.handsFree" : "pill.hint.hold"))
         .accessibilityAddTraits(.isButton)
     }
 
+    /// Edge of the capsule: always there; dashed when offline, brighter while the pill is live.
+    @ViewBuilder private var outline: some View {
+        switch state {
+        case .offline:
+            Capsule().strokeBorder(Palette.glow.opacity(0.5),
+                                   style: StrokeStyle(lineWidth: Stroke.thin, dash: [4, 5]))
+        case .idle:
+            Capsule().strokeBorder(Palette.glow.opacity(0.28), lineWidth: Stroke.hairline)
+        default:
+            Capsule().strokeBorder(Palette.glow.opacity(0.18), lineWidth: Stroke.hairline)
+        }
+    }
+
+    /// Levels come from the microphone or the playing audio; everything else is drawn from the clock.
+    private var audioDriven: Bool { state == .listening || state == .speaking }
+
     private var animates: Bool {
         switch state {
         case .idle, .offline, .asking: return false
-        default: return true
+        case .listening, .speaking: return true
+        case .thinking, .tool, .done: return true
         }
     }
 
@@ -93,82 +128,84 @@ struct PillView: View {
         }
     }
 
-    private func draw(in ctx: inout GraphicsContext, size: CGSize, date: Date) {
-        let midY = size.height / 2
-        let w = size.width
-        let ink = GraphicsContext.Shading.color(.primary)
-        let faint = GraphicsContext.Shading.color(.primary.opacity(0.18))
-        let since = date.timeIntervalSince(controller.pill.enteredAt)
+    // MARK: Drawing
 
-        func line(from x0: CGFloat, to x1: CGFloat, shading: GraphicsContext.Shading, width: CGFloat = Stroke.regular, dash: [CGFloat] = []) {
-            var p = Path()
-            p.move(to: CGPoint(x: x0, y: midY))
-            p.addLine(to: CGPoint(x: x1, y: midY))
-            ctx.stroke(p, with: shading, style: StrokeStyle(lineWidth: width, lineCap: .round, dash: dash))
-        }
+    private func draw(in ctx: inout GraphicsContext, size: CGSize, date: Date) {
+        let since = date.timeIntervalSince(controller.pill.enteredAt)
+        let h = size.height
 
         switch state {
-        case .idle:
-            line(from: w * 0.3, to: w * 0.7, shading: .color(.primary.opacity(0.55)))
-
-        case .asking:
-            // Still, open: a line with a gap, inviting an answer.
-            line(from: 0, to: w * 0.4, shading: .color(.primary.opacity(0.7)))
-            line(from: w * 0.6, to: w, shading: .color(.primary.opacity(0.7)))
-
-        case .offline:
-            line(from: w * 0.15, to: w * 0.85, shading: .color(.primary.opacity(0.6)), width: Stroke.thin, dash: [3, 5])
-
-        case .thinking:
-            // Three dots that swell in turn (1.5 s cycle): unlike every other state, no line at all.
-            for i in 0..<3 {
-                let phase = (sin(since * 2 * .pi / 1.5 - Double(i) * 0.9 - .pi / 2) + 1) / 2
-                let r = CGFloat(2.5 + 2.5 * phase)
-                let x = w / 2 + CGFloat(i - 1) * 16
-                let dot = CGRect(x: x - r, y: midY - r, width: r * 2, height: r * 2)
-                ctx.fill(Path(ellipseIn: dot), with: .color(.primary.opacity(0.35 + 0.55 * phase)))
-            }
-
-        case .tool:
-            // Sweep across a faint baseline.
-            line(from: 0, to: w, shading: faint, width: Stroke.thin)
-            let t = (since.truncatingRemainder(dividingBy: 1.1)) / 1.1
-            let eased = 0.5 - cos(t * .pi) / 2
-            let seg = w * 0.22
-            let x = -seg + (w + seg) * eased
-            line(from: max(0, x), to: min(w, x + seg), shading: ink, width: Stroke.bold)
+        case .idle, .offline:
+            break
 
         case .listening, .speaking:
-            let values = history.values
-            let n = values.count
-            let gap = w / CGFloat(n)
-            let barW: CGFloat = state == .listening ? Stroke.bold : Stroke.regular
-            for (i, v) in values.enumerated() {
-                let x = gap * (CGFloat(i) + 0.5)
-                let level: CGFloat
-                if state == .speaking {
-                    // Output: symmetric around the centre, newest in the middle.
-                    let k = abs(i - n / 2)
-                    let idx = max(0, n - 1 - k * 2)
-                    level = CGFloat(values[min(n - 1, idx)])
-                } else {
-                    // Mic: scrolling history, newest on the right.
-                    level = CGFloat(v)
-                }
-                let h = max(barW, (size.height - Space.s) * level)
-                var p = Path()
-                p.move(to: CGPoint(x: x, y: midY - h / 2))
-                p.addLine(to: CGPoint(x: x, y: midY + h / 2))
-                ctx.stroke(p, with: .color(.primary.opacity(state == .listening ? 0.9 : 0.75)),
-                           style: StrokeStyle(lineWidth: barW, lineCap: .round))
+            let level = glow.level
+            guard level > 0.02 else { break }
+            // Height and brightness follow the level; the top edge ripples only while there is sound.
+            let height = h * 0.95 * pow(level, 0.8)
+            let amp: CGFloat = reduceMotion ? 0 : min(5, 1.5 + 6 * level)
+            band(&ctx, size, height: height, opacity: Double(min(1, level * 1.7)),
+                 amp: amp, phase: glow.phase, dome: state == .speaking)
+
+        case .thinking:
+            // The only state that moves without sound: a slow breathing band (2.4 s).
+            let breath = reduceMotion ? 0.5 : (sin(since * 2 * .pi / 2.4 - .pi / 2) + 1) / 2
+            band(&ctx, size, height: h * 0.34, opacity: 0.18 + 0.4 * breath)
+
+        case .tool:
+            // A streak sweeping across once per 1.4 s cycle.
+            let t = reduceMotion ? 0.5 : since.truncatingRemainder(dividingBy: 1.4) / 1.4
+            let eased = 0.5 - cos(t * .pi) / 2
+            let x = -size.width * 0.2 + size.width * 1.4 * eased
+            let blob = Path(ellipseIn: CGRect(x: x - size.width * 0.2, y: h * 0.45, width: size.width * 0.4, height: h * 0.9))
+            ctx.drawLayer { layer in
+                layer.opacity = 0.85
+                layer.addFilter(.blur(radius: 8))
+                layer.fill(blob, with: .color(Palette.glow))
             }
 
+        case .asking:
+            // Still, faintly lit from below: an invitation to speak.
+            band(&ctx, size, height: h * 0.3, opacity: 0.45)
+
         case .done:
-            // Close to a point, then reopen to the idle line.
-            let t = min(1, since / 1.2)
-            let closing = t < 0.5 ? 1 - t * 2 : (t - 0.5) * 2
-            let half = max(1.5, w * 0.2 * closing)
-            line(from: w / 2 - half, to: w / 2 + half, shading: ink, width: Stroke.bold)
+            // The glow closes down once.
+            let t = min(1, since / 0.9)
+            band(&ctx, size, height: h * 0.55 * (1 - t), opacity: 0.8 * (1 - t))
+        }
+    }
+
+    /// A glow band rising from the bottom edge: soft top edge, brightest at the base.
+    private func band(_ ctx: inout GraphicsContext, _ size: CGSize, height: CGFloat, opacity: Double,
+                      amp: CGFloat = 0, phase: CGFloat = 0, dome: Bool = false) {
+        guard height > 0.5, opacity > 0.01 else { return }
+        let w = size.width, h = size.height
+        var path = Path()
+        let steps = 24
+        path.move(to: CGPoint(x: -12, y: h + 12))
+        for i in 0...steps {
+            let u = CGFloat(i) / CGFloat(steps)
+            // Speaking is a dome (louder in the middle); listening is flat.
+            let envelope: CGFloat = dome ? 0.55 + 0.45 * sin(.pi * u) : 1
+            let ripple = amp * (0.6 * sin(2 * .pi * 1.3 * u + phase) + 0.4 * sin(2 * .pi * 2.1 * u - 1.4 * phase))
+            path.addLine(to: CGPoint(x: -12 + (w + 24) * u, y: h - height * envelope - ripple))
+        }
+        path.addLine(to: CGPoint(x: w + 12, y: h + 12))
+        path.closeSubpath()
+
+        let top = CGPoint(x: 0, y: h - height - amp)
+        let bottom = CGPoint(x: 0, y: h)
+        ctx.drawLayer { layer in
+            layer.opacity = opacity
+            layer.addFilter(.blur(radius: 7))
+            layer.fill(path, with: .linearGradient(Self.ramp, startPoint: top, endPoint: bottom))
+        }
+        // A tighter, brighter core at the base.
+        let coreTop = CGPoint(x: 0, y: h - height * 0.5)
+        ctx.drawLayer { layer in
+            layer.opacity = opacity * 0.85
+            layer.addFilter(.blur(radius: 3))
+            layer.fill(path, with: .linearGradient(Self.ramp, startPoint: coreTop, endPoint: bottom))
         }
     }
 }
