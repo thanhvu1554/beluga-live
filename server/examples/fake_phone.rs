@@ -239,7 +239,9 @@ async fn main() {
                 wrote(format!("[{now} ms] TURN_END (ask seen: {ask_seen_in_turn})"), &mut transcript);
                 // let trailing audio frames arrive, then go on
                 let quiet = Duration::from_millis(2500);
-                while let Ok(Some(Ok(Message::Text(t)))) = tokio::time::timeout(quiet, ws.next()).await {
+                while let Ok(Some(Ok(m))) = tokio::time::timeout(quiet, ws.next()).await {
+                    // (a WebSocket ping must not end the wait: it once hid the last audio frames)
+                    let Message::Text(t) = m else { continue };
                     if let Ok(f) = serde_json::from_str::<Value>(t.as_str()) {
                         let now = t0.elapsed().as_millis();
                         if f["t"] == "audio" {
