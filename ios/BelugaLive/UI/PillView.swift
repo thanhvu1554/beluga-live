@@ -51,6 +51,9 @@ struct PillView: View {
             let date = context.date
             let _ = glow.update(raw: audioDriven ? controller.level(at: date) : 0, at: date)
             ZStack {
+                // Dark base so the light reads on any camera image, in both appearances.
+                Capsule().fill(Palette.scrim.opacity(0.5))
+
                 Canvas { ctx, size in
                     draw(in: &ctx, size: size, date: date)
                 }
@@ -72,7 +75,7 @@ struct PillView: View {
         }
         .scaleEffect(pressing ? 0.97 : 1)
         .animation(.spring(response: 0.25, dampingFraction: 0.8), value: pressing)
-        .glassEffect(.regular.tint(Palette.scrim.opacity(0.55)).interactive(), in: .capsule)
+        .glassEffect(.regular.tint(Palette.scrim.opacity(0.6)).interactive(), in: .capsule)
         .environment(\.colorScheme, .dark)
         .contentShape(.capsule)
         .gesture(
@@ -150,17 +153,17 @@ struct PillView: View {
         case .thinking:
             // The only state that moves without sound: a slow breathing band (2.4 s).
             let breath = reduceMotion ? 0.5 : (sin(since * 2 * .pi / 2.4 - .pi / 2) + 1) / 2
-            band(&ctx, size, height: h * 0.34, opacity: 0.18 + 0.4 * breath)
+            band(&ctx, size, height: h * 0.36, opacity: 0.22 + 0.5 * breath)
 
         case .tool:
             // A streak sweeping across once per 1.4 s cycle.
             let t = reduceMotion ? 0.5 : since.truncatingRemainder(dividingBy: 1.4) / 1.4
             let eased = 0.5 - cos(t * .pi) / 2
             let x = -size.width * 0.2 + size.width * 1.4 * eased
-            let blob = Path(ellipseIn: CGRect(x: x - size.width * 0.2, y: h * 0.45, width: size.width * 0.4, height: h * 0.9))
+            let blob = Path(ellipseIn: CGRect(x: x - size.width * 0.25, y: h * 0.62, width: size.width * 0.5, height: h * 0.6))
             ctx.drawLayer { layer in
-                layer.opacity = 0.85
-                layer.addFilter(.blur(radius: 8))
+                layer.opacity = 0.8
+                layer.addFilter(.blur(radius: 10))
                 layer.fill(blob, with: .color(Palette.glow))
             }
 
