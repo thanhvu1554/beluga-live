@@ -1,0 +1,8 @@
+// Single source of truth for the bundle identifier (re-signed later with gbox).
+PRODUCT_BUNDLE_IDENTIFIER = com.thanhvu.belugalive
+
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 1
+
+// Default PC host, injected by CI from the BELUGA_DEFAULT_HOST secret. Empty = ask in settings.
+BELUGA_DEFAULT_HOST =

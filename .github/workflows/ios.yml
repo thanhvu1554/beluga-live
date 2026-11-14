@@ -1,0 +1,86 @@
+name: iOS
+
+on:
+  push:
+    paths:
+      - "ios/**"
+      - "shared/**"
+      - ".github/**"
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: xcode-27
+    timeout-minutes: 60
+    env:
+      SCHEME: BelugaLive
+      BUNDLE_ID: com.thanhvu.belugalive
+      DERIVED: ${{ github.workspace }}/build/DerivedData
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tool versions
+        run: |
+          xcodebuild -version
+          swift --version
+          xcrun simctl list runtimes
+
+      - name: Unit tests (BelugaCore)
+        working-directory: ios/BelugaCore
+        run: swift test 2>&1 | tail -n 80; exit ${PIPESTATUS[0]}
+
+      - name: Generate project
+        working-directory: ios
+        run: |
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+          xcodegen generate
+
+      - name: Build for simulator
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project BelugaLive.xcodeproj -scheme "$SCHEME" \
+            -configuration Debug -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$DERIVED" \
+            CODE_SIGNING_ALLOWED=NO | tail -n 200
+
+      - name: Screenshots (mock scenes, light + dark)
+        run: bash ios/scripts/screenshots.sh "$DERIVED/Build/Products/Debug-iphonesimulator/BelugaLive.app" screenshots
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots
+          path: screenshots
+          if-no-files-found: ignore
+
+      - name: Build unsigned IPA
+        working-directory: ios
+        env:
+          BELUGA_DEFAULT_HOST: ${{ secrets.BELUGA_DEFAULT_HOST }}
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project BelugaLive.xcodeproj -scheme "$SCHEME" \
+            -configuration Release -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$DERIVED" \
+            BELUGA_DEFAULT_HOST="$BELUGA_DEFAULT_HOST" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" | tail -n 120
+          APP="$DERIVED/Build/Products/Release-iphoneos/BelugaLive.app"
+          rm -rf ipa && mkdir -p ipa/Payload
+          cp -R "$APP" ipa/Payload/
+          (cd ipa && zip -qry ../BelugaLive-unsigned.ipa Payload)
+          bash scripts/check-ipa.sh BelugaLive-unsigned.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BelugaLive-unsigned
+          path: ios/BelugaLive-unsigned.ipa
+          if-no-files-found: error
