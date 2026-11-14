@@ -184,3 +184,187 @@ Khối bảng mới: `review_offer` `{topic, subject, lastSeen, note?, fallback}
 (`toan`, `ly`, `hoa`, `van`, `anh-ssat`, `duc`, `tin-cpp`, `chung`). Gia sư nhận ra môn từ ảnh hoặc lời
 nói rồi nạp đúng skill một lần mỗi phiên; môn chưa có skill thì nạp `chung`. Thêm môn = thêm một thư mục.
 
+---
+
+# Giao thức v2 (mở rộng, tương thích ngược với v1)
+
+`hello.v` vẫn nhận 1; app mới gửi `v:2`. Mọi trường mới đều tùy chọn với client cũ.
+Viết tắt mức độ câu hỏi: `nb` nhận biết, `th` thông hiểu, `vd` vận dụng, `vdc` vận dụng cao.
+
+## 7. Hai chế độ: `chat` (mặc định) và `live`
+
+`settings.mode: "chat"|"live"`. Đổi được bất kỳ lúc nào trong cùng một phiên (cùng session Claude).
+Server đính `[mode: chat]` / `[mode: live]` vào lượt người dùng đầu tiên và mỗi khi mode đổi.
+
+- **live** = v1 nguyên vẹn (camera, giọng nói, bảng từng bước, `say`/`audio`/`step`/`show`).
+- **chat** = như Claude Chat: chỉ chữ, **không TTS, không `say`, không `audio`**. Claude viết markdown
+  (cho phép `$...$`, `$$...$$`, bảng, code). Dòng bắt đầu bằng `@show`/`@ask`/`@title`/`@done` vẫn là chỉ thị
+  (khối `@show` hiện xen giữa chữ); `@step {"title"}` trong chat thành một tiêu đề nhỏ (`chat` với `md:"### title"`).
+  `capture_photo` chỉ dùng ở live; ở chat ảnh đến từ tệp đính kèm.
+
+Sự kiện mới (server → máy):
+
+| `t` | Trường | Ghi chú |
+|---|---|---|
+| `user` | `seq, turn, text, files?:[{fileId,kind:"image"\|"pdf",name}], via:"text"\|"voice"` | Tiếng vọng lượt người dùng, có ghi nhật ký (cả hai mode) để dựng lại lịch sử. |
+| `chat_delta` | `turn, text` | Mảnh markdown đang stream. Không `seq`, không ghi nhật ký, không có trong `snapshot`. |
+| `chat` | `seq, turn, md` | Một đoạn markdown hoàn chỉnh của trợ lý; thay thế toàn bộ `chat_delta` đã nhận kể từ `chat`/`show` gần nhất của lượt đó. Phát khi gặp chỉ thị `@...` hoặc hết lượt. |
+| `show` | `seq, turn, step:-1, block` | Ở chat, `step` là -1: khối nằm xen trong dòng chat. |
+
+Máy → server: `user_text{text, files?:[fileId]}` (tệp đã tải qua `POST /upload`). Ảnh thành image block, PDF thành
+document block trong lượt gửi cho Claude (model không có vision: server báo `notice{code:"no_vision"}` và bỏ ảnh).
+
+**Đọc chính tả (chat):** `audio_start{mime, sampleRate, draft:true}` … `audio_end` → `heard{text, raw?, draft:true}`;
+server KHÔNG gửi cho Claude, app đặt chữ vào ô soạn để sửa rồi gửi. `user_text{text, draft:true}` (STT thiết bị) cũng
+chỉ trả `heard{draft:true}` sau khi sửa.
+
+**Sửa STT bằng model rẻ:** mọi kết quả STT (server hoặc thiết bị, khi `settings.sttFix != false`) được model tiện ích
+sửa theo ngữ cảnh (môn của folder, thuật ngữ trong giáo trình, 2 câu gần nhất của trợ lý) trước khi dùng.
+`heard{text, raw?}`: `raw` là bản gốc khi có sửa. Quá 2,5 giây thì dùng bản gốc.
+
+## 8. Folder và phiên
+
+Folder do người dùng đặt tên, gắn đúng một môn (`subject` là id skill: `toan`, `ly`, `hoa`, `van`, `anh-ssat`,
+`duc`, `tin-cpp`, `chung`). Một folder có nhiều phiên; phiên không folder vẫn hợp lệ.
+
+| Hướng | `t` | Trường |
+|---|---|---|
+| máy → | `list_folders` | — |
+| → máy | `folders` | `items:[{id,name,subject,sessionCount,updatedAt,hasKnowledge:boolean,ingest?:{jobId,state,done,total}}]` |
+| máy → | `create_folder` | `name, subject` → server trả `folder_created{id}` rồi `folders` mới |
+| máy → | `rename_folder` / `delete_folder` | `id, name?`. Xóa folder: phiên bên trong thành không folder; kiến thức và đề của folder bị xóa. |
+| máy → | `move_session` | `sessionId, folderId\|null` |
+| máy → | `rename_session` / `delete_session` | `sessionId, title?` |
+| máy → | `new_session` | `folderId?, mode?, kickoff?:"review_quiz"` → `ready` của phiên mới (kickoff: server tự mở lượt đầu, xem mục 12) |
+| máy → | `list_sessions` | `folderId?` (thiếu = tất cả) |
+| → máy | `sessions` | `items:[{sessionId,title,updatedAt,folderId?,mode,preview?}]` |
+
+`hello` thêm `folderId?` (cho phiên mới). `ready` thêm `folderId?`, `mode`, `models`, `model`, `effort` (mục 10).
+Phiên cũ được tự xếp vào folder mặc định theo môn nếu suy được từ tên phiên; không suy được thì để trống.
+
+**Tên phiên:** nếu sau lượt đầu chưa có `@title`, server nhờ model tiện ích đặt tên ngắn (<= 40 ký tự,
+`Môn · Chủ đề`) rồi phát `title`. `tutor/CLAUDE.md` không còn bắt buộc `@title`.
+
+**Memory theo folder:** phiên trong folder ghi `memory_note` vào `tutor/memory/folders/<folderId>.md` (cùng khuôn với
+file môn) và tóm tắt `[memory]` đầu phiên gồm: cách giảng hợp, chỗ yếu của folder, **vị trí đang học trên trường và
+các chủ đề đã/chưa học** lấy từ `knowledge.json` (mục 11). Phiên không folder dùng file môn như v1.
+`memory_note` thêm `kind:"understood"` (hiểu sau khi giảng lại, kèm cách giảng đã hiệu quả) và `topicId?` (id chủ đề
+trong giáo trình folder).
+
+**Compact:** khi ngữ cảnh phiên vượt ngưỡng (`BELUGA_COMPACT_TOKENS`, mặc định 120000 token đầu vào ở lượt gần nhất),
+server nhờ model tiện ích tóm tắt nhật ký phiên, mở session Claude mới cho cùng `sessionId`, đính bản tóm tắt vào
+lượt kế, phát `notice{code:"compacted"}`.
+
+## 9. Tải tệp
+
+`POST /upload?name=<tên>` · header `Authorization: Bearer <pairToken>`, `Content-Type: image/jpeg|image/png|application/pdf`,
+body thô (tối đa 30 MB) → `{fileId, kind:"image"|"pdf", bytes, name}`. Lưu ở `server/data/uploads/`.
+`GET /file/<fileId>?token=<pairToken>` trả lại tệp (để hiện ảnh trong lịch sử chat).
+App thu nhỏ ảnh về cạnh dài tối đa 2000 px, JPEG chất lượng 0,8 trước khi tải.
+
+## 10. Model, nhà cung cấp, effort, usage
+
+Claude Code là harness; model nào nói được giao thức Anthropic Messages đều chạy được bằng cách đặt
+`ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` + `--model` cho tiến trình `claude` của phiên.
+
+Danh mục ở `server/models.json` (không có thì dùng mặc định dựng sẵn; mẫu `server/models.example.json`):
+
+```json
+[{"id":"sonnet","label":"Claude Sonnet","provider":"claude","model":"sonnet","efforts":["low","medium","high"],"defaultEffort":"medium","vision":true},
+ {"id":"deepseek","label":"DeepSeek","provider":"anthropic-compatible","baseUrl":"https://api.deepseek.com/anthropic","keyEnv":"DEEPSEEK_API_KEY","model":"deepseek-chat","efforts":[],"vision":false}]
+```
+
+`provider:"claude"` = đăng nhập gói Claude (có theo dõi usage). Mục có `keyEnv` mà thiếu key thì không xuất hiện.
+`BELUGA_MODEL_MAP` (v1) vẫn được tôn trọng.
+
+- `ready.models: [{id,label,provider,efforts:[string],defaultEffort?,vision,tracked:boolean}]`, `ready.model`, `ready.effort`.
+- `settings{model:<id>, effort?:"low"|"medium"|"high"|"xhigh"|"max"|null, mode, lang, rigor, sttFix?}`. Đổi model/effort áp dụng từ lượt sau.
+- `get_usage` → `usage{claude:{session:{inputTokens,outputTokens,cacheReadTokens,cacheWriteTokens,costUsd,turns},today:{...},week:{...},limit?:{status,resetsAt,type}},other:{today:{costUsd,inputTokens,outputTokens}},ingest:{today:{costUsd},total:{costUsd}}}`.
+  Server cũng tự phát `usage` sau mỗi `turn_end` của model `tracked`. `costUsd` của gói Claude là quy đổi tham khảo
+  (từ `total_cost_usd` trong `result` của stream-json), không phải tiền thật. Lưu ở `server/data/usage.jsonl`.
+
+## 11. Ma trận đề: nạp đề → kiến thức của folder
+
+1. App tải 10–30 ảnh hoặc 1–2 PDF qua `/upload`, rồi gửi `ingest_start{folderId, files:[fileId], goal?:string}`.
+2. Server đọc từng lô trang bằng model vision rẻ (OpenRouter, Haiku, reasoning high), rồi gộp thành MỘT file máy đọc
+   `server/data/folders/<folderId>/knowledge.json`. Nạp thêm lần sau thì gộp vào file cũ.
+3. Trong lúc chạy server phát tiến độ; xong thì phát `knowledge`.
+
+| Hướng | `t` | Trường |
+|---|---|---|
+| máy → | `ingest_start` | `folderId, files, goal?` (`goal`: mục đích người dùng, ví dụ "ôn giữa kỳ 1", "thi vào 10 chuyên") |
+| máy → | `ingest_cancel` | `folderId` |
+| → máy | `ingest` | `folderId, jobId, state:"queued"\|"reading"\|"merging"\|"done"\|"error"\|"cancelled", done, total, note, found?:{questions,topics}, costUsd?` (`note`: một dòng tiếng Việt đang làm gì, ví dụ "Đang đọc trang 7/24: Đề ôn giữa kỳ số 3") |
+| máy → | `get_knowledge` | `folderId` |
+| → máy | `knowledge` | `folderId, data:<knowledge.json>\|null, ingest?:{...như trên}` |
+
+`knowledge.json`:
+
+```json
+{"v":1,"folderId":"…","subject":"toan","grade":"9","goal":"ôn giữa kỳ 1","updatedAt":"2026-11-15T02:00:00Z",
+ "sources":[{"fileId":"…","name":"de-on-3.pdf","kind":"exam|review|worksheet","title":"Đề ôn giữa kỳ số 3","school":null,"date":null,"pages":2,"questions":18}],
+ "curriculum":[{"id":"c1","title":"Căn bậc hai","topics":[
+   {"id":"c1.t1","title":"Rút gọn biểu thức chứa căn","summary":"…","count":14,"share":0.12,
+    "forms":[{"id":"c1.t1.f1","title":"Rút gọn rồi tính giá trị","method":"Các bước giải ngắn gọn…","count":6,
+              "levels":{"nb":1,"th":3,"vd":2,"vdc":0},"example":{"md":"Rút gọn $A=…$"},"refs":[{"fileId":"…","q":"3a"}]}]}]}],
+ "structures":[{"id":"s1","title":"Đề giữa kỳ 1 (trắc nghiệm + tự luận)","basedOn":["fileId"],"durationMin":90,"totalPoints":10,
+   "sections":[{"id":"A","title":"Trắc nghiệm","kind":"mcq|truefalse|short|essay","count":12,"pointsEach":0.25,"instructions":"…"}],
+   "matrix":[{"section":"A","topicId":"c1.t1","formId":"c1.t1.f1","level":"th","count":2,"points":0.5}]}],
+ "schoolProgress":{"coveredTopicIds":["c1.t1"],"currentTopicId":"c1.t2","confidence":0.7,"note":"Suy từ đề ôn mới nhất…"},
+ "stats":{"questions":118,"byLevel":{"nb":30,"th":44,"vd":34,"vdc":10},"byKind":{"mcq":60,"essay":58}}}
+```
+
+## 12. Review của folder
+
+| Hướng | `t` | Trường |
+|---|---|---|
+| máy → | `get_review` | `folderId` |
+| → máy | `review` | `folderId, topics:[{topicId,title,chapter,state:"new"\|"learning"\|"weak"\|"solid",wrong,right,lastSeen?}], weak:[{topic,note,count,lastSeen,due}], due:[{topic,note,due}], weekly:{from,to,md}\|null, sessions:[{sessionId,title,updatedAt,mode,steps}], updatedAt` |
+| máy → | `get_weekly` | `folderId` → server nhờ model tiện ích viết tóm tắt tuần (học gì, sai gì, nên ôn gì), lưu lại, phát `review` mới. |
+
+`topics` là chồng memory của folder lên giáo trình (`knowledge.curriculum`); chưa có giáo trình thì suy từ memory.
+**Quiz ôn nhanh:** `new_session{folderId, mode, kickoff:"review_quiz"}`: server tự gửi lượt đầu cho Claude
+(`[ôn nhanh: <các mục tới hạn và đang yếu>]`), gia sư hỏi từng câu một, chấm, gọi `memory_note`.
+**Xem lại bài giảng cũ:** `open_session` rồi dựng lại từ `snapshot`; app cho lướt các bước (mục 14).
+
+## 13. Tạo đề
+
+| Hướng | `t` | Trường |
+|---|---|---|
+| máy → | `gen_exam` | `folderId, structureId, note?` (`note`: yêu cầu thêm, ví dụ "khó hơn một chút", "tập trung chương 2") |
+| → máy | `exam` | `folderId, examId, state:"writing"\|"checking"\|"done"\|"error", note, title?` |
+| máy → | `list_exams` | `folderId` |
+| → máy | `exams` | `folderId, items:[{examId,title,structureId,createdAt,questions}]` |
+| máy → | `delete_exam` | `examId` |
+
+Đề được sinh đúng cấu trúc `structures[structureId]` (số câu, loại câu, mức độ, điểm theo `matrix`), câu hỏi mới
+(không chép lại đề gốc), lưu `server/data/folders/<folderId>/exams/<examId>.json`.
+`GET /exam/<examId>?token=<pairToken>` trả một trang HTML A4 in được (KaTeX từ `/board/vendor/`), gồm đề rồi
+**đáp án ở trang cuối** (`page-break-before`). App mở trang này trong WKWebView ẩn, in ra PDF (A4) và mở bảng chia sẻ.
+Khi trang vẽ xong toàn bộ công thức nó đặt `document.documentElement.dataset.ready = "1"` và gọi
+`window.webkit?.messageHandlers?.board?.postMessage({type:"exam_ready"})`.
+
+## 14. Gói web (`shared/board/`, `version` 3)
+
+- **Bảng (live), `index.html`:** mỗi bước là một trang, **vuốt ngang trái/phải** để tới/lui (scroll-snap), có chấm vị trí.
+  Bước mới tới thì tự trượt tới bước đó, trừ khi người dùng đang xem lại bước cũ (khi đó hiện nút "Bước mới").
+  `board.goto(i)`, `board.next()`, `board.prev()`; postMessage `{type:"stepChanged", index, count, following:boolean}`.
+- **Chat, `chat.html`:** `chat.reset()`, `chat.apply(event)` với `user|chat_delta|chat|show|ask|done|turn_end|state|notice`,
+  `chat.load(events[])` (lịch sử, không animation), `chat.setTheme`, `chat.setLang`, `chat.setFileBase(url, token)`.
+  postMessage: `{type:"ready",version}`, `{type:"action", action:"copy"|"retry", turn, text?}`, `{type:"ask_tap", prompt}`.
+  Sự kiện live (`say`, `step`, `show` có `step>=0`) nếu lọt vào chat thì vẽ gọn (lời nói thành đoạn chữ, bước thành tiêu đề).
+- **Kiến thức, `knowledge.html`:** `knowledge.render(data, review?)` vẽ: cây giáo trình, ma trận nhiệt chủ đề × mức độ,
+  cột dạng bài, vị trí đang học trên trường, danh sách cấu trúc đề (nút "Tạo đề"), tiến độ chồng lên (nếu có `review`).
+  `knowledge.progress(ingestEvent)` hiện tiến độ nạp đề. postMessage: `{type:"gen_exam", structureId}`,
+  `{type:"open_topic", topicId, title}`, `{type:"ready"}`.
+- **Khối mới** `interactive` `{html, height?, fallback}`: minh họa/trò chơi tương tác nhỏ, chạy trong `iframe sandbox="allow-scripts"`
+  (`srcdoc`), không mạng. Chỉ dùng khi người dùng yêu cầu.
+- Mọi trang: `setTheme("light"|"dark")`, `setLang("vi"|"en")`, chữ và nền theo token chung trong `board.css`.
+
+## 15. Lời chào
+
+`get_greeting{localTime:"2026-11-15T01:45", name?}` → `greeting{text, sub?, doodle}`.
+`text`: một câu chào ngắn, dễ thương, xưng tớ gọi cậu, theo giờ và tiến độ (<= 60 ký tự); `sub`: gợi ý việc nên làm
+(ví dụ "Có 2 mục Toán tới hạn ôn"), tùy chọn. `doodle` ∈ `cat_walk|cat_sleep|whale_swim|bird_hop|snail|paper_plane`
+(app vẽ nét SVG chuyển động; tên lạ thì dùng `cat_walk`). Model tiện ích viết, cache 3 giờ; app có sẵn danh sách dự phòng.
+
