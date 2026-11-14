@@ -1,0 +1,1088 @@
+{
+ "v": 1,
+ "folderId": "dev-folder",
+ "subject": "toan",
+ "grade": "9",
+ "goal": "ôn giữa kỳ 1 và chuẩn bị học kỳ 1",
+ "updatedAt": "2026-11-15T02:00:00Z",
+ "sources": [
+  {
+   "fileId": "f-de1",
+   "name": "de-on-giua-ky-1-so-1.pdf",
+   "kind": "exam",
+   "title": "Đề ôn giữa kỳ 1 số 1",
+   "school": "THCS Nguyễn Trãi",
+   "date": "2026-10-20",
+   "pages": 4,
+   "questions": 32
+  },
+  {
+   "fileId": "f-de2",
+   "name": "de-on-giua-ky-1-so-2.pdf",
+   "kind": "exam",
+   "title": "Đề ôn giữa kỳ 1 số 2",
+   "school": "THCS Nguyễn Trãi",
+   "date": "2026-10-27",
+   "pages": 4,
+   "questions": 34
+  },
+  {
+   "fileId": "f-de3",
+   "name": "IMG_2031.jpg",
+   "kind": "exam",
+   "title": "Đề ôn giữa kỳ số 3",
+   "school": null,
+   "date": null,
+   "pages": 6,
+   "questions": 36
+  },
+  {
+   "fileId": "f-pbt",
+   "name": "phieu-can-bac-hai.pdf",
+   "kind": "worksheet",
+   "title": "Phiếu bài tập: Căn bậc hai",
+   "school": "THCS Nguyễn Trãi",
+   "date": "2026-11-05",
+   "pages": 4,
+   "questions": 30
+  },
+  {
+   "fileId": "f-kt15",
+   "name": "IMG_2047.jpg",
+   "kind": "review",
+   "title": "Đề cương ôn tập học kỳ 1",
+   "school": null,
+   "date": "2026-11-12",
+   "pages": 6,
+   "questions": 35
+  }
+ ],
+ "curriculum": [
+  {
+   "id": "c1",
+   "title": "Phương trình và hệ hai phương trình bậc nhất hai ẩn",
+   "topics": [
+    {
+     "id": "c1.t1",
+     "title": "Khái niệm phương trình và hệ phương trình bậc nhất hai ẩn",
+     "summary": "Nhận biết phương trình bậc nhất hai ẩn, nghiệm của hệ, biểu diễn tập nghiệm trên mặt phẳng toạ độ.",
+     "count": 11,
+     "share": 0.066,
+     "forms": [
+      {
+       "id": "c1.t1.f1",
+       "title": "Kiểm tra cặp số có là nghiệm",
+       "method": "Thay $x, y$ vào từng phương trình; cặp số là nghiệm của hệ khi thoả mãn cả hai.",
+       "count": 7,
+       "levels": {
+        "nb": 5,
+        "th": 2,
+        "vd": 0,
+        "vdc": 0
+       },
+       "example": {
+        "md": "Cặp số $(2;-1)$ có là nghiệm của hệ $\\begin{cases}2x+y=3\\\\x-3y=5\\end{cases}$ không?"
+       },
+       "refs": [
+        {
+         "fileId": "f-de1",
+         "q": "1a"
+        }
+       ]
+      },
+      {
+       "id": "c1.t1.f2",
+       "title": "Biểu diễn tập nghiệm trên mặt phẳng toạ độ",
+       "method": "Viết $y$ theo $x$, vẽ đường thẳng $ax+by=c$; mỗi điểm trên đường thẳng là một nghiệm.",
+       "count": 4,
+       "levels": {
+        "nb": 2,
+        "th": 2,
+        "vd": 0,
+        "vdc": 0
+       },
+       "example": {
+        "md": "Vẽ đường thẳng biểu diễn tập nghiệm của $2x - y = 4$."
+       },
+       "refs": [
+        {
+         "fileId": "f-de2",
+         "q": "2a"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "c1.t2",
+     "title": "Giải hệ hai phương trình bậc nhất hai ẩn",
+     "summary": "Hai phương pháp thế và cộng đại số; dùng máy tính cầm tay để kiểm tra.",
+     "count": 20,
+     "share": 0.12,
+     "forms": [
+      {
+       "id": "c1.t2.f1",
+       "title": "Giải hệ bằng phương pháp thế",
+       "method": "Rút một ẩn từ phương trình đơn giản, thế vào phương trình còn lại, giải phương trình một ẩn rồi suy ra ẩn kia.",
+       "count": 8,
+       "levels": {
+        "nb": 2,
+        "th": 5,
+        "vd": 1,
+        "vdc": 0
+       },
+       "example": {
+        "md": "Giải hệ $\\begin{cases}x+2y=5\\\\3x-y=1\\end{cases}$."
+       },
+       "refs": [
+        {
+         "fileId": "f-de1",
+         "q": "1b"
+        }
+       ]
+      },
+      {
+       "id": "c1.t2.f2",
+       "title": "Giải hệ bằng phương pháp cộng đại số",
+       "method": "Nhân hai vế để hệ số của một ẩn đối nhau hoặc bằng nhau, cộng/trừ hai phương trình.",
+       "count": 8,
+       "levels": {
+        "nb": 1,
+        "th": 5,
+        "vd": 2,
+        "vdc": 0
+       },
+       "example": {
+        "md": "Giải hệ $\\begin{cases}2x+3y=7\\\\3x-2y=4\\end{cases}$."
+       },
+       "refs": [
+        {
+         "fileId": "f-de2",
+         "q": "2b"
+        }
+       ]
+      },
+      {
+       "id": "c1.t2.f3",
+       "title": "Hệ chứa tham số",
+       "method": "Đưa về dạng $ax=b$ để biện luận số nghiệm; điều kiện nghiệm thoả hệ thức cho trước.",
+       "count": 4,
+       "levels": {
+        "nb": 0,
+        "th": 0,
+        "vd": 2,
+        "vdc": 2
+       },
+       "example": {
+        "md": "Tìm $m$ để hệ $\\begin{cases}mx+y=2\\\\x+my=m+1\\end{cases}$ có nghiệm duy nhất thoả $x+y=2$."
+       },
+       "refs": [
+        {
+         "fileId": "f-de3",
+         "q": "3b"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "c1.t3",
+     "title": "Giải bài toán bằng cách lập hệ phương trình",
+     "summary": "Chọn ẩn, đặt điều kiện, lập hai phương trình từ hai dữ kiện, giải và đối chiếu điều kiện.",
+     "count": 16,
+     "share": 0.096,
+     "forms": [
+      {
+       "id": "c1.t3.f1",
+       "title": "Bài toán chuyển động",
+       "method": "Quãng đường = vận tốc × thời gian; xuôi/ngược dòng cộng/trừ vận tốc dòng nước.",
+       "count": 6,
+       "levels": {
+        "nb": 0,
+        "th": 1,
+        "vd": 4,
+        "vdc": 1
+       },
+       "example": {
+        "md": "Một ca nô xuôi dòng 48 km rồi ngược dòng 36 km hết 5 giờ…"
+       },
+       "refs": [
+        {
+         "fileId": "f-de1",
+         "q": "1c"
+        }
+       ]
+      },
+      {
+       "id": "c1.t3.f2",
+       "title": "Bài toán năng suất, làm chung làm riêng",
+       "method": "Năng suất = 1/thời gian; cộng năng suất khi làm chung.",
+       "count": 5,
+       "levels": {
+        "nb": 0,
+        "th": 0,
+        "vd": 3,
+        "vdc": 2
+       },
+       "example": {
+        "md": "Hai vòi cùng chảy thì đầy bể sau 4 giờ 48 phút…"
+       },
+       "refs": [
+        {
+         "fileId": "f-de2",
+         "q": "2c"
+        }
+       ]
+      },
+      {
+       "id": "c1.t3.f3",
+       "title": "Bài toán tìm số, phần trăm",
+       "method": "Gọi hai số là ẩn, viết các quan hệ tổng/hiệu/tỉ lệ/phần trăm thành hai phương trình.",
+       "count": 5,
+       "levels": {
+        "nb": 0,
+        "th": 2,
+        "vd": 3,
+        "vdc": 0
+       },
+       "example": {
+        "md": "Tháng trước hai tổ làm được 800 sản phẩm, tháng này tổ I vượt 15%, tổ II vượt 20%…"
+       },
+       "refs": [
+        {
+         "fileId": "f-de3",
+         "q": "3c"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c2",
+   "title": "Phương trình và bất phương trình bậc nhất một ẩn",
+   "topics": [
+    {
+     "id": "c2.t1",
+     "title": "Phương trình quy về phương trình bậc nhất một ẩn",
+     "summary": "Phương trình tích $A\\cdot B=0$ và phương trình chứa ẩn ở mẫu (tìm điều kiện xác định, quy đồng, khử mẫu, đối chiếu).",
+     "count": 15,
+     "share": 0.09,
+     "forms": [
+      {
+       "id": "c2.t1.f1",
+       "title": "Phương trình tích",
+       "method": "Đưa về dạng $A(x)\\cdot B(x)=0$ bằng phân tích nhân tử, giải từng phương trình $A=0$, $B=0$.",
+       "count": 7,
+       "levels": {
+        "nb": 2,
+        "th": 4,
+        "vd": 1,
+        "vdc": 0
+       },
+       "example": {
+        "md": "Giải phương trình $(2x-1)(x+3)=0$."
+       },
+       "refs": [
+        {
+         "fileId": "f-de2",
+         "q": "1a"
+        }
+       ]
+      },
+      {
+       "id": "c2.t1.f2",
+       "title": "Phương trình chứa ẩn ở mẫu",
+       "method": "Tìm ĐKXĐ, quy đồng và khử mẫu, giải, loại nghiệm không thoả ĐKXĐ.",
+       "count": 8,
+       "levels": {
+        "nb": 1,
+        "th": 3,
+        "vd": 3,
+        "vdc": 1
+       },
+       "example": {
+        "md": "Giải $\\dfrac{x+1}{x-2}-\\dfrac{5}{x+2}=\\dfrac{12}{x^2-4}$."
+       },
+       "refs": [
+        {
+         "fileId": "f-de3",
+         "q": "2a"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "c2.t2",
+     "title": "Bất đẳng thức và tính chất",
+     "summary": "Liên hệ giữa thứ tự và phép cộng, phép nhân (đổi chiều khi nhân với số âm).",
+     "count": 12,
+     "share": 0.072,
+     "forms": [
+      {
+       "id": "c2.t2.f1",
+       "title": "So sánh hai biểu thức",
+       "method": "Xét hiệu $A-B$ hoặc dùng tính chất bắc cầu, cộng/nhân hai vế.",
+       "count": 6,
+       "levels": {
+        "nb": 3,
+        "th": 2,
+        "vd": 1,
+        "vdc": 0
+       },
+       "example": {
+        "md": "Cho $a>b$, so sánh $-3a+1$ và $-3b+1$."
+       },
+       "refs": [
+        {
+         "fileId": "f-de2",
+         "q": "1b"
+        }
+       ]
+      },
+      {
+       "id": "c2.t2.f2",
+       "title": "Chứng minh bất đẳng thức",
+       "method": "Biến đổi tương đương về bất đẳng thức đúng, hay dùng $(a-b)^2\\ge 0$.",
+       "count": 6,
+       "levels": {
+        "nb": 0,
+        "th": 1,
+        "vd": 2,
+        "vdc": 3
+       },
+       "example": {
+        "md": "Chứng minh $a^2+b^2\\ge 2ab$ với mọi $a, b$."
+       },
+       "refs": [
+        {
+         "fileId": "f-de3",
+         "q": "2b"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "c2.t3",
+     "title": "Bất phương trình bậc nhất một ẩn",
+     "summary": "Quy tắc chuyển vế và quy tắc nhân; biểu diễn tập nghiệm.",
+     "count": 13,
+     "share": 0.078,
+     "forms": [
+      {
+       "id": "c2.t3.f1",
+       "title": "Giải bất phương trình bậc nhất",
+       "method": "Chuyển vế, đổi dấu; nhân/chia số âm thì đổi chiều bất phương trình.",
+       "count": 8,
+       "levels": {
+        "nb": 3,
+        "th": 4,
+        "vd": 1,
+        "vdc": 0
+       },
+       "example": {
+        "md": "Giải bất phương trình $3x-5<2x+1$."
+       },
+       "refs": [
+        {
+         "fileId": "f-de2",
+         "q": "1c"
+        }
+       ]
+      },
+      {
+       "id": "c2.t3.f2",
+       "title": "Bài toán thực tế dẫn tới bất phương trình",
+       "method": "Đặt ẩn, lập bất phương trình từ điều kiện “không quá”, “ít nhất”, giải và chọn nghiệm nguyên phù hợp.",
+       "count": 5,
+       "levels": {
+        "nb": 0,
+        "th": 1,
+        "vd": 3,
+        "vdc": 1
+       },
+       "example": {
+        "md": "Bạn An có 200 nghìn đồng, mua bút giá 15 nghìn và một quyển sổ 35 nghìn…"
+       },
+       "refs": [
+        {
+         "fileId": "f-de3",
+         "q": "2c"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c3",
+   "title": "Căn bậc hai và căn bậc ba",
+   "topics": [
+    {
+     "id": "c3.t1",
+     "title": "Căn bậc hai và căn thức bậc hai",
+     "summary": "Căn bậc hai số học, điều kiện xác định $\\sqrt{A}$ là $A\\ge 0$, hằng đẳng thức $\\sqrt{A^2}=|A|$.",
+     "count": 12,
+     "share": 0.072,
+     "forms": [
+      {
+       "id": "c3.t1.f1",
+       "title": "Tìm điều kiện xác định",
+       "method": "Biểu thức dưới căn $\\ge 0$, mẫu khác 0.",
+       "count": 6,
+       "levels": {
+        "nb": 4,
+        "th": 2,
+        "vd": 0,
+        "vdc": 0
+       },
+       "example": {
+        "md": "Tìm điều kiện của $x$ để $\\sqrt{2x-6}$ xác định."
+       },
+       "refs": [
+        {
+         "fileId": "f-de3",
+         "q": "1a"
+        }
+       ]
+      },
+      {
+       "id": "c3.t1.f2",
+       "title": "Tính giá trị, áp dụng $\\sqrt{A^2}=|A|$",
+       "method": "Đưa biểu thức dưới căn về bình phương, bỏ căn thành giá trị tuyệt đối rồi xét dấu.",
+       "count": 6,
+       "levels": {
+        "nb": 2,
+        "th": 3,
+        "vd": 1,
+        "vdc": 0
+       },
+       "example": {
+        "md": "Tính $\\sqrt{(2-\\sqrt5)^2}$."
+       },
+       "refs": [
+        {
+         "fileId": "f-pbt",
+         "q": "2a"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "c3.t2",
+     "title": "Biến đổi đơn giản biểu thức chứa căn",
+     "summary": "Đưa thừa số ra/vào dấu căn, khử mẫu, trục căn thức ở mẫu.",
+     "count": 11,
+     "share": 0.066,
+     "forms": [
+      {
+       "id": "c3.t2.f1",
+       "title": "Trục căn thức ở mẫu",
+       "method": "Nhân cả tử và mẫu với biểu thức liên hợp.",
+       "count": 6,
+       "levels": {
+        "nb": 1,
+        "th": 4,
+        "vd": 1,
+        "vdc": 0
+       },
+       "example": {
+        "md": "Trục căn ở mẫu: $\\dfrac{2}{\\sqrt3-1}$."
+       },
+       "refs": [
+        {
+         "fileId": "f-de3",
+         "q": "1b"
+        }
+       ]
+      },
+      {
+       "id": "c3.t2.f2",
+       "title": "Đưa thừa số ra ngoài dấu căn",
+       "method": "$\\sqrt{A^2B}=|A|\\sqrt B$ với $B\\ge 0$.",
+       "count": 5,
+       "levels": {
+        "nb": 2,
+        "th": 3,
+        "vd": 0,
+        "vdc": 0
+       },
+       "example": {
+        "md": "Rút gọn $\\sqrt{50}-\\sqrt{18}+\\sqrt8$."
+       },
+       "refs": [
+        {
+         "fileId": "f-pbt",
+         "q": "2b"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "c3.t3",
+     "title": "Rút gọn biểu thức chứa căn",
+     "summary": "Tìm ĐKXĐ, quy đồng, phân tích nhân tử với $\\sqrt x$, rút gọn; sau đó tính giá trị, tìm $x$, so sánh.",
+     "count": 16,
+     "share": 0.096,
+     "forms": [
+      {
+       "id": "c3.t3.f1",
+       "title": "Rút gọn rồi tính giá trị",
+       "method": "Rút gọn $P$, thay giá trị $x$ (thường cần biến đổi $x$ về dạng bình phương).",
+       "count": 7,
+       "levels": {
+        "nb": 0,
+        "th": 3,
+        "vd": 4,
+        "vdc": 0
+       },
+       "example": {
+        "md": "Cho $P=\\left(\\dfrac{1}{\\sqrt x-1}+\\dfrac{1}{\\sqrt x+1}\\right):\\dfrac{\\sqrt x}{x-1}$. Rút gọn $P$ và tính $P$ khi $x=4$."
+       },
+       "refs": [
+        {
+         "fileId": "f-de3",
+         "q": "1c"
+        }
+       ]
+      },
+      {
+       "id": "c3.t3.f2",
+       "title": "Tìm $x$ để biểu thức thoả điều kiện",
+       "method": "Giải $P=k$, $P<k$; tìm $x$ nguyên để $P$ nguyên (tách phần nguyên).",
+       "count": 6,
+       "levels": {
+        "nb": 0,
+        "th": 0,
+        "vd": 3,
+        "vdc": 3
+       },
+       "example": {
+        "md": "Tìm $x$ nguyên để $P=\\dfrac{\\sqrt x+3}{\\sqrt x-1}$ nhận giá trị nguyên."
+       },
+       "refs": [
+        {
+         "fileId": "f-pbt",
+         "q": "2c"
+        }
+       ]
+      },
+      {
+       "id": "c3.t3.f3",
+       "title": "Tìm giá trị lớn nhất, nhỏ nhất",
+       "method": "Đánh giá bằng bình phương hoặc bất đẳng thức Cô-si.",
+       "count": 3,
+       "levels": {
+        "nb": 0,
+        "th": 0,
+        "vd": 0,
+        "vdc": 3
+       },
+       "example": {
+        "md": "Tìm giá trị nhỏ nhất của $Q=\\dfrac{x+4}{\\sqrt x}$."
+       },
+       "refs": [
+        {
+         "fileId": "f-kt15",
+         "q": "3c"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "c3.t4",
+     "title": "Căn bậc ba",
+     "summary": "$\\sqrt[3]{a^3}=a$; so sánh và tính toán với căn bậc ba.",
+     "count": 4,
+     "share": 0.024,
+     "forms": [
+      {
+       "id": "c3.t4.f1",
+       "title": "Tính và so sánh căn bậc ba",
+       "method": "Lập phương hai vế; $a<b \\Leftrightarrow \\sqrt[3]a<\\sqrt[3]b$.",
+       "count": 4,
+       "levels": {
+        "nb": 3,
+        "th": 1,
+        "vd": 0,
+        "vdc": 0
+       },
+       "example": {
+        "md": "So sánh $2\\sqrt[3]{3}$ và $\\sqrt[3]{23}$."
+       },
+       "refs": [
+        {
+         "fileId": "f-de3",
+         "q": "1a"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c4",
+   "title": "Hệ thức lượng trong tam giác vuông",
+   "topics": [
+    {
+     "id": "c4.t1",
+     "title": "Tỉ số lượng giác của góc nhọn",
+     "summary": "$\\sin, \\cos, \\tan, \\cot$; tỉ số lượng giác của hai góc phụ nhau.",
+     "count": 10,
+     "share": 0.06,
+     "forms": [
+      {
+       "id": "c4.t1.f1",
+       "title": "Tính tỉ số lượng giác",
+       "method": "Xác định cạnh đối, kề, huyền rồi lập tỉ số.",
+       "count": 6,
+       "levels": {
+        "nb": 4,
+        "th": 2,
+        "vd": 0,
+        "vdc": 0
+       },
+       "example": {
+        "md": "Cho tam giác $ABC$ vuông tại $A$, $AB=6$, $AC=8$. Tính $\\sin B$."
+       },
+       "refs": [
+        {
+         "fileId": "f-pbt",
+         "q": "1a"
+        }
+       ]
+      },
+      {
+       "id": "c4.t1.f2",
+       "title": "Rút gọn biểu thức lượng giác",
+       "method": "Dùng $\\sin^2\\alpha+\\cos^2\\alpha=1$, $\\tan\\alpha=\\dfrac{\\sin\\alpha}{\\cos\\alpha}$ và góc phụ nhau.",
+       "count": 4,
+       "levels": {
+        "nb": 0,
+        "th": 2,
+        "vd": 2,
+        "vdc": 0
+       },
+       "example": {
+        "md": "Tính $\\sin^2 25^\\circ+\\sin^2 65^\\circ$."
+       },
+       "refs": [
+        {
+         "fileId": "f-kt15",
+         "q": "2a"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "c4.t2",
+     "title": "Hệ thức giữa cạnh và góc, giải tam giác vuông",
+     "summary": "Cạnh góc vuông = cạnh huyền × sin góc đối = cạnh góc vuông kia × tan góc đối.",
+     "count": 11,
+     "share": 0.066,
+     "forms": [
+      {
+       "id": "c4.t2.f1",
+       "title": "Giải tam giác vuông",
+       "method": "Biết hai yếu tố (ít nhất một cạnh), tính các cạnh và góc còn lại.",
+       "count": 5,
+       "levels": {
+        "nb": 1,
+        "th": 3,
+        "vd": 1,
+        "vdc": 0
+       },
+       "example": {
+        "md": "Giải tam giác vuông $ABC$ biết $\\hat A=90^\\circ$, $BC=10$, $\\hat B=35^\\circ$."
+       },
+       "refs": [
+        {
+         "fileId": "f-pbt",
+         "q": "1b"
+        }
+       ]
+      },
+      {
+       "id": "c4.t2.f2",
+       "title": "Bài toán thực tế đo chiều cao, khoảng cách",
+       "method": "Vẽ hình, xác định góc nâng/góc hạ, áp dụng $\\tan$.",
+       "count": 6,
+       "levels": {
+        "nb": 0,
+        "th": 1,
+        "vd": 4,
+        "vdc": 1
+       },
+       "example": {
+        "md": "Một cột cờ đổ bóng dài 12 m khi tia nắng tạo với mặt đất góc $40^\\circ$…"
+       },
+       "refs": [
+        {
+         "fileId": "f-kt15",
+         "q": "2b"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c5",
+   "title": "Đường tròn",
+   "topics": [
+    {
+     "id": "c5.t1",
+     "title": "Mở đầu về đường tròn",
+     "summary": "Đường tròn, tính đối xứng, đường kính và dây.",
+     "count": 6,
+     "share": 0.036,
+     "forms": [
+      {
+       "id": "c5.t1.f1",
+       "title": "Chứng minh các điểm cùng thuộc một đường tròn",
+       "method": "Chỉ ra các điểm cách đều một điểm, hoặc cùng nhìn một đoạn dưới góc vuông.",
+       "count": 6,
+       "levels": {
+        "nb": 0,
+        "th": 2,
+        "vd": 3,
+        "vdc": 1
+       },
+       "example": {
+        "md": "Cho tam giác $ABC$ có các đường cao $BD, CE$. Chứng minh $B, C, D, E$ cùng thuộc một đường tròn."
+       },
+       "refs": [
+        {
+         "fileId": "f-kt15",
+         "q": "1a"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "c5.t2",
+     "title": "Vị trí tương đối của đường thẳng và đường tròn",
+     "summary": "So sánh khoảng cách $d$ với bán kính $R$; tiếp tuyến và tính chất hai tiếp tuyến cắt nhau.",
+     "count": 10,
+     "share": 0.06,
+     "forms": [
+      {
+       "id": "c5.t2.f1",
+       "title": "Chứng minh tiếp tuyến",
+       "method": "Chứng minh đường thẳng vuông góc với bán kính tại điểm thuộc đường tròn.",
+       "count": 5,
+       "levels": {
+        "nb": 0,
+        "th": 1,
+        "vd": 3,
+        "vdc": 1
+       },
+       "example": {
+        "md": "Chứng minh $AC$ là tiếp tuyến của $(O)$."
+       },
+       "refs": [
+        {
+         "fileId": "f-kt15",
+         "q": "1b"
+        }
+       ]
+      },
+      {
+       "id": "c5.t2.f2",
+       "title": "Tính chất hai tiếp tuyến cắt nhau",
+       "method": "$MA=MB$, $MO$ là phân giác góc $AMB$ và trung trực của $AB$.",
+       "count": 5,
+       "levels": {
+        "nb": 0,
+        "th": 1,
+        "vd": 2,
+        "vdc": 2
+       },
+       "example": {
+        "md": "Từ $M$ ngoài $(O)$ kẻ hai tiếp tuyến $MA, MB$. Chứng minh $OM\\perp AB$."
+       },
+       "refs": [
+        {
+         "fileId": "f-de1",
+         "q": "2b"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "structures": [
+  {
+   "id": "s1",
+   "title": "Đề giữa kỳ 1 (trắc nghiệm + tự luận)",
+   "basedOn": [
+    "f-de1",
+    "f-de2",
+    "f-de3"
+   ],
+   "durationMin": 90,
+   "totalPoints": 10,
+   "sections": [
+    {
+     "id": "A",
+     "title": "Trắc nghiệm nhiều lựa chọn",
+     "kind": "mcq",
+     "count": 12,
+     "pointsEach": 0.25,
+     "instructions": "Chọn một phương án đúng."
+    },
+    {
+     "id": "B",
+     "title": "Đúng/Sai",
+     "kind": "truefalse",
+     "count": 2,
+     "pointsEach": 1,
+     "instructions": "Mỗi câu 4 ý a, b, c, d."
+    },
+    {
+     "id": "C",
+     "title": "Tự luận",
+     "kind": "essay",
+     "count": 5,
+     "pointsEach": 1,
+     "instructions": "Trình bày lời giải."
+    }
+   ],
+   "matrix": [
+    {
+     "section": "A",
+     "topicId": "c1.t1",
+     "formId": "c1.t1.f1",
+     "level": "nb",
+     "count": 2,
+     "points": 0.5
+    },
+    {
+     "section": "A",
+     "topicId": "c3.t1",
+     "formId": "c3.t1.f1",
+     "level": "nb",
+     "count": 3,
+     "points": 0.75
+    },
+    {
+     "section": "A",
+     "topicId": "c2.t3",
+     "formId": "c2.t3.f1",
+     "level": "th",
+     "count": 3,
+     "points": 0.75
+    },
+    {
+     "section": "A",
+     "topicId": "c4.t1",
+     "formId": "c4.t1.f1",
+     "level": "nb",
+     "count": 4,
+     "points": 1
+    },
+    {
+     "section": "B",
+     "topicId": "c3.t2",
+     "formId": "c3.t2.f1",
+     "level": "th",
+     "count": 1,
+     "points": 1
+    },
+    {
+     "section": "B",
+     "topicId": "c2.t2",
+     "formId": "c2.t2.f1",
+     "level": "th",
+     "count": 1,
+     "points": 1
+    },
+    {
+     "section": "C",
+     "topicId": "c1.t2",
+     "formId": "c1.t2.f2",
+     "level": "th",
+     "count": 1,
+     "points": 1
+    },
+    {
+     "section": "C",
+     "topicId": "c3.t3",
+     "formId": "c3.t3.f1",
+     "level": "vd",
+     "count": 1,
+     "points": 1
+    },
+    {
+     "section": "C",
+     "topicId": "c1.t3",
+     "formId": "c1.t3.f1",
+     "level": "vd",
+     "count": 1,
+     "points": 1
+    },
+    {
+     "section": "C",
+     "topicId": "c4.t2",
+     "formId": "c4.t2.f2",
+     "level": "vd",
+     "count": 1,
+     "points": 1
+    },
+    {
+     "section": "C",
+     "topicId": "c3.t3",
+     "formId": "c3.t3.f3",
+     "level": "vdc",
+     "count": 1,
+     "points": 1
+    }
+   ]
+  },
+  {
+   "id": "s2",
+   "title": "Đề kiểm tra học kỳ 1 (tự luận)",
+   "basedOn": [
+    "f-kt15"
+   ],
+   "durationMin": 120,
+   "totalPoints": 10,
+   "sections": [
+    {
+     "id": "I",
+     "title": "Rút gọn biểu thức",
+     "kind": "essay",
+     "count": 1,
+     "pointsEach": 2,
+     "instructions": "Câu có 2–3 ý."
+    },
+    {
+     "id": "II",
+     "title": "Giải bài toán bằng cách lập hệ",
+     "kind": "essay",
+     "count": 1,
+     "pointsEach": 2,
+     "instructions": ""
+    },
+    {
+     "id": "III",
+     "title": "Hệ phương trình, bất phương trình",
+     "kind": "essay",
+     "count": 1,
+     "pointsEach": 2,
+     "instructions": ""
+    },
+    {
+     "id": "IV",
+     "title": "Hình học",
+     "kind": "essay",
+     "count": 1,
+     "pointsEach": 3.5,
+     "instructions": "Vẽ hình, 3 ý."
+    },
+    {
+     "id": "V",
+     "title": "Câu vận dụng cao",
+     "kind": "essay",
+     "count": 1,
+     "pointsEach": 0.5,
+     "instructions": ""
+    }
+   ],
+   "matrix": [
+    {
+     "section": "I",
+     "topicId": "c3.t3",
+     "formId": "c3.t3.f1",
+     "level": "th",
+     "count": 1,
+     "points": 2
+    },
+    {
+     "section": "II",
+     "topicId": "c1.t3",
+     "formId": "c1.t3.f2",
+     "level": "vd",
+     "count": 1,
+     "points": 2
+    },
+    {
+     "section": "III",
+     "topicId": "c1.t2",
+     "formId": "c1.t2.f2",
+     "level": "th",
+     "count": 1,
+     "points": 1
+    },
+    {
+     "section": "III",
+     "topicId": "c2.t3",
+     "formId": "c2.t3.f1",
+     "level": "th",
+     "count": 1,
+     "points": 1
+    },
+    {
+     "section": "IV",
+     "topicId": "c5.t2",
+     "formId": "c5.t2.f1",
+     "level": "vd",
+     "count": 1,
+     "points": 3.5
+    },
+    {
+     "section": "V",
+     "topicId": "c2.t2",
+     "formId": "c2.t2.f2",
+     "level": "vdc",
+     "count": 1,
+     "points": 0.5
+    }
+   ]
+  }
+ ],
+ "schoolProgress": {
+  "coveredTopicIds": [
+   "c1.t1",
+   "c1.t2",
+   "c1.t3",
+   "c2.t1",
+   "c2.t2",
+   "c2.t3",
+   "c3.t1",
+   "c3.t2",
+   "c3.t3"
+  ],
+  "currentTopicId": "c3.t4",
+  "confidence": 0.7,
+  "note": "Suy từ đề cương ôn tập ngày 12/11: đã học xong chương Căn bậc hai, đang vào Căn bậc ba; chưa tới Hệ thức lượng và Đường tròn."
+ },
+ "stats": {
+  "questions": 167,
+  "byLevel": {
+   "nb": 36,
+   "th": 60,
+   "vd": 50,
+   "vdc": 21
+  },
+  "byKind": {
+   "mcq": 52,
+   "truefalse": 12,
+   "short": 8,
+   "essay": 95
+  }
+ }
+}
