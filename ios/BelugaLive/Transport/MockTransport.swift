@@ -8,18 +8,23 @@ struct MockScript: Sendable {
 
     var ready: JSONValue
     var sessions: JSONValue
+    var progress: JSONValue
+    /// Frames of the "offer to review" opening turn (say + show review_offer + turn_end).
+    var review: [JSONValue]
     var turns: [Turn]
 
     static func load() -> MockScript {
         guard let url = Bundle.main.url(forResource: "mock-lesson", withExtension: "json"),
               let data = try? Data(contentsOf: url), let v = try? JSONValue.parse(data) else {
-            return MockScript(ready: ["t": "ready"], sessions: ["t": "sessions", "items": []], turns: [])
+            return MockScript(ready: ["t": "ready"], sessions: ["t": "sessions", "items": []],
+                              progress: ["t": "progress"], review: [], turns: [])
         }
         let turns = (v["turns"]?.array ?? []).map { t in
             Turn(user: t["user"]?.string ?? "",
                  frames: (t["frames"]?.array ?? []).map { Frame(after: $0["after"]?.int ?? 0, frame: $0["frame"] ?? .null) })
         }
-        return MockScript(ready: v["ready"] ?? ["t": "ready"], sessions: v["sessions"] ?? ["t": "sessions"], turns: turns)
+        return MockScript(ready: v["ready"] ?? ["t": "ready"], sessions: v["sessions"] ?? ["t": "sessions"],
+                          progress: v["progress"] ?? ["t": "progress"], review: v["review"]?.array ?? [], turns: turns)
     }
 
     /// All lesson events of the script, in order.
@@ -61,6 +66,8 @@ final class MockTransport: Transport {
             photoWaiter?.resume(); photoWaiter = nil
         case .listSessions:
             deliver(script.sessions)
+        case .getProgress:
+            deliver(script.progress)
         case .openSession:
             deliver(script.ready)
         default:

@@ -85,6 +85,14 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    NavigationLink {
+                        LearningProgressView(controller: controller)
+                    } label: {
+                        Text(verbatim: s("progress.title"))
+                    }
+                }
+
+                Section {
                     Picker(s("settings.language"), selection: $settings.lang) {
                         Text(verbatim: "Tiếng Việt").tag(Lang.vi)
                         Text(verbatim: "English").tag(Lang.en)
@@ -127,7 +135,8 @@ struct SettingsView: View {
     private func applyConnection() {
         let host = hostDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         let code = codeDraft.filter(\.isNumber)
-        guard host != settings.host || code != settings.pairCode else { return }
+        // A stopped connection (wrong pairing code) retries even when the same code is entered again.
+        guard host != settings.host || code != settings.pairCode || controller.connectionStopped else { return }
         settings.host = host
         settings.pairCode = code
         if !controller.isMock { controller.reconnectNow() }

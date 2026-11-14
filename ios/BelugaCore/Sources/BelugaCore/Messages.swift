@@ -117,6 +117,7 @@ public enum ServerMessage: Sendable, Equatable {
     case captureRequest(requestId: String)
     case snapshot(events: [LessonEvent])
     case sessions([SessionItem])
+    case progress(LearningProgress)
     case notice(code: String, text: String)
     case error(code: String, text: String, fatal: Bool)
     case unknown(type: String)
@@ -167,6 +168,8 @@ public enum ServerMessage: Sendable, Equatable {
                 return SessionItem(sessionId: id, title: i["title"]?.string ?? "", updatedAt: updated)
             }
             return .sessions(items)
+        case "progress":
+            return .progress(LearningProgress.from(v))
         case "notice":
             return .notice(code: v["code"]?.string ?? "", text: v["text"]?.string ?? "")
         case "error":
@@ -190,6 +193,7 @@ public enum ClientMessage: Sendable, Equatable {
     case played(seq: Int)
     case listSessions
     case openSession(sessionId: String)
+    case getProgress
 
     public var json: JSONValue {
         func settingsObject(_ s: TutorSettings) -> JSONValue {
@@ -220,6 +224,7 @@ public enum ClientMessage: Sendable, Equatable {
         case .played(let seq): return ["t": "played", "seq": .number(Double(seq))]
         case .listSessions: return ["t": "list_sessions"]
         case .openSession(let id): return ["t": "open_session", "sessionId": .string(id)]
+        case .getProgress: return ["t": "get_progress"]
         }
     }
 

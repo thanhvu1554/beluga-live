@@ -1,58 +1,145 @@
 {
-  "ready": {"t":"ready","v":1,"sessionId":"mock-0001","title":"","tts":"server","stt":"device","boardVersion":1,"audioWaitMs":20000},
-  "sessions": {"t":"sessions","items":[
-    {"sessionId":"mock-0001","title":"Toán · Bất phương trình bậc hai","updatedAt":"2026-11-14T20:10:00Z"},
-    {"sessionId":"mock-0002","title":"Hóa · Cân bằng phương trình phản ứng","updatedAt":"2026-11-13T19:42:00Z"},
-    {"sessionId":"mock-0003","title":"Anh · Thì hiện tại hoàn thành","updatedAt":"2026-11-12T21:05:00Z"},
-    {"sessionId":"mock-0004","title":"Lý · Chuyển động ném ngang","updatedAt":"2026-11-10T18:30:00Z"},
-    {"sessionId":"mock-0005","title":"Sử · Cách mạng tháng Tám 1945","updatedAt":"2026-11-08T20:15:00Z"}
-  ]},
+  "ready": {"t": "ready", "v": 1, "sessionId": "mock-0001", "title": "", "tts": "server", "stt": "device", "boardVersion": 1, "audioWaitMs": 20000},
+  "sessions": {"t": "sessions", "items": [{"sessionId": "mock-0001", "title": "Toán · Bất phương trình bậc hai", "updatedAt": "2026-11-14T20:10:00Z"}, {"sessionId": "mock-0002", "title": "Hóa · Cân bằng phương trình phản ứng", "updatedAt": "2026-11-13T19:42:00Z"}, {"sessionId": "mock-0003", "title": "Anh · Thì hiện tại hoàn thành", "updatedAt": "2026-11-12T21:05:00Z"}, {"sessionId": "mock-0004", "title": "Lý · Chuyển động ném ngang", "updatedAt": "2026-11-10T18:30:00Z"}, {"sessionId": "mock-0005", "title": "Sử · Cách mạng tháng Tám 1945", "updatedAt": "2026-11-08T20:15:00Z"}]},
+  "progress": {
+    "t": "progress",
+    "updatedAt": "2026-11-14T20:10:00Z",
+    "subjects": [
+      {
+        "id": "toan",
+        "name": "Toán",
+        "weak": [
+          {
+            "topic": "Xét dấu tam thức bậc hai",
+            "note": "Hay nhầm dấu khi hệ số a âm.",
+            "count": 3,
+            "lastSeen": "2026-11-12",
+            "due": "2026-11-14"
+          },
+          {
+            "topic": "Bất phương trình tích",
+            "note": "Quên xét dấu từng nhân tử.",
+            "count": 1,
+            "lastSeen": "2026-11-10",
+            "due": "2026-11-17"
+          }
+        ],
+        "mastered": [
+          {
+            "topic": "Giải phương trình bậc hai",
+            "date": "2026-11-03"
+          },
+          {
+            "topic": "Định lý Vi-ét",
+            "date": "2026-10-28"
+          }
+        ],
+        "recent": [
+          {
+            "topic": "Bất phương trình bậc hai",
+            "date": "2026-11-14"
+          },
+          {
+            "topic": "Hàm số bậc hai",
+            "date": "2026-11-12"
+          }
+        ]
+      },
+      {
+        "id": "hoa",
+        "name": "Hóa",
+        "weak": [
+          {
+            "topic": "Cân bằng phản ứng oxi hóa khử",
+            "note": "Chưa quen cách viết bán phản ứng.",
+            "count": 2,
+            "lastSeen": "2026-11-13",
+            "due": "2026-11-16"
+          }
+        ],
+        "mastered": [],
+        "recent": [
+          {
+            "topic": "Cân bằng phương trình phản ứng",
+            "date": "2026-11-13"
+          }
+        ]
+      },
+      {
+        "id": "anh-ssat",
+        "name": "Tiếng Anh",
+        "weak": [],
+        "mastered": [
+          {
+            "topic": "Thì hiện tại hoàn thành",
+            "date": "2026-11-12"
+          }
+        ],
+        "recent": [
+          {
+            "topic": "Mạo từ a, an, the",
+            "date": "2026-11-09"
+          }
+        ]
+      }
+    ],
+    "style": [
+      "Thích xem ví dụ trước, công thức sau.",
+      "Cần chia nhỏ từng bước, mỗi bước một ý.",
+      "Dễ nhầm khi vội: nhắc kiểm tra lại dấu cuối bài."
+    ]
+  },
+  "review": [
+    {"t": "say", "seq": 1, "turn": 0, "text": "Lần trước cậu còn nhầm dấu ở phần xét dấu tam thức. Mình ôn lại một chút nhé?", "audio": false},
+    {"t": "show", "seq": 2, "turn": 0, "step": 0, "block": {"type": "review_offer", "id": "r1", "topic": "Xét dấu tam thức bậc hai", "subject": "Toán", "lastSeen": "2026-11-12", "note": "Hay nhầm dấu khi hệ số a âm.", "fallback": "Ôn lại: Xét dấu tam thức bậc hai (Toán), lần cuối 12/11."}},
+    {"t": "turn_end", "seq": 3, "turn": 0}
+  ],
   "turns": [
     {
       "user": "Giải giúp em câu a với ạ.",
       "frames": [
-        {"after": 300, "frame": {"t":"state","state":"thinking"}},
-        {"after": 1600, "frame": {"t":"state","state":"tool","tool":"capture"}},
-        {"after": 200, "frame": {"t":"capture_request","requestId":"mock-r1"}},
-        {"after": 900, "frame": {"t":"title","text":"Toán · Bất phương trình bậc hai"}},
-        {"after": 0, "frame": {"t":"state","state":"speaking"}},
-        {"after": 0, "frame": {"t":"say","seq":1,"turn":1,"text":"Mình thấy đề rồi, câu a là bất phương trình bậc hai.","audio":true}},
-        {"after": 800, "frame": {"t":"audio_skip","seq":1}},
-        {"after": 100, "frame": {"t":"step","seq":2,"turn":1,"index":0,"title":"Đọc đề"}},
-        {"after": 50, "frame": {"t":"show","seq":3,"turn":1,"step":0,"block":{"type":"math","id":"b1","tex":"x^2 - 5x + 6 > 0"}}},
-        {"after": 50, "frame": {"t":"show","seq":4,"turn":1,"step":0,"block":{"type":"text","id":"b2","md":"Tìm tập nghiệm $S$ của bất phương trình.","note":"Bài 3a"}}},
-        {"after": 200, "frame": {"t":"say","seq":5,"turn":1,"text":"Việc đầu tiên là tìm nghiệm của tam thức ở vế trái.","audio":true}},
-        {"after": 0, "frame": {"t":"audio_skip","seq":5}},
-        {"after": 100, "frame": {"t":"step","seq":6,"turn":1,"index":1,"title":"Tìm nghiệm"}},
-        {"after": 50, "frame": {"t":"show","seq":7,"turn":1,"step":1,"block":{"type":"math","id":"b3","tex":"\\Delta = (-5)^2 - 4 \\cdot 1 \\cdot 6 = 1"}}},
-        {"after": 50, "frame": {"t":"show","seq":8,"turn":1,"step":1,"block":{"type":"math","id":"b4","tex":"x_1 = \\frac{5-1}{2} = 2, \\qquad x_2 = \\frac{5+1}{2} = 3"}}},
-        {"after": 200, "frame": {"t":"say","seq":9,"turn":1,"text":"Hệ số a dương, nên đồ thị là parabol quay lên.","audio":true}},
-        {"after": 0, "frame": {"t":"audio_skip","seq":9}},
-        {"after": 100, "frame": {"t":"step","seq":10,"turn":1,"index":2,"title":"Xét dấu"}},
-        {"after": 50, "frame": {"t":"show","seq":11,"turn":1,"step":2,"block":{"type":"plot","id":"b5","fn":["x^2-5*x+6"],"x":[-0.5,5.5],"y":[-1,4],"points":[{"x":2,"y":0,"label":"2"},{"x":3,"y":0,"label":"3"}]}}},
-        {"after": 50, "frame": {"t":"show","seq":12,"turn":1,"step":2,"block":{"type":"table","id":"b6","head":["$x$","$(-\\infty;\\,2)$","$(2;\\,3)$","$(3;\\,+\\infty)$"],"rows":[["$f(x)$","$+$","$-$","$+$"]]}}},
-        {"after": 200, "frame": {"t":"say","seq":13,"turn":1,"text":"Đến đây cậu thử nghĩ một chút.","audio":true}},
-        {"after": 0, "frame": {"t":"audio_skip","seq":13}},
-        {"after": 100, "frame": {"t":"ask","seq":14,"turn":1,"kind":"next","prompt":"Vậy f(x) dương trên những khoảng nào?"}},
-        {"after": 50, "frame": {"t":"turn_end","seq":15,"turn":1}},
-        {"after": 0, "frame": {"t":"state","state":"idle"}}
+        {"after": 300, "frame": {"t": "state", "state": "thinking"}},
+        {"after": 1600, "frame": {"t": "state", "state": "tool", "tool": "capture"}},
+        {"after": 200, "frame": {"t": "capture_request", "requestId": "mock-r1"}},
+        {"after": 900, "frame": {"t": "title", "text": "Toán · Bất phương trình bậc hai"}},
+        {"after": 0, "frame": {"t": "state", "state": "speaking"}},
+        {"after": 0, "frame": {"t": "say", "seq": 1, "turn": 1, "text": "Mình thấy đề rồi, câu a là bất phương trình bậc hai.", "audio": true}},
+        {"after": 800, "frame": {"t": "audio_skip", "seq": 1}},
+        {"after": 100, "frame": {"t": "step", "seq": 2, "turn": 1, "index": 0, "title": "Đọc đề"}},
+        {"after": 50, "frame": {"t": "show", "seq": 3, "turn": 1, "step": 0, "block": {"type": "math", "id": "b1", "tex": "x^2 - 5x + 6 > 0"}}},
+        {"after": 50, "frame": {"t": "show", "seq": 4, "turn": 1, "step": 0, "block": {"type": "text", "id": "b2", "md": "Tìm tập nghiệm $S$ của bất phương trình.", "note": "Bài 3a"}}},
+        {"after": 200, "frame": {"t": "say", "seq": 5, "turn": 1, "text": "Việc đầu tiên là tìm nghiệm của tam thức ở vế trái.", "audio": true}},
+        {"after": 0, "frame": {"t": "audio_skip", "seq": 5}},
+        {"after": 100, "frame": {"t": "step", "seq": 6, "turn": 1, "index": 1, "title": "Tìm nghiệm"}},
+        {"after": 50, "frame": {"t": "show", "seq": 7, "turn": 1, "step": 1, "block": {"type": "math", "id": "b3", "tex": "\\Delta = (-5)^2 - 4 \\cdot 1 \\cdot 6 = 1"}}},
+        {"after": 50, "frame": {"t": "show", "seq": 8, "turn": 1, "step": 1, "block": {"type": "math", "id": "b4", "tex": "x_1 = \\frac{5-1}{2} = 2, \\qquad x_2 = \\frac{5+1}{2} = 3"}}},
+        {"after": 200, "frame": {"t": "say", "seq": 9, "turn": 1, "text": "Hệ số a dương, nên đồ thị là parabol quay lên.", "audio": true}},
+        {"after": 0, "frame": {"t": "audio_skip", "seq": 9}},
+        {"after": 100, "frame": {"t": "step", "seq": 10, "turn": 1, "index": 2, "title": "Xét dấu"}},
+        {"after": 50, "frame": {"t": "show", "seq": 11, "turn": 1, "step": 2, "block": {"type": "plot", "id": "b5", "fn": ["x^2-5*x+6"], "x": [-0.5, 5.5], "y": [-1, 4], "points": [{"x": 2, "y": 0, "label": "2"}, {"x": 3, "y": 0, "label": "3"}]}}},
+        {"after": 50, "frame": {"t": "show", "seq": 12, "turn": 1, "step": 2, "block": {"type": "table", "id": "b6", "head": ["$x$", "$(-\\infty;\\,2)$", "$(2;\\,3)$", "$(3;\\,+\\infty)$"], "rows": [["$f(x)$", "$+$", "$-$", "$+$"]]}}},
+        {"after": 200, "frame": {"t": "say", "seq": 13, "turn": 1, "text": "Đến đây cậu thử nghĩ một chút.", "audio": true}},
+        {"after": 0, "frame": {"t": "audio_skip", "seq": 13}},
+        {"after": 100, "frame": {"t": "ask", "seq": 14, "turn": 1, "kind": "next", "prompt": "Vậy f(x) dương trên những khoảng nào?"}},
+        {"after": 50, "frame": {"t": "turn_end", "seq": 15, "turn": 1}},
+        {"after": 0, "frame": {"t": "state", "state": "idle"}}
       ]
     },
     {
       "user": "Dạ, ở hai khoảng bên ngoài hai nghiệm ạ.",
       "frames": [
-        {"after": 300, "frame": {"t":"state","state":"thinking"}},
-        {"after": 1400, "frame": {"t":"state","state":"speaking"}},
-        {"after": 0, "frame": {"t":"say","seq":16,"turn":2,"text":"Đúng rồi, f dương ở hai khoảng nằm ngoài hai nghiệm.","audio":true}},
-        {"after": 600, "frame": {"t":"audio_skip","seq":16}},
-        {"after": 100, "frame": {"t":"step","seq":17,"turn":2,"index":3,"title":"Kết luận"}},
-        {"after": 50, "frame": {"t":"show","seq":18,"turn":2,"step":3,"block":{"type":"answer","id":"b7","md":"$S = (-\\infty;\\, 2) \\cup (3;\\, +\\infty)$"}}},
-        {"after": 50, "frame": {"t":"show","seq":19,"turn":2,"step":3,"block":{"type":"text","id":"b8","md":"Mẹo nhớ khi $a > 0$: **trong trái, ngoài cùng**. Trong khoảng hai nghiệm, $f$ trái dấu với $a$; ngoài khoảng đó, cùng dấu với $a$."}}},
-        {"after": 200, "frame": {"t":"say","seq":20,"turn":2,"text":"Nhớ mẹo trong trái ngoài cùng là làm được cả dạng này.","audio":true}},
-        {"after": 0, "frame": {"t":"audio_skip","seq":20}},
-        {"after": 100, "frame": {"t":"done","seq":21,"turn":2}},
-        {"after": 50, "frame": {"t":"turn_end","seq":22,"turn":2}},
-        {"after": 0, "frame": {"t":"state","state":"idle"}}
+        {"after": 300, "frame": {"t": "state", "state": "thinking"}},
+        {"after": 1400, "frame": {"t": "state", "state": "speaking"}},
+        {"after": 0, "frame": {"t": "say", "seq": 16, "turn": 2, "text": "Đúng rồi, f dương ở hai khoảng nằm ngoài hai nghiệm.", "audio": true}},
+        {"after": 600, "frame": {"t": "audio_skip", "seq": 16}},
+        {"after": 100, "frame": {"t": "step", "seq": 17, "turn": 2, "index": 3, "title": "Kết luận"}},
+        {"after": 50, "frame": {"t": "show", "seq": 18, "turn": 2, "step": 3, "block": {"type": "answer", "id": "b7", "md": "$S = (-\\infty;\\, 2) \\cup (3;\\, +\\infty)$"}}},
+        {"after": 50, "frame": {"t": "show", "seq": 19, "turn": 2, "step": 3, "block": {"type": "text", "id": "b8", "md": "Mẹo nhớ khi $a > 0$: **trong trái, ngoài cùng**. Trong khoảng hai nghiệm, $f$ trái dấu với $a$; ngoài khoảng đó, cùng dấu với $a$."}}},
+        {"after": 200, "frame": {"t": "say", "seq": 20, "turn": 2, "text": "Nhớ mẹo trong trái ngoài cùng là làm được cả dạng này.", "audio": true}},
+        {"after": 0, "frame": {"t": "audio_skip", "seq": 20}},
+        {"after": 100, "frame": {"t": "done", "seq": 21, "turn": 2}},
+        {"after": 50, "frame": {"t": "turn_end", "seq": 22, "turn": 2}},
+        {"after": 0, "frame": {"t": "state", "state": "idle"}}
       ]
     }
   ]

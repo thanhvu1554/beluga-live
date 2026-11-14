@@ -13,6 +13,12 @@ struct SessionsView: View {
                         Label(s("sessions.new"), systemImage: "plus")
                             .font(TypeScale.body.weight(.medium))
                     }
+                    NavigationLink {
+                        LearningProgressView(controller: controller)
+                    } label: {
+                        Label(s("progress.title"), systemImage: "chart.bar")
+                            .font(TypeScale.body.weight(.medium))
+                    }
                 }
                 Section {
                     if controller.sessions.isEmpty {
@@ -63,13 +69,6 @@ private struct SessionRow: View {
     }
 
     static func format(_ raw: String, lang: Lang) -> String {
-        let iso = ISO8601DateFormatter()
-        var date = iso.date(from: raw)
-        if date == nil, let ms = Double(raw) { date = Date(timeIntervalSince1970: ms > 1e11 ? ms / 1000 : ms) }
-        guard let date else { return raw }
-        let f = DateFormatter()
-        f.locale = Locale(identifier: lang == .vi ? "vi_VN" : "en_US")
-        f.setLocalizedDateFormatFromTemplate("dMMM")
-        return f.string(from: date)
+        DateText.short(raw, lang: lang) ?? raw
     }
 }

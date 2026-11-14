@@ -3,16 +3,17 @@
  * Posts {type:"ready", version} and {type:"stepChanged", index, count} to webkit.messageHandlers.board. */
 (function (global) {
   "use strict";
-  var VERSION = 1;
+  var VERSION = 2;
   var LABELS = {
-    vi: { step: "Bước", answer: "Kết quả", ask: "Đến lượt bạn", done: "Xong bài" },
-    en: { step: "Step", answer: "Result", ask: "Your turn", done: "Lesson done" }
+    vi: { step: "Bước", answer: "Kết quả", ask: "Đến lượt bạn", done: "Xong bài", review: "Ôn lại", lastSeen: "Lần cuối" },
+    en: { step: "Step", answer: "Result", ask: "Your turn", done: "Lesson done", review: "Review", lastSeen: "Last seen" }
   };
   var lang = "vi";
   var root = document.getElementById("steps");
   var steps = [];        // [{index, el, body}]
   var current = 0;
   var restoring = false;
+  var BOTTOM_CLEAR = 128;   // keep in sync with --bottom-clear: room for the floating controls
 
   function L(k) { return (LABELS[lang] || LABELS.vi)[k]; }
 
@@ -29,10 +30,10 @@
 
   function stepFor(index, title) {
     for (var i = 0; i < steps.length; i++) if (steps[i].index === index) {
-      if (title != null) steps[i].title.textContent = title;
+      if (title != null) { steps[i].title.textContent = title; steps[i].el.classList.toggle("untitled", !title); }
       return steps[i];
     }
-    var el = h("section", "step");
+    var el = h("section", "step" + (title ? "" : " untitled"));
     var head = h("header", "step-head");
     var num = h("div", "step-num");
     num.textContent = L("step") + " " + (index + 1);
@@ -115,6 +116,19 @@
         n = h("div", "block plot");
         n.appendChild(Plot.render(b, (global.innerWidth || 390) - 48));
         break;
+      case "review_offer": {
+        var when = fmtDate(b.lastSeen);
+        var meta = [b.subject ? MD.esc(b.subject) : "", when ? L("lastSeen") + " " + MD.esc(when) : ""].filter(Boolean).join(" · ");
+        n = h("div", "block review",
+          '<span class="label">' + L("review") + "</span>" +
+          '<div class="topic">' + MD.inline(b.topic || "") + "</div>" +
+          (meta ? '<div class="meta">' + meta + "</div>" : "") +
+          (b.note ? '<div class="why">' + MD.inline(b.note) + "</div>" : ""));
+        // The offer carries its own note, so the generic one is not added again.
+        if (b.id) n.dataset.id = b.id;
+        if (restoring) n.classList.add("still");
+        return n;
+      }
       case "answer":
         n = h("div", "block answer", '<span class="label">' + L("answer") + "</span>" + MD.block(b.md)); break;
       default:
@@ -122,7 +136,17 @@
     }
     if (b.note) n.appendChild(h("div", "note", MD.inline(b.note)));
     if (b.id) n.dataset.id = b.id;
+    if (restoring) n.classList.add("still");
     return n;
+  }
+
+  // "2026-11-12" or an ISO timestamp -> "12 thg 11" / "Nov 12"; unreadable text is shown as it is.
+  function fmtDate(raw) {
+    if (raw == null || raw === "") return "";
+    var d = new Date(typeof raw === "number" ? (raw > 1e11 ? raw : raw * 1000) : String(raw));
+    if (isNaN(d.getTime())) return String(raw);
+    try { return d.toLocaleDateString(lang === "vi" ? "vi-VN" : "en-US", { day: "numeric", month: "short" }); }
+    catch (e) { return String(raw); }
   }
 
   function fallback(b) {
@@ -148,7 +172,7 @@
   function scrollIntoBlock(stepObj, node) {
     // Newest content stays in view while the page fills up.
     var page = stepObj.el;
-    var bottom = node.offsetTop + node.offsetHeight + 120;
+    var bottom = node.offsetTop + node.offsetHeight + BOTTOM_CLEAR;
     if (bottom > page.scrollTop + page.clientHeight) page.scrollTo({ top: bottom - page.clientHeight, behavior: restoring ? "auto" : "smooth" });
   }
 
@@ -207,7 +231,7 @@
         }
         case "ask": {
           var sa = lastStep();
-          var q = h("div", "block ask", '<span class="label">' + L("ask") + "</span>" + MD.inline(ev.prompt || ""));
+          var q = h("div", "block ask" + (restoring ? " still" : ""), '<span class="label">' + L("ask") + "</span>" + MD.inline(ev.prompt || ""));
           sa.body.appendChild(q);
           scrollIntoBlock(sa, q);
           break;
@@ -232,10 +256,7 @@
     /* Apply many events without animation (used for history). */
     restore: function (events) {
       restoring = true;
-      document.body.classList.add("restored");
-      (events || []).forEach(board.apply);
-      restoring = false;
-      setTimeout(function () { document.body.classList.remove("restored"); }, 50);
+      try { (events || []).forEach(function (e) { board.apply(e); }); } finally { restoring = false; }
     }
   };
 

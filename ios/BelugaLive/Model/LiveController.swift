@@ -3,7 +3,20 @@ import UIKit
 import BelugaCore
 
 enum MockScene: String, CaseIterable {
-    case idle, listening, thinking, tool, lesson, ask, done, sessions, settings, offline
+    case idle, listening, thinking, tool, lesson, ask, done, sessions, settings, offline, progress, review
+}
+
+/// A refused permission the user can fix in the system Settings.
+enum PermissionIssue: Sendable, Equatable {
+    case camera, microphone, speech
+
+    var messageKey: String {
+        switch self {
+        case .camera: return "permission.camera"
+        case .microphone: return "permission.microphone"
+        case .speech: return "permission.speech"
+        }
+    }
 }
 
 /// Launch options: `-mock 1` and `-mockScene <name>`.
@@ -33,9 +46,12 @@ final class LiveController {
     private(set) var connected = false
     private(set) var shutterTick = 0
     private(set) var handsFreeActive = false
+    private(set) var progress: LearningProgress?
+    private(set) var permissionIssue: PermissionIssue?
     var boardVisible = false
     var showSessions = false
     var showSettings = false
+    var showProgress = false
     /// Scenes may force captions on for review.
     private(set) var captionsForced = false
 
@@ -43,6 +59,8 @@ final class LiveController {
     var isMock: Bool { options.mock }
     var captionsOn: Bool { settings.captions || captionsForced }
     var hasHost: Bool { settings.webSocketURL != nil }
+    /// True after a fatal server error (wrong pairing code): no automatic retry until settings change.
+    var connectionStopped: Bool { fatalStop }
 
     @ObservationIgnored private var transport: Transport?
     @ObservationIgnored private var timeline = Timeline()
@@ -94,12 +112,56 @@ final class LiveController {
         sessionId = settings.lastSessionId
         // Cold start in a known session: what was already heard is restored silently.
         if sessionId != nil { timeline.reset(lastPlayed: settings.lastPlayedSeq) }
-        Task {
-            _ = await CameraController.requestAccess()
-            camera?.start()
-            _ = await AudioHub.requestPermissions()
+        // Camera is needed at once; microphone and speech recognition are asked on the first press of the pill.
+        Task { [weak self] in
+            let granted = await CameraController.requestAccess()
+            guard let self else { return }
+            if granted { self.camera?.start() } else { self.permissionIssue = .camera }
         }
         if hasHost { connect() } else { showSettings = true }
+    }
+
+    /// Back in the foreground: pick up permissions changed in Settings and retry a dropped connection.
+    func appBecameActive() {
+        guard !isMock else { return }
+        if CameraController.accessGranted {
+            if permissionIssue == .camera { permissionIssue = nil }
+            if camera?.isRunning == false { camera?.start() }
+        }
+        if permissionIssue == .microphone || permissionIssue == .speech, micPermissionsGranted() { permissionIssue = nil }
+        if !connected, !fatalStop, hasHost {
+            backoff.reset()
+            connect()
+        }
+    }
+
+    private func needsDeviceSTT() -> Bool { !(ready?.serverSTT == true && !forceDeviceSTT) }
+
+    private func micPermissionsGranted() -> Bool {
+        AudioHub.microphoneGrant() == .granted && (!needsDeviceSTT() || AudioHub.speechGrant() == .granted)
+    }
+
+    /// True when the mic may open now. Undetermined permissions are requested (the press does nothing else);
+    /// refused ones raise the banner.
+    private func canListen() -> Bool {
+        guard !isMock else { return true }
+        let needSpeech = needsDeviceSTT()
+        let mic = AudioHub.microphoneGrant()
+        let speech = needSpeech ? AudioHub.speechGrant() : .granted
+        if mic == .denied { permissionIssue = .microphone; return false }
+        if speech == .denied { permissionIssue = .speech; return false }
+        if mic == .undetermined || speech == .undetermined {
+            Task { [weak self] in
+                _ = await AudioHub.requestPermissions(needSpeech: needSpeech)
+                guard let self else { return }
+                if AudioHub.microphoneGrant() == .denied { self.permissionIssue = .microphone }
+                else if needSpeech, AudioHub.speechGrant() == .denied { self.permissionIssue = .speech }
+                else { self.showNotice(self.strings("permission.asked")) }
+            }
+            return false
+        }
+        if permissionIssue == .microphone || permissionIssue == .speech { permissionIssue = nil }
+        return true
     }
 
     private func attach(_ t: Transport) {
@@ -201,6 +263,8 @@ final class LiveController {
             needsRebuild = false
         case .sessions(let items):
             sessions = items
+        case .progress(let report):
+            progress = report
         case let .notice(code, text):
             switch code {
             case "reconnected": break
@@ -215,8 +279,13 @@ final class LiveController {
             default: showNotice(text)
             }
         case let .error(code, text, fatal):
-            if code == "bad_pair" { settings.pairToken = nil; showNotice(strings("error.badPair")) }
-            else { showNotice(text.isEmpty ? code : text) }
+            if code == "bad_pair" {
+                // Drop the stale token and take the user to the pairing code field.
+                settings.pairToken = nil
+                showNotice(strings("error.badPair"))
+                showSessions = false
+                showSettings = true
+            } else { showNotice(text.isEmpty ? code : text) }
             if fatal { fatalStop = true; transport?.disconnect(); connected = false; pill.handle(.disconnected) }
         case .unknown:
             break
@@ -262,11 +331,11 @@ final class LiveController {
     private func apply(_ e: LessonEvent, live: Bool) {
         switch e.kind {
         case .step, .show:
-            board.apply(e)
+            board.apply(e, restoring: !live)
             if live, !boardVisible { withAnimation(Motion.panel) { boardVisible = true } }
             if !live { boardVisible = true }
         case .ask(_, let prompt):
-            board.apply(e)
+            board.apply(e, restoring: !live)
             if live {
                 askPrompt = prompt
                 pill.handle(.askReached)
@@ -274,7 +343,7 @@ final class LiveController {
                 if settings.handsFree && handsFreeActive { reopenHandsFree() }
             }
         case .done:
-            board.apply(e)
+            board.apply(e, restoring: !live)
             if live {
                 pill.handle(.doneReached)
                 cue(.done)
@@ -331,7 +400,7 @@ final class LiveController {
     private func play(text: String, source: SayAudio) async {
         if isMock {
             mockScriptedLevel = .speaking
-            let seconds = max(1.4, Double(text.count) * 0.06)
+            let seconds = max(1.2, Double(text.count) * 0.045)
             try? await Task.sleep(for: .seconds(seconds))
             mockScriptedLevel = nil
             return
@@ -352,10 +421,16 @@ final class LiveController {
 
     /// Pill pressed (hold-to-talk) or tapped (hands-free).
     func pillPressBegan() {
-        if pill.state == .speaking { interrupt() }
+        let wasSpeaking = pill.state == .speaking
+        if wasSpeaking { interrupt() }
         if settings.handsFree {
-            handsFreeActive.toggle()
-            if handsFreeActive { openMic() } else { Task { await closeMic(send: false) } }
+            // Tapping while the tutor speaks interrupts and keeps hands-free listening on.
+            handsFreeActive = wasSpeaking ? true : !handsFreeActive
+            if handsFreeActive {
+                if !openMic() { handsFreeActive = false }
+            } else {
+                Task { await closeMic(send: false) }
+            }
             return
         }
         openMic()
@@ -378,14 +453,17 @@ final class LiveController {
         Haptics.light()
     }
 
-    private func openMic() {
-        guard connected || isMock else { return }
+    @discardableResult
+    private func openMic() -> Bool {
+        guard connected || isMock else { return false }
+        guard canListen() else { return false }
         vad.reset()
         pill.handle(.micOpened)
         cue(.listen)
         Haptics.tap()
-        if isMock { mockScriptedLevel = .listening; return }
-        audio?.startListening(lang: settings.lang, serverSTT: ready?.serverSTT == true && !forceDeviceSTT)
+        if isMock { mockScriptedLevel = .listening; return true }
+        audio?.startListening(lang: settings.lang, serverSTT: !needsDeviceSTT())
+        return true
     }
 
     private func closeMic(send: Bool) async {
@@ -452,7 +530,10 @@ final class LiveController {
         } else {
             image = await camera?.capture()
         }
-        guard let image, let encoded = PhotoEncoder.jpeg(image) else { return }
+        guard let image, let encoded = PhotoEncoder.jpeg(image) else {
+            showNotice(strings("notice.cameraUnavailable"))
+            return
+        }
         transport?.send(.photo(requestId: requestId, jpeg: encoded.0, w: encoded.1, h: encoded.2))
     }
 
@@ -482,6 +563,11 @@ final class LiveController {
         sessionId = nil
         settings.lastSessionId = nil
         reconnectNow()
+    }
+
+    /// Asks the server for the progress report (the page shows what arrived last until the new one lands).
+    func requestProgress() {
+        transport?.send(.getProgress)
     }
 
     func showBoard(_ show: Bool) {
@@ -597,7 +683,7 @@ final class LiveController {
         }
         let events = mock.script.allEvents
         func restore(upTo seq: Int) {
-            for e in events where e.seq <= seq && e.isBoardEvent { board.apply(e) }
+            for e in events where e.seq <= seq && e.isBoardEvent { board.apply(e, restoring: true) }
             boardVisible = true
         }
         let lessonTitle = "Toán · Bất phương trình bậc hai"
@@ -632,6 +718,18 @@ final class LiveController {
             showSessions = true
         case .settings:
             showSettings = true
+        case .progress:
+            if case .progress(let report) = ServerMessage.decode(mock.script.progress) { progress = report }
+            showProgress = true
+        case .review:
+            // Session start with an offer to review: spoken line as caption, one card on the board.
+            let offer = mock.script.review.compactMap(LessonEvent.from)
+            for e in offer where e.isBoardEvent { board.apply(e, restoring: true) }
+            if let say = offer.first(where: \.isSay), case .say(let text, _) = say.kind {
+                captionsForced = true
+                caption = text
+            }
+            boardVisible = true
         }
     }
 }

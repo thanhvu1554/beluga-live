@@ -1,9 +1,11 @@
 import SwiftUI
+import UIKit
 import BelugaCore
 
 struct RootView: View {
     @Bindable var controller: LiveController
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.scenePhase) private var phase
     @Environment(\.strings) private var s
 
     var body: some View {
@@ -24,22 +26,42 @@ struct RootView: View {
 
                 VStack(spacing: Space.m) {
                     TopBar(controller: controller)
-                    Spacer(minLength: 0)
-                    if controller.captionsOn, !controller.caption.isEmpty {
-                        CaptionView(text: controller.caption)
+                    if let issue = controller.permissionIssue {
+                        PermissionBanner(issue: issue)
                             .transition(.opacity)
                     }
-                    ControlBar(controller: controller)
+                    Spacer(minLength: 0)
                 }
                 .padding(.horizontal, Space.l)
-                .padding(.bottom, Space.s)
+
+                // Captions live in the camera area, just above the board (or the controls when the
+                // board is hidden), so they never cover board content.
+                if controller.captionsOn, !controller.caption.isEmpty {
+                    CaptionView(text: controller.caption)
+                        .padding(.horizontal, Space.l)
+                        .padding(.bottom, controller.boardVisible
+                                 ? geo.size.height * 0.6 + Space.m
+                                 : Size.control + Space.s + Space.m)
+                        .transition(.opacity)
+                }
+
+                ControlBar(controller: controller)
+                    .padding(.horizontal, Space.l)
+                    .padding(.bottom, Space.s)
             }
         }
         .onAppear { controller.board.setTheme(scheme == .dark) }
         .onChange(of: scheme) { _, new in controller.board.setTheme(new == .dark) }
+        .onChange(of: phase) { _, new in if new == .active { controller.appBecameActive() } }
         .sheet(isPresented: $controller.showSessions) {
             SessionsView(controller: controller)
                 .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $controller.showProgress) {
+            NavigationStack { LearningProgressView(controller: controller) }
+                .tint(Ink.primary)
+                .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $controller.showSettings) {
@@ -158,6 +180,30 @@ private struct ControlBar: View {
             }
         }
         .foregroundStyle(Ink.primary)
+    }
+}
+
+/// Calm, persistent hint when a permission was refused, with a way to the system Settings.
+private struct PermissionBanner: View {
+    let issue: PermissionIssue
+    @Environment(\.strings) private var s
+
+    var body: some View {
+        VStack(spacing: Space.s) {
+            Text(verbatim: s(issue.messageKey))
+                .font(TypeScale.callout)
+                .foregroundStyle(Ink.primary)
+                .multilineTextAlignment(.center)
+            Button(s("permission.openSettings")) {
+                if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+            }
+            .font(TypeScale.callout.weight(.semibold))
+            .buttonStyle(.glass)
+        }
+        .padding(.horizontal, Space.l)
+        .padding(.vertical, Space.m)
+        .glassEffect(.regular, in: .rect(cornerRadius: Radius.l))
+        .frame(maxWidth: 340)
     }
 }
 

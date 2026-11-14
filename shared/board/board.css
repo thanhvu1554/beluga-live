@@ -2,18 +2,18 @@
 :root {
   --ink: #111111;
   --ink-2: rgba(17, 17, 17, 0.62);
-  --ink-3: rgba(17, 17, 17, 0.38);
+  --ink-3: rgba(17, 17, 17, 0.6);
   --rule: rgba(17, 17, 17, 0.12);
   --wash: rgba(17, 17, 17, 0.04);
   --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s6: 24px; --s8: 32px;
   --r: 12px;
-  --bottom-clear: 120px;
+  --bottom-clear: 128px;
   color-scheme: light;
 }
 html[data-theme="dark"] {
   --ink: #EDEDED;
   --ink-2: rgba(237, 237, 237, 0.64);
-  --ink-3: rgba(237, 237, 237, 0.40);
+  --ink-3: rgba(237, 237, 237, 0.56);
   --rule: rgba(237, 237, 237, 0.14);
   --wash: rgba(237, 237, 237, 0.05);
   color-scheme: dark;
@@ -55,7 +55,8 @@ html, body {
 .block { margin: 0 0 var(--s4); animation: rise 320ms ease-out both; }
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .note { font-size: 13px; color: var(--ink-2); margin-top: var(--s1); }
-.restored .block { animation: none; }
+.block.still { animation: none; }
+.step.untitled .step-head { display: none; }
 
 .math { overflow-x: auto; overflow-y: hidden; padding: var(--s1) 0; }
 .math .katex-display { margin: 0; text-align: left; }
@@ -124,3 +125,15 @@ code, pre { font: 14px/1.5 ui-monospace, "SF Mono", Menlo, monospace; }
 }
 .done-mark::before, .done-mark::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
 .fallback { color: var(--ink-2); }
+
+.review {
+  border: 1px solid var(--ink-3); border-radius: var(--r);
+  padding: var(--s3) var(--s4);
+}
+.review .label {
+  display: block; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--ink-3); margin-bottom: var(--s1);
+}
+.review .topic { font-size: 18px; font-weight: 650; line-height: 1.3; }
+.review .meta { font-size: 13px; color: var(--ink-2); margin-top: var(--s1); }
+.review .why { font-size: 15px; color: var(--ink-2); margin-top: var(--s2); }

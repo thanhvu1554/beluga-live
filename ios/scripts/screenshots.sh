@@ -4,7 +4,7 @@
 set -euo pipefail
 APP="${1:-}"; OUT="${2:-screenshots}"
 BUNDLE_ID="${BUNDLE_ID:-com.thanhvu.belugalive}"
-SCENES="${SCENES:-idle listening thinking tool lesson ask done sessions settings offline}"
+SCENES="${SCENES:-idle listening thinking tool lesson ask done sessions settings offline progress review}"
 mkdir -p "$OUT"
 
 UDID=$(xcrun simctl list devices available -j | jq -r '
@@ -27,7 +27,7 @@ for MODE in light dark; do
   for SCENE in $SCENES; do
     xcrun simctl terminate "$UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
     xcrun simctl launch "$UDID" "$BUNDLE_ID" -mock 1 -mockScene "$SCENE" >/dev/null
-    sleep "${SHOT_DELAY:-3}"
+    sleep "${SHOT_DELAY:-4}"
     xcrun simctl io "$UDID" screenshot "$OUT/${SCENE}-${MODE}.png" >/dev/null
     echo "shot $SCENE-$MODE"
   done

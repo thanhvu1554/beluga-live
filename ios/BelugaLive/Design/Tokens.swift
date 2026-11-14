@@ -46,8 +46,8 @@ enum TypeScale {
 /// Neutral ink levels that adapt to light/dark.
 enum Ink {
     static let primary = Color.primary
-    static let secondary = Color.primary.opacity(0.62)
-    static let tertiary = Color.primary.opacity(0.38)
+    static let secondary = Color.primary.opacity(0.68)
+    static let tertiary = Color.primary.opacity(0.55)
     static let faint = Color.primary.opacity(0.14)
     static let hairline = Color.primary.opacity(0.10)
 }

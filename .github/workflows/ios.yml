@@ -88,3 +88,13 @@ jobs:
           name: screenshots
           path: screenshots
           if-no-files-found: ignore
+
+      - name: Demo video (mock lesson, h264)
+        run: bash ios/scripts/record-demo.sh "$DERIVED/Build/Products/Debug-iphonesimulator/BelugaLive.app" video
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: demo-video
+          path: video
+          if-no-files-found: ignore

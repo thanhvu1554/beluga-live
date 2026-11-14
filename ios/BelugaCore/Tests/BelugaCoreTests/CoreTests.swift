@@ -168,3 +168,67 @@ import Testing
         #expect(events.isEmpty)
     }
 }
+
+@Suite struct ProgressTests {
+    static let frame = #"""
+    {"t":"progress","updatedAt":"2026-11-14T20:10:00Z","style":["Thich vi du truoc","Ngat nho tung buoc"],
+     "subjects":[
+       {"id":"toan","name":"Toan",
+        "weak":[{"topic":"Xet dau","note":"Nham dau khi a am","count":3,"lastSeen":"2026-11-12","due":"2026-11-14"}],
+        "mastered":[{"topic":"Vi-et","date":"2026-11-01"}],
+        "recent":[{"topic":"Bat phuong trinh","date":1763000000}]},
+       {"id":"hoa","name":"Hoa"}
+     ]}
+    """#
+
+    @Test func decodesFullFrame() throws {
+        guard case .progress(let p) = try ServerMessage.decode(Self.frame) else { Issue.record("not progress"); return }
+        #expect(p.subjects.count == 2)
+        #expect(p.style == ["Thich vi du truoc", "Ngat nho tung buoc"])
+        #expect(p.updatedAt == "2026-11-14T20:10:00Z")
+        let toan = p.subjects[0]
+        #expect(toan.id == "toan" && toan.name == "Toan")
+        #expect(toan.weakTopics == [WeakTopic(topic: "Xet dau", note: "Nham dau khi a am", count: 3, lastSeen: "2026-11-12", due: "2026-11-14")])
+        #expect(toan.mastered == [DatedTopic(topic: "Vi-et", date: "2026-11-01")])
+        #expect(toan.recent.first?.date == "1763000000")
+        #expect(!p.isEmpty)
+    }
+
+    @Test func missingFieldsBecomeEmpty() throws {
+        guard case .progress(let p) = try ServerMessage.decode(Self.frame) else { Issue.record("not progress"); return }
+        let hoa = p.subjects[1]
+        #expect(hoa.weakTopics.isEmpty && hoa.mastered.isEmpty && hoa.recent.isEmpty && hoa.isEmpty)
+        guard case .progress(let none) = try ServerMessage.decode(#"{"t":"progress"}"#) else { Issue.record("not progress"); return }
+        #expect(none.subjects.isEmpty && none.style.isEmpty && none.updatedAt == nil && none.isEmpty)
+        let junk = LearningProgress.from(["subjects": "oops", "style": 3])
+        #expect(junk.isEmpty)
+    }
+
+    @Test func roundTripsThroughCodable() throws {
+        let original = LearningProgress(
+            subjects: [SubjectProgress(id: "anh", name: "Anh", weakTopics: [WeakTopic(topic: "Present perfect", count: 2)],
+                                       mastered: [], recent: [DatedTopic(topic: "Articles", date: "2026-11-10")])],
+            style: ["Short sentences"], updatedAt: "2026-11-14")
+        let data = try JSONEncoder().encode(original)
+        let back = try JSONDecoder().decode(LearningProgress.self, from: data)
+        #expect(back == original)
+    }
+
+    @Test func encodesGetProgress() {
+        #expect(ClientMessage.getProgress.text == #"{"t":"get_progress"}"#)
+    }
+
+    @Test func parsesDates() {
+        #expect(LearningDate.parse("2026-11-14") != nil)
+        #expect(LearningDate.parse("2026-11-14T20:10:00Z") != nil)
+        #expect(LearningDate.parse("2026-11-14T20:10:00.123Z") != nil)
+        #expect(LearningDate.parse("1763000000") == Date(timeIntervalSince1970: 1_763_000_000))
+        #expect(LearningDate.parse("1763000000000") == Date(timeIntervalSince1970: 1_763_000_000))
+        #expect(LearningDate.parse("not a date") == nil)
+        let now = LearningDate.parse("2026-11-14T12:00:00Z")!
+        #expect(LearningDate.isDue("2026-11-14", now: now))
+        #expect(LearningDate.isDue("2026-11-10", now: now))
+        #expect(!LearningDate.isDue("2026-11-20", now: now))
+        #expect(!LearningDate.isDue(nil, now: now))
+    }
+}

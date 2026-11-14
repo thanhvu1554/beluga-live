@@ -58,13 +58,14 @@ final class BoardBridge: NSObject, @preconcurrency WKScriptMessageHandler {
         call("board.reset()")
     }
 
-    func apply(_ event: LessonEvent) {
+    /// `restoring` draws the event without animation (history, snapshots, mock scenes).
+    func apply(_ event: LessonEvent, restoring: Bool = false) {
         if case .step(let index, _) = event.kind {
             stepCount = max(stepCount, index + 1)
             currentStep = index
         }
         hasContent = true
-        call("board.apply(\(event.raw.jsonString))")
+        call(restoring ? "board.restore([\(event.raw.jsonString)])" : "board.apply(\(event.raw.jsonString))")
     }
 
     func goto(_ index: Int) {

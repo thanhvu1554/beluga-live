@@ -26,6 +26,10 @@ final class CameraController: NSObject, @unchecked Sendable, AVCapturePhotoCaptu
         await AVCaptureDevice.requestAccess(for: .video)
     }
 
+    static var accessGranted: Bool { AVCaptureDevice.authorizationStatus(for: .video) == .authorized }
+
+    var isRunning: Bool { session.isRunning }
+
     private func configure() {
         guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
               let input = try? AVCaptureDeviceInput(device: device) else { return }
@@ -35,6 +39,10 @@ final class CameraController: NSObject, @unchecked Sendable, AVCapturePhotoCaptu
         if session.canAddOutput(photoOutput) { session.addOutput(photoOutput) }
         photoOutput.maxPhotoQualityPrioritization = .quality
         session.commitConfiguration()
+        // The app is portrait-only: ask for upright photos (the output defaults to the sensor's landscape).
+        if let connection = photoOutput.connection(with: .video), connection.isVideoRotationAngleSupported(90) {
+            connection.videoRotationAngle = 90
+        }
         if (try? device.lockForConfiguration()) != nil {
             if device.isFocusModeSupported(.continuousAutoFocus) { device.focusMode = .continuousAutoFocus }
             if device.isAutoFocusRangeRestrictionSupported { device.autoFocusRangeRestriction = .near }

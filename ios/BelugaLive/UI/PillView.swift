@@ -86,6 +86,7 @@ struct PillView: View {
     private var symbol: String? {
         switch state {
         case .asking: return "mic"
+        case .speaking: return "speaker.wave.2"
         case .offline: return "wifi.slash"
         case .done: return "checkmark"
         default: return nil
@@ -119,11 +120,14 @@ struct PillView: View {
             line(from: w * 0.15, to: w * 0.85, shading: .color(.primary.opacity(0.4)), width: Stroke.thin, dash: [3, 5])
 
         case .thinking:
-            // Slow breathing: length and weight follow a 2.4 s cycle.
-            let phase = (sin(since * 2 * .pi / 2.4 - .pi / 2) + 1) / 2
-            let half = w * (0.12 + 0.16 * phase)
-            line(from: w / 2 - half, to: w / 2 + half,
-                 shading: .color(.primary.opacity(0.35 + 0.5 * phase)), width: Stroke.regular + CGFloat(phase))
+            // Three dots that swell in turn (1.5 s cycle): unlike every other state, no line at all.
+            for i in 0..<3 {
+                let phase = (sin(since * 2 * .pi / 1.5 - Double(i) * 0.9 - .pi / 2) + 1) / 2
+                let r = CGFloat(2.5 + 2.5 * phase)
+                let x = w / 2 + CGFloat(i - 1) * 16
+                let dot = CGRect(x: x - r, y: midY - r, width: r * 2, height: r * 2)
+                ctx.fill(Path(ellipseIn: dot), with: .color(.primary.opacity(0.35 + 0.55 * phase)))
+            }
 
         case .tool:
             // Sweep across a faint baseline.

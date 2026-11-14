@@ -73,13 +73,30 @@
     var ax = Math.min(Math.max(0, y0), y1), ay = Math.min(Math.max(0, x0), x1);
     el("line", { "class": "axis", x1: pad, x2: W - pad, y1: sy(ax), y2: sy(ax) }, g);
     el("line", { "class": "axis", y1: pad, y2: H - pad, x1: sx(ay), x2: sx(ay) }, g);
+
+    // Everything a point label must stay clear of, as pixel samples.
+    var obstacles = [];
+    var px;
+    for (px = pad; px <= W - pad; px += 6) obstacles.push([px, sy(ax)]);
+    for (px = pad; px <= H - pad; px += 6) obstacles.push([sx(ay), px]);
+
+    // A tick whose number is also shown as a point label on that axis is dropped.
+    var labelled = (block.points || []).filter(function (p) { return p.label; });
+    function dupX(val) {
+      return labelled.some(function (p) { return Math.abs(p.y - ax) < 1e-9 && Math.abs(p.x - val) < 1e-9; });
+    }
+    function dupY(val) {
+      return labelled.some(function (p) { return Math.abs(p.x - ay) < 1e-9 && Math.abs(p.y - val) < 1e-9; });
+    }
     for (v = Math.ceil(x0 / stepX) * stepX; v <= x1 + 1e-9; v += stepX) {
-      if (Math.abs(v) < 1e-9) continue;
+      if (Math.abs(v) < 1e-9 || dupX(v)) continue;
       var t = el("text", { "class": "tick", x: sx(v), y: sy(ax) + 14, "text-anchor": "middle" }, g); t.textContent = fmt(v);
+      obstacles.push([sx(v), sy(ax) + 10], [sx(v) - 6, sy(ax) + 10], [sx(v) + 6, sy(ax) + 10]);
     }
     for (v = Math.ceil(y0 / stepY) * stepY; v <= y1 + 1e-9; v += stepY) {
-      if (Math.abs(v) < 1e-9) continue;
+      if (Math.abs(v) < 1e-9 || dupY(v)) continue;
       var t2 = el("text", { "class": "tick", x: sx(ay) - 6, y: sy(v) + 4, "text-anchor": "end" }, g); t2.textContent = fmt(v);
+      obstacles.push([sx(ay) - 12, sy(v)], [sx(ay) - 6, sy(v)]);
     }
 
     var clip = "c" + Math.random().toString(36).slice(2);
@@ -93,17 +110,45 @@
         var x = x0 + (x1 - x0) * i / N, y = f(x);
         if (!isFinite(y) || Math.abs(y) > 1e6) { pen = false; continue; }
         d += (pen ? "L" : "M") + sx(x).toFixed(1) + " " + sy(y).toFixed(1);
+        if (i % 2 === 0 && sy(y) >= pad - 4 && sy(y) <= H - pad + 4) obstacles.push([sx(x), sy(y)]);
         pen = true;
       }
       el("path", { "class": "curve" + (idx > 0 ? " alt" : ""), d: d, "clip-path": "url(#" + clip + ")" }, svg);
     });
 
+    // Label position: the spot around the point that is farthest from curves, axes and numbers.
+    function placeLabel(cx, cy, text) {
+      var hw = text.length * 3.6 + 3, hh = 8, best = null, a, r;
+      for (r = 14; r <= 22; r += 8) {
+        for (a = 0; a < 360; a += 30) {
+          var rad = a * Math.PI / 180, lx = cx + r * Math.cos(rad), ly = cy + r * Math.sin(rad);
+          if (lx - hw < pad || lx + hw > W - pad || ly - hh < pad || ly + hh > H - pad) continue;
+          var clear = 1e9;
+          for (var k = 0; k < obstacles.length; k++) {
+            var dx = Math.max(0, Math.abs(obstacles[k][0] - lx) - hw), dy = Math.max(0, Math.abs(obstacles[k][1] - ly) - hh);
+            var dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < clear) clear = dist;
+          }
+          // Prefer clear space, then closer to the point, then above it.
+          var score = Math.min(clear, 12) * 10 - (r - 14) * 0.5 + (a > 180 ? 1 : 0);
+          if (!best || score > best.score) best = { x: lx, y: ly, score: score };
+        }
+      }
+      return best || { x: cx + 12, y: cy - 12 };
+    }
+
+    (block.points || []).forEach(function (p) {
+      obstacles.push([sx(p.x), sy(p.y)]);
+      for (var q = 0; q < 8; q++) obstacles.push([sx(p.x) + 8 * Math.cos(q * Math.PI / 4), sy(p.y) + 8 * Math.sin(q * Math.PI / 4)]);
+    });
     (block.points || []).forEach(function (p) {
       el("circle", { "class": "pt-ring", cx: sx(p.x), cy: sy(p.y), r: 7 }, svg);
       el("circle", { "class": "pt", cx: sx(p.x), cy: sy(p.y), r: 3.5 }, svg);
       if (p.label) {
-        var lt = el("text", { "class": "pt-label", x: sx(p.x) + 6, y: sy(p.y) - 9 }, svg);
-        lt.textContent = p.label;
+        var text = String(p.label), pos = placeLabel(sx(p.x), sy(p.y), text);
+        var lt = el("text", { "class": "pt-label", x: pos.x, y: pos.y + 4, "text-anchor": "middle" }, svg);
+        lt.textContent = text;
+        obstacles.push([pos.x, pos.y]);
       }
     });
     return svg;

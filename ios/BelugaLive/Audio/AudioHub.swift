@@ -159,6 +159,9 @@ final class AudioHub {
     private(set) var listening = false
     private var transcript = ""
     private var transcriptFinal = false
+    private var observers: [NSObjectProtocol] = []
+
+    enum Grant: Sendable { case granted, undetermined, denied }
 
     // MARK: Lifecycle
 
@@ -173,6 +176,8 @@ final class AudioHub {
         }
         // Echo cancellation so the loudspeaker can be used while the mic is open.
         do { try engine.inputNode.setVoiceProcessingEnabled(true) } catch { print("voice processing: \(error)") }
+        // The voice-processing input keeps running with the engine; keep it muted except while listening.
+        engine.inputNode.isVoiceProcessingInputMuted = true
         for n in [ttsNode, fileNode, earconNode] { engine.attach(n) }
         engine.connect(ttsNode, to: engine.mainMixerNode, format: ttsFormat)
         engine.connect(earconNode, to: engine.mainMixerNode, format: Earcon.format)
@@ -181,6 +186,30 @@ final class AudioHub {
         earcons = Earcon.renderAll()
         engine.prepare()
         do { try engine.start(); started = true } catch { print("engine start: \(error)") }
+        installObservers()
+    }
+
+    /// Restarts the engine after route changes (headphones, Bluetooth) and phone-call interruptions.
+    private func installObservers() {
+        guard observers.isEmpty else { return }
+        let nc = NotificationCenter.default
+        observers.append(nc.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.recoverEngine() }
+        })
+        observers.append(nc.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
+            let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+            MainActor.assumeIsolated {
+                if raw == AVAudioSession.InterruptionType.ended.rawValue {
+                    try? AVAudioSession.sharedInstance().setActive(true)
+                    self?.recoverEngine()
+                }
+            }
+        })
+    }
+
+    private func recoverEngine() {
+        guard started, !engine.isRunning else { return }
+        do { try engine.start() } catch { print("engine restart: \(error)") }
     }
 
     private nonisolated static func installOutputTap(_ node: AVAudioMixerNode, meter: LevelMeter) {
@@ -252,12 +281,34 @@ final class AudioHub {
 
     // MARK: Listening
 
-    static func requestPermissions() async -> Bool {
-        let mic = await AVAudioApplication.requestRecordPermission()
-        let speech = await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
-            requestSpeechAuth { c.resume(returning: $0) }
+    static func microphoneGrant() -> Grant {
+        switch AVAudioApplication.shared.recordPermission {
+        case .granted: return .granted
+        case .undetermined: return .undetermined
+        default: return .denied
         }
-        return mic && speech
+    }
+
+    static func speechGrant() -> Grant {
+        switch SFSpeechRecognizer.authorizationStatus() {
+        case .authorized: return .granted
+        case .notDetermined: return .undetermined
+        default: return .denied
+        }
+    }
+
+    /// Asks for whatever is still undetermined: the microphone first, then speech recognition if needed.
+    static func requestPermissions(needSpeech: Bool) async -> Bool {
+        var mic = microphoneGrant() == .granted
+        if microphoneGrant() == .undetermined { mic = await AVAudioApplication.requestRecordPermission() }
+        guard mic else { return false }
+        guard needSpeech else { return true }
+        if speechGrant() == .undetermined {
+            return await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
+                requestSpeechAuth { c.resume(returning: $0) }
+            }
+        }
+        return speechGrant() == .granted
     }
 
     private nonisolated static func requestSpeechAuth(_ done: @escaping @Sendable (Bool) -> Void) {
@@ -292,6 +343,7 @@ final class AudioHub {
         self.collector = collector
         let input = engine.inputNode
         input.removeTap(onBus: 0)
+        input.isVoiceProcessingInputMuted = false
         Self.installInputTap(input, meter: inputLevel, box: box, collector: collector)
         if !engine.isRunning { try? engine.start() }
         listening = true
@@ -320,6 +372,7 @@ final class AudioHub {
         guard listening else { return .nothing }
         listening = false
         engine.inputNode.removeTap(onBus: 0)
+        engine.inputNode.isVoiceProcessingInputMuted = true
         inputLevel.set(0)
         if let collector {
             self.collector = nil
