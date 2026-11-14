@@ -42,7 +42,7 @@ cd C:\Users\Beluga\Desktop\Liveapp
 
 ## 4b. Điều khiển iPhone từ Claude Code trên PC (tùy chọn)
 
-Chạy `.\scriptsegister-mcp.ps1` một lần để đăng ký MCP `beluga` vào Claude Code của bạn. Sau đó
+Chạy `.\scripts\register-mcp.ps1` một lần để đăng ký MCP `beluga` vào Claude Code của bạn. Sau đó
 phiên Claude Code bất kỳ có các tool: xem trạng thái điện thoại, chụp ảnh, cho điện thoại nói, chiếu
 nội dung lên bảng, nghe câu bạn nói. Server phải đang chạy.
 
