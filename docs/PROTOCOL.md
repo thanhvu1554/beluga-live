@@ -112,11 +112,12 @@ Mỗi frame là một JSON có `t`. Sự kiện bài giảng có `seq` tăng d�
 
 | `t` | Trường | Ghi chú |
 |---|---|---|
-| `ready` | `v, sessionId, title, tts:"device"\|"server", stt:"device"\|"server", audioWaitMs?, boardVersion, pairToken?` | `audioWaitMs`: thời gian tối đa máy chờ frame `audio` của một `say` (mặc định 3000). |
+| `ready` | `v, sessionId, title, tts:"device"\|"server", stt:"device"\|"server", audioWaitMs?, boardVersion, pairToken?` | `audioWaitMs`: lưới an toàn, thời gian tối đa máy chờ `audio`/`audio_skip` của một `say` khi đã tới lượt phát (mặc định 3000; GenVoice gửi 20000). Bình thường server tự báo `audio_skip` trước mốc này, với hạn tính theo độ dài câu. |
 | `state` | `state:"idle"\|"thinking"\|"tool"\|"speaking"\|"done", tool?:"capture"` | "listening" do máy tự biết. |
 | `heard` | `text` | Kết quả STT phía server (để hiện phụ đề). |
 | `say` | `seq, turn, text, audio:boolean` | `audio:true` thì chờ frame `audio` cùng `seq`. |
 | `audio` | `seq, mime:"audio/mpeg", data (base64)` | Quá `ready.audioWaitMs` kể từ lúc tới lượt phát câu đó mà chưa tới thì máy đọc bằng giọng hệ thống. Server tạo tiếng cho các câu song song, nên `audio` có thể tới trước lượt phát. |
+| `audio_skip` | `seq` | Server không tạo được tiếng cho câu này (lỗi hoặc quá hạn phía server): máy đọc ngay bằng giọng hệ thống, không chờ nữa. |
 | `step` | `seq, turn, index, title` | |
 | `show` | `seq, turn, step, block` | |
 | `ask` | `seq, turn, kind, prompt` | Sau khi phát xong: máy vào trạng thái chờ trả lời. |
