@@ -133,25 +133,25 @@ private func seqs(_ actions: [TimelineAction]) -> [String] {
 
     @Test func audioArrivingEarlyAndOutOfOrderIsKeptBySeq() {
         var t = Timeline(lastPlayed: 0)
-        #expect(t.receiveAudio(seq: 3, data: Data([3])))
+        do { let ok = t.receiveAudio(seq: 3, data: Data([3])); #expect(ok) }
         _ = t.receive(say(1))
-        #expect(t.receiveAudio(seq: 1, data: Data([1])))
+        do { let ok = t.receiveAudio(seq: 1, data: Data([1])); #expect(ok) }
         _ = t.receive(say(3))
         _ = t.receive(LessonEvent(seq: 2, turn: 1, kind: .step(index: 0, title: "a")))
-        #expect(t.takeAudio(seq: 1) == .mp3(Data([1])))
+        do { let got = t.takeAudio(seq: 1); #expect(got == .mp3(Data([1]))) }
         _ = t.finishedSpeaking(seq: 1)
         #expect(t.current?.seq == 3)
-        #expect(t.takeAudio(seq: 3) == .mp3(Data([3])))
+        do { let got = t.takeAudio(seq: 3); #expect(got == .mp3(Data([3]))) }
     }
 
     @Test func audioSkipMeansSpeakNow() {
         var t = Timeline(lastPlayed: 0)
         t.receiveAudioSkip(seq: 2)
         _ = t.receive(say(1))
-        #expect(t.takeAudio(seq: 1) == nil)
+        do { let got = t.takeAudio(seq: 1); #expect(got == nil) }
         _ = t.finishedSpeaking(seq: 1)
         _ = t.receive(say(2))
-        #expect(t.takeAudio(seq: 2) == .skip)
+        do { let got = t.takeAudio(seq: 2); #expect(got == .skip) }
     }
 
     @Test func lateAudioAfterFallbackIsDropped() {
@@ -160,7 +160,7 @@ private func seqs(_ actions: [TimelineAction]) -> [String] {
         t.abandonAudio(seq: 1)
         let accepted = t.receiveAudio(seq: 1, data: Data([9]))
         #expect(!accepted)
-        #expect(t.takeAudio(seq: 1) == nil)
+        do { let got = t.takeAudio(seq: 1); #expect(got == nil) }
     }
 
     @Test func audioForPlayedOrInterruptedSaysIsDropped() {
