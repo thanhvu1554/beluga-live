@@ -22,11 +22,19 @@ Cập nhật 14/11/2026. CI xanh ở run 43591800568 (commit f640c8b): `swift te
   khuất sau nút chụp, pill, nút thu bảng (thấy ở cảnh lesson, ask, done và trong video).
 - Đồ thị: nhãn điểm "2", "3" đặt cách xa đường cong và trục (tự chọn vị trí thoáng nhất quanh điểm),
   nhãn trục trùng với nhãn điểm đã bỏ.
-- Pill: 8 trạng thái nhìn phân biệt được. idle = vạch ngắn; thinking = ba chấm lần lượt phồng lên;
-  tool = vạch mờ có đoạn đậm quét ngang; listening = cột nhảy kín chiều ngang; speaking = biểu tượng loa
-  + cột đối xứng; asking = micro + vạch đứt quãng; done = dấu tick + vạch; offline = vạch đứt nét + biểu
-  tượng mất sóng. (Trước đó thinking và idle nhìn gần như giống nhau, listening và speaking chỉ khác
-  độ đậm.)
+- Pill kiểu "quầng sáng" (run 43595441711): viên nang 200x64 là Liquid Glass hệ thống nhuộm đen, thêm lớp nền
+  tối bên trong nên ở cả chế độ sáng lẫn tối đều là viên nang tối; quầng sáng trắng-xám dâng từ mép dưới, cắt
+  theo viên nang, một màu duy nhất `Palette.glow` (đổi một dòng trong `Tokens.swift` để chuyển màu). Chiều cao
+  và độ sáng bám mức âm thật đã làm mượt (attack 60 ms, release 250 ms; mức 0 thì tắt hẳn); mép trên gợn nhẹ,
+  pha gợn chỉ trôi khi có tiếng. listening = quầng phẳng theo mic; speaking = quầng dạng vòm (giữa cao hơn) theo
+  mức đầu ra của engine (cả mp3 lẫn giọng hệ thống đều đi qua engine nên đo thật) + biểu tượng loa; thinking =
+  dải mờ thở chậm ở đáy (trạng thái duy nhất chuyển động khi im); tool = vệt sáng quét một lần mỗi 1,4 s;
+  asking = đáy sáng nhẹ đứng yên + micro; done = quầng khép xuống một lần + tick; idle = chỉ còn viền;
+  offline = viền đứt nét + biểu tượng mất sóng. Reduce Motion: bỏ gợn, thinking/tool đứng yên.
+  Trích khung hình video (4 khung/giây) thấy quầng listening và speaking đổi độ cao giữa các khung, có khung
+  tắt hẳn ở quãng nghỉ. Mock `-mock 1`: mức âm giả có âm tiết và quãng nghỉ thật; cảnh screenshot giữ mức cố định.
+  Chưa đo được: độ mượt 60 fps trên máy thật (Canvas + blur, vẽ lại Path mỗi khung, không tối ưu thêm).
+  Nút tròn hai bên 48 pt, pill 64 pt cao: vùng chạm đều trên 44 pt.
 - Trang tiến độ (từ danh sách phiên hoặc cài đặt, hoặc `-mockScene progress`): từng môn với Đang yếu
   (chủ đề, ghi chú, số lần sai, ngày ôn hoặc "Đến hạn ôn"), Đã vững, Đã học gần đây, rồi Cách giảng hợp.
   Trạng thái rỗng, đang tải và chưa kết nối viết riêng. Chữ phẳng trên nền hệ thống, không thẻ.
@@ -35,8 +43,9 @@ Cập nhật 14/11/2026. CI xanh ở run 43591800568 (commit f640c8b): `swift te
 - Video `demo-video` (33,6 s, h264, 1206x2622, khoảng 18 MB): trích khung hình mỗi 2 giây thấy đúng
   trình tự idle, nghe, nghĩ, bảng trượt lên từng bước (Đọc đề, Tìm nghiệm, Xét dấu), pill "đến lượt
   bạn", nghe câu trả lời, nghĩ, nói, Kết luận, Xong bài, về idle.
-- Icon mới: hình beluga đặc (trán bầu, không vây lưng, đuôi khía), bản sáng, tối, tinted đều đọc được
-  ở cỡ 40 px. Vẫn hơi "hoạt hình" so với hình học tối giản; chủ nhà có thể muốn chỉnh tay.
+- Icon vẽ lại lần hai: ba khối đặc cùng một màu (thân bo tròn, trán bầu hình tròn, đuôi hai thùy hếch lên) và một
+  chấm mắt, không miệng, không vây lưng; bản sáng, tối, tinted xem ở cỡ lớn và 40 px đều đọc là cá voi trắng.
+  Nguồn SVG ở `ios/design/icon*.svg`. Vẫn nên để chủ nhà duyệt hình.
 - Tương phản: `Ink.tertiary` 0,38 lên 0,55, `Ink.secondary` 0,62 lên 0,68; `--ink-3` của bảng 0,38 lên 0,6
   (trước đó nhãn nhỏ chỉ khoảng 2,7:1).
 
@@ -76,7 +85,8 @@ không nghe.
   task phát bị treo nhưng không chặn câu sau.
 - Nhận dạng giọng trên máy với `requiresOnDeviceRecognition`: vi-VN có thể không hỗ trợ on-device trên máy cũ.
 - Phụ đề dài 3 dòng khi bảng đang mở có thể chạm thanh tiêu đề trên iPhone nhỏ (mới xem ở simulator iPhone 17).
-- Tiêu đề bước trong bảng đứng sát hàng tên bài khi trang đã cuộn; có thể thêm khoảng đệm.
+- Tiêu đề bước đã cách tên bài 24 pt khi chưa cuộn (header đệm 8 + trang đệm 16) và mờ dần dưới mép trên khi
+  cuộn; khi cuộn dở, chữ tiêu đề có thể bị mờ nửa chừng (chủ ý, không cắt gắt).
 - Định dạng ngày của `progress` (server gửi `YYYY-MM-DD`) đã khớp mã server; phần còn lại của khung progress
   đọc theo PROTOCOL, chưa thử với server thật.
 
