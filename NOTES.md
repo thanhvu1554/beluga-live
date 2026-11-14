@@ -9,7 +9,7 @@
       Server đã chạy với Claude Code thật và GenVoice thật; app mới chạy ở chế độ mock trên simulator.
 - [x] 3. Điểm dừng "vặn lại": có ở server (parser, lượt dừng sau `@ask`) và ở app (thẻ "Đến lượt bạn").
 - [ ] **Chưa làm lần nào: app thật nói chuyện với server thật trên iPhone.** Đây là việc kế tiếp.
-- [ ] Để sau: memory, ôn lại, màn hình tiến độ, module môn học (`tutor/.claude/skills/`).
+- [x] Memory, ôn lại đầu phiên, tám module môn học: xong ở server, đã chạy thử với Claude thật (riêng module Toán; bảy module còn lại mới kiểm cú pháp). Trang tiến độ trong app: xem mục iOS.
 
 ## iOS (`ios/`, `shared/board/`)
 
