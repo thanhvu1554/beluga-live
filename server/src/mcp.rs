@@ -14,7 +14,7 @@ pub const PROTOCOL_VERSION: &str = "2025-03-26";
 fn tool_def() -> Value {
     json!({
         "name": "capture_photo",
-        "description": "Take a sharp photo with the student's phone camera (their problem sheet or notebook) and return it as an image. Use it when you have not seen the problem yet or need to re-check. If the image is blurry or cut off, tell the student briefly what to adjust and call it again.",
+        "description": "Take a sharp photo with the student's phone camera (their problem sheet, notebook, or handwritten work) and return it as an image. This camera is your eyes: call it on your own initiative whenever you need to see something you have not seen — the start of a new problem, a part the student mentions (\"câu b\", \"this line\", \"next page\"), or their working to check. Never ask the student to describe the problem or to send a photo themselves. Say one short line first, then call. If the image is blurry or cut off, tell the student briefly what to adjust and call it again once. Do not re-capture when you have already seen the page clearly.",
         "inputSchema": {"type": "object", "properties": {}, "additionalProperties": false}
     })
 }
