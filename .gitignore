@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+node_modules/
+server/data/
+tutor/memory/
+tutor/photos/
+*.p12
+*.mobileprovision
+*.ipa
+build/
+DerivedData/
+*.xcodeproj
+.DS_Store
+ci-artifacts/
