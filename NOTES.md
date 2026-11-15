@@ -45,6 +45,20 @@ lượt học thật đọc bằng giọng mới.
 - Màn Giọng nói (Cài đặt → Giọng gia sư): nghe thử từng giọng (cache ở máy), chọn giọng; cảnh mock `voices`.
 - Lưu ý khi làm tiếp: sau khi hết gián đoạn âm thanh, `interruption(ended)` gọi `ensureRunning()` cả khi đang ở chat (đã `suspend`).
 
+**iOS: đợt thiết kế và chế độ gọi (15/11/2026, nhánh `ios-design` rồi `ios-call`, CI xanh run 43692751455, commit 6ed451c)**
+- Thiết kế: token chuyển động dùng chung trong `Design/Tokens.swift`, ngăn kéo kiểu đẩy, home có gợi ý (Tiếp tục, Ôn nhanh) và
+  tên + model trên thanh tiêu đề, Live đổi hình sang Gửi, thư mục chỉ còn một hàng tab (mục lục là nút trên thanh tiêu đề), Cài đặt
+  có thẻ trạng thái + hạn mức ở đầu, màn hạn mức bỏ bộ đếm token thô, chữ stream mượt, pill lúc rảnh có gợi ý. Đã xem ảnh sáng/tối;
+  chuyển động chưa đánh giá được ngoài máy thật.
+- Gọi: nút điện thoại trong composer (Live giữ nguyên), màn gọi (`ios/BelugaLive/Call/`, `Model/LiveController+Call.swift`) là một mode
+  của cùng phiên live, rảnh tay luôn bật; PiP bằng `AVPictureInPictureVideoCallViewController`, nội dung vẽ native (bước, khối đáp án
+  hoặc mới nhất, phụ đề, trạng thái; logic chọn ở `BelugaCore/CallStage.swift`, có test). `UIBackgroundModes`: `audio`, `voip`.
+  Trong cuộc gọi không dừng engine/mic/WebSocket khi vào nền. Camera nền bật khi `isMultitaskingCameraAccessSupported`; không được thì
+  `capture_request` trả ngay một ảnh chữ báo lý do. `interruption(ended)` không còn bật engine khi đang ở chat.
+- Đề xuất cho server (chưa làm): `photo{requestId, error}` để `capture_photo` báo lỗi bằng chữ thay vì ảnh chữ.
+- Chỉ kiểm được trên iPhone thật: PiP tự hiện khi rời app, tiếng và mic khi ở nền, camera khi thu nhỏ, hồi âm thanh sau cuộc gọi điện
+  thoại lúc đang PiP, nhận dạng giọng trên máy khi ở nền (STT server thì chạy được), WebSocket sống 10 phút trong PiP.
+
 ## iOS (`ios/`, `shared/board/`)
 
 ### Bản v2 (giao thức v2, 15/11/2026)
