@@ -45,11 +45,23 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Picker(s("settings.model"), selection: $settings.model) {
-                        Text(verbatim: "Sonnet").tag("sonnet")
-                        Text(verbatim: "Opus").tag("opus")
-                        Text(verbatim: "Haiku").tag("haiku")
+                    NavigationLink {
+                        ModelPickerList(controller: controller)
+                    } label: {
+                        LabeledContent(s("settings.model")) {
+                            Text(verbatim: modelSummary).foregroundStyle(Ink.secondary)
+                        }
                     }
+                    VStack(alignment: .leading, spacing: Space.s) {
+                        Text(verbatim: s("settings.defaultMode"))
+                        Picker(s("settings.defaultMode"), selection: $settings.defaultMode) {
+                            Text(verbatim: s("settings.mode.chat")).tag(SessionMode.chat)
+                            Text(verbatim: "Live").tag(SessionMode.live)
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                    }
+                    .padding(.vertical, Space.xs)
                     VStack(alignment: .leading, spacing: Space.s) {
                         Text(verbatim: s("settings.rigor"))
                         Picker(s("settings.rigor"), selection: $settings.rigor) {
@@ -78,6 +90,7 @@ struct SettingsView: View {
                         .labelsHidden()
                     }
                     .padding(.vertical, Space.xs)
+                    Toggle(s("settings.sttFix"), isOn: $settings.sttFix)
                     Toggle(s("settings.captions"), isOn: $settings.captions)
                     Toggle(s("settings.haptics"), isOn: $settings.haptics)
                 } header: {
@@ -86,7 +99,13 @@ struct SettingsView: View {
 
                 Section {
                     NavigationLink {
+                        UsageView(controller: controller)
+                    } label: {
+                        Text(verbatim: s("usage.title"))
+                    }
+                    NavigationLink {
                         LearningProgressView(controller: controller)
+                            .onAppear { controller.requestProgress() }
                     } label: {
                         Text(verbatim: s("progress.title"))
                     }
@@ -127,9 +146,14 @@ struct SettingsView: View {
             codeDraft = settings.pairCode
         }
         .onChange(of: settings.lang) { _, _ in controller.settingsChanged() }
-        .onChange(of: settings.model) { _, _ in controller.settingsChanged() }
+        .onChange(of: settings.sttFix) { _, _ in controller.settingsChanged() }
         .onChange(of: settings.rigor) { _, _ in controller.settingsChanged() }
         .onChange(of: settings.haptics) { _, _ in controller.settingsChanged() }
+    }
+
+    private var modelSummary: String {
+        let name = controller.currentModel?.label ?? settings.model
+        return settings.effort.isEmpty ? name : name + " · " + s("effort.\(settings.effort)")
     }
 
     private func applyConnection() {

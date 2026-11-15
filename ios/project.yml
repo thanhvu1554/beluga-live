@@ -32,6 +32,12 @@ targets:
         buildPhase: resources
     dependencies:
       - package: BelugaCore
+    postBuildScripts:
+      - name: Drop web dev harness from the bundle
+        basedOnDependencyAnalysis: false
+        script: |
+          B="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/board"
+          rm -rf "$B/dev.html" "$B/dev-data.js" "$B/dev-knowledge.json" "$B/dev-files"
     settings:
       base:
         PRODUCT_NAME: BelugaLive
@@ -41,3 +47,4 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         CODE_SIGN_STYLE: Manual
         DEVELOPMENT_TEAM: ""
+        ENABLE_USER_SCRIPT_SANDBOXING: NO

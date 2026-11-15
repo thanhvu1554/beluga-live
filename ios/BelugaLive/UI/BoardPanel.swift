@@ -43,11 +43,17 @@ struct BoardPanel: View {
         }
         .padding(.bottom, Space.s)
         .contentShape(.rect)
+        // Only a vertical drag on the header collapses the panel; horizontal swipes belong to the board's
+        // step paging (web scroll-snap) and are never taken here.
         .gesture(
-            DragGesture()
-                .onChanged { drag = $0.translation.height }
+            DragGesture(minimumDistance: 12)
+                .onChanged { v in
+                    guard abs(v.translation.height) > abs(v.translation.width) else { return }
+                    drag = v.translation.height
+                }
                 .onEnded { v in
-                    if v.translation.height > 120 || v.predictedEndTranslation.height > 240 {
+                    let vertical = abs(v.translation.height) > abs(v.translation.width)
+                    if vertical, v.translation.height > 120 || v.predictedEndTranslation.height > 240 {
                         controller.showBoard(false)
                     }
                     withAnimation(Motion.panel) { drag = 0 }

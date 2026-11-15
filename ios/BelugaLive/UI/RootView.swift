@@ -2,10 +2,68 @@ import SwiftUI
 import UIKit
 import BelugaCore
 
+/// Root: the chat shell (home, transcript, drawer, folders) with Live laid over it when the session is in live mode.
+/// App-wide sheets live here so they work from either mode.
 struct RootView: View {
     @Bindable var controller: LiveController
     @Environment(\.colorScheme) private var scheme
     @Environment(\.scenePhase) private var phase
+
+    var body: some View {
+        ZStack {
+            ChatShell(controller: controller)
+            if controller.mode == .live {
+                LiveView(controller: controller)
+                    .transition(.move(edge: .bottom))
+                    .zIndex(1)
+            }
+        }
+        .animation(Motion.panel, value: controller.mode)
+        .onAppear { applyTheme(scheme) }
+        .onChange(of: scheme) { _, new in applyTheme(new) }
+        .onChange(of: phase) { _, new in if new == .active { controller.appBecameActive() } }
+        .sheet(isPresented: $controller.showProgress) {
+            NavigationStack { LearningProgressView(controller: controller) }
+                .tint(Ink.primary)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $controller.showSettings) {
+            SettingsView(controller: controller, settings: controller.settings)
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $controller.showUsage) {
+            NavigationStack { UsageView(controller: controller) }
+                .tint(Ink.primary)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $controller.showModels) {
+            ModelPickerView(controller: controller)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $controller.showReplay) {
+            ReplayView(controller: controller)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(item: $controller.preview) { file in
+            QuickLookView(url: file.url)
+                .ignoresSafeArea()
+        }
+    }
+
+    private func applyTheme(_ s: ColorScheme) {
+        controller.board.setTheme(s == .dark)
+        controller.chatPage.setTheme(s == .dark)
+        controller.knowledgePage.setTheme(s == .dark)
+    }
+}
+
+/// Live mode: camera, captions, the board panel and the voice pill (protocol v1 flow).
+struct LiveView: View {
+    @Bindable var controller: LiveController
     @Environment(\.strings) private var s
 
     var body: some View {
@@ -55,24 +113,7 @@ struct RootView: View {
                     .padding(.bottom, Space.s)
             }
         }
-        .onAppear { controller.board.setTheme(scheme == .dark) }
-        .onChange(of: scheme) { _, new in controller.board.setTheme(new == .dark) }
-        .onChange(of: phase) { _, new in if new == .active { controller.appBecameActive() } }
-        .sheet(isPresented: $controller.showSessions) {
-            SessionsView(controller: controller)
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-        }
-        .sheet(isPresented: $controller.showProgress) {
-            NavigationStack { LearningProgressView(controller: controller) }
-                .tint(Ink.primary)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
-        }
-        .sheet(isPresented: $controller.showSettings) {
-            SettingsView(controller: controller, settings: controller.settings)
-                .presentationDragIndicator(.visible)
-        }
+        .background(Color.black.ignoresSafeArea())
     }
 }
 
@@ -116,14 +157,14 @@ private struct TopBar: View {
     var body: some View {
         GlassEffectContainer(spacing: Space.l) {
             HStack(alignment: .center, spacing: Space.m) {
-                Button { controller.openSessions() } label: {
-                    Image(systemName: "list.bullet")
+                Button { controller.setMode(.chat) } label: {
+                    Image(systemName: "xmark")
                         .font(.system(size: Size.icon, weight: .medium))
                         .frame(width: Size.control - Space.s, height: Size.control - Space.s)
                 }
                 .buttonStyle(.glass)
                 .buttonBorderShape(.circle)
-                .accessibilityLabel(s("sessions.title"))
+                .accessibilityLabel(s("live.exit"))
 
                 Spacer(minLength: 0)
 

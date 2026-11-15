@@ -60,12 +60,15 @@ final class BoardBridge: NSObject, @preconcurrency WKScriptMessageHandler {
 
     /// `restoring` draws the event without animation (history, snapshots, mock scenes).
     func apply(_ event: LessonEvent, restoring: Bool = false) {
-        if case .step(let index, _) = event.kind {
-            stepCount = max(stepCount, index + 1)
-            currentStep = index
-        }
+        // The position comes from the page's `stepChanged` (it may stay on an older step the user is reading).
+        if case .step(let index, _) = event.kind { stepCount = max(stepCount, index + 1) }
         hasContent = true
         call(restoring ? "board.restore([\(event.raw.jsonString)])" : "board.apply(\(event.raw.jsonString))")
+    }
+
+    /// Space (px) kept clear for native chrome; the live panel keeps the default 128 at the bottom.
+    func setInsets(top: Int, bottom: Int) {
+        call("board.setInsets&&board.setInsets(\(top),\(bottom))")
     }
 
     func goto(_ index: Int) {
@@ -98,7 +101,8 @@ final class BoardBridge: NSObject, @preconcurrency WKScriptMessageHandler {
                 ready = true
                 let pending = queue
                 queue.removeAll()
-                webView.evaluateJavaScript("board.setTheme(\"\(theme)\");board.setLang(\"\(lang)\")", completionHandler: nil)
+                // The app draws its own step ticks in the panel header.
+                webView.evaluateJavaScript("board.setTheme(\"\(theme)\");board.setLang(\"\(lang)\");board.setOptions&&board.setOptions({dots:false})", completionHandler: nil)
                 for js in pending { webView.evaluateJavaScript(js, completionHandler: nil) }
             case "stepChanged":
                 if let step { currentStep = step }

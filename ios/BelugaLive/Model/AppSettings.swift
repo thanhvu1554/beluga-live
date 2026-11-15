@@ -16,6 +16,12 @@ final class AppSettings {
     var handsFree: Bool { didSet { save("handsFree", handsFree) } }
     var captions: Bool { didSet { save("captions", captions) } }
     var haptics: Bool { didSet { save("haptics", haptics) } }
+    /// Effort for the chosen model; empty = the model's default.
+    var effort: String { didSet { save("effort", effort) } }
+    /// Mode a new session starts in.
+    var defaultMode: SessionMode { didSet { save("defaultMode", defaultMode.rawValue) } }
+    /// Let the server correct speech recognition with a cheap model (PROTOCOL section 7).
+    var sttFix: Bool { didSet { save("sttFix", sttFix) } }
 
     private let defaults: UserDefaults
     private let persist: Bool
@@ -33,9 +39,14 @@ final class AppSettings {
         handsFree = defaults.object(forKey: "handsFree") as? Bool ?? false
         captions = defaults.object(forKey: "captions") as? Bool ?? false
         haptics = defaults.object(forKey: "haptics") as? Bool ?? true
+        effort = defaults.string(forKey: "effort") ?? ""
+        defaultMode = defaults.string(forKey: "defaultMode").flatMap(SessionMode.init(rawValue:)) ?? .chat
+        sttFix = defaults.object(forKey: "sttFix") as? Bool ?? true
     }
 
-    var tutor: TutorSettings { TutorSettings(lang: lang, model: model, rigor: rigor) }
+    func tutor(mode: SessionMode) -> TutorSettings {
+        TutorSettings(lang: lang, model: model, effort: effort.isEmpty ? nil : effort, rigor: rigor, mode: mode, sttFix: sttFix)
+    }
 
     /// Host without scheme/port, e.g. "my-pc.tailnet.ts.net" or "100.x.y.z".
     var normalizedHost: String {
@@ -53,6 +64,17 @@ final class AppSettings {
 
     var webSocketURL: URL? { hostPort.flatMap { URL(string: "ws://\($0)/ws") } }
     var boardURL: URL? { hostPort.flatMap { URL(string: "http://\($0)/board/") } }
+    /// `http://<pc>:8787` for uploads, files and exams (PROTOCOL sections 9 and 13).
+    var httpBase: URL? { hostPort.flatMap { URL(string: "http://\($0)") } }
+
+    private func withToken(_ path: String) -> URL? {
+        guard let base = httpBase,
+              var c = URLComponents(url: base.appendingPathComponent(path), resolvingAgainstBaseURL: false) else { return nil }
+        c.queryItems = [URLQueryItem(name: "token", value: pairToken ?? "")]
+        return c.url
+    }
+    func fileURL(_ fileId: String) -> URL? { withToken("file/\(fileId)") }
+    func examURL(_ examId: String) -> URL? { withToken("exam/\(examId)") }
 
     private func save(_ key: String, _ value: Any) {
         guard persist else { return }

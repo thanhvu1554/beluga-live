@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Record a short h264 video of the app running the mock lesson end to end (-mock 1, no scene):
+# Record a short h264 video of the app running the mock lesson end to end (-mock 1 -mockMode live, no scene):
 # idle, listening, thinking, photo, step-by-step lesson, "your turn", the answer, done.
 # Usage: record-demo.sh <path/to/BelugaLive.app> <outdir>
 set -euo pipefail
@@ -26,7 +26,7 @@ rm -f "$FILE"
 perl -e '$SIG{INT} = "DEFAULT"; exec @ARGV' -- xcrun simctl io "$UDID" recordVideo --codec=h264 --force "$FILE" &
 REC=$!
 sleep 2
-xcrun simctl launch "$UDID" "$BUNDLE_ID" -mock 1 >/dev/null
+xcrun simctl launch "$UDID" "$BUNDLE_ID" -mock 1 -mockMode live >/dev/null
 sleep "$SECONDS_TO_RECORD"
 kill -INT "$REC" 2>/dev/null || true
 for _ in $(seq 1 30); do kill -0 "$REC" 2>/dev/null || break; sleep 1; done

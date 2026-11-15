@@ -247,6 +247,8 @@ public struct FolderReview: Sendable, Equatable {
     public var weekly: Weekly?
     public var sessions: [Lesson]
     public var updatedAt: String?
+    /// The frame as received, for `knowledge.render(data, review)`.
+    public var raw: JSONValue = .null
 
     public init(folderId: String, topics: [Topic] = [], weak: [WeakTopic] = [], due: [WeakTopic] = [],
                 weekly: Weekly? = nil, sessions: [Lesson] = [], updatedAt: String? = nil) {
@@ -278,10 +280,12 @@ public struct FolderReview: Sendable, Equatable {
                           mode: s["mode"]?.string.flatMap(SessionMode.init(rawValue:)) ?? .live,
                           steps: s["steps"]?.numeric.map { Int($0) } ?? 0)
         }
-        return FolderReview(folderId: v["folderId"]?.string ?? "", topics: topics,
-                            weak: (v["weak"]?.array ?? []).compactMap(weakTopic),
-                            due: (v["due"]?.array ?? []).compactMap(weakTopic),
-                            weekly: weekly, sessions: lessons, updatedAt: v["updatedAt"]?.dateText)
+        var review = FolderReview(folderId: v["folderId"]?.string ?? "", topics: topics,
+                                  weak: (v["weak"]?.array ?? []).compactMap(weakTopic),
+                                  due: (v["due"]?.array ?? []).compactMap(weakTopic),
+                                  weekly: weekly, sessions: lessons, updatedAt: v["updatedAt"]?.dateText)
+        review.raw = v
+        return review
     }
 
     /// Topic counts per state, for the progress bar.

@@ -4,7 +4,7 @@
 set -euo pipefail
 APP="${1:-}"; OUT="${2:-screenshots}"
 BUNDLE_ID="${BUNDLE_ID:-com.thanhvu.belugalive}"
-SCENES="${SCENES:-idle listening thinking tool lesson longcaption ask done sessions settings offline progress review}"
+SCENES="${SCENES:-home chat chatfiles drawer folder knowledge ingest folderreview exams models usage exampdf replay settings progress idle listening thinking tool lesson longcaption ask done offline review}"
 mkdir -p "$OUT"
 
 UDID=$(xcrun simctl list devices available -j | jq -r '
@@ -40,9 +40,17 @@ done
 if [ "${FLOW:-1}" = "1" ]; then
   xcrun simctl ui "$UDID" appearance light
   xcrun simctl terminate "$UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
-  xcrun simctl launch "$UDID" "$BUNDLE_ID" -mock 1 >/dev/null
+  xcrun simctl launch "$UDID" "$BUNDLE_ID" -mock 1 -mockMode live >/dev/null
   for i in 1 2 3 4 5 6; do
     sleep 4
     xcrun simctl io "$UDID" screenshot "$OUT/flow-$i.png" >/dev/null
+  done
+  # The chat pipeline end to end: a question typed and sent, the answer streamed by the mock server.
+  xcrun simctl ui "$UDID" appearance dark
+  xcrun simctl terminate "$UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
+  xcrun simctl launch "$UDID" "$BUNDLE_ID" -mock 1 -mockChat 1 >/dev/null
+  for i in 1 2 3; do
+    sleep 3
+    xcrun simctl io "$UDID" screenshot "$OUT/chatflow-$i.png" >/dev/null
   done
 fi
