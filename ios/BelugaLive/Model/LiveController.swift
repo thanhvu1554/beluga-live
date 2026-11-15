@@ -95,7 +95,7 @@ final class LiveController {
     let ingestBasket = ChatComposer()
     let options: LaunchOptions
 
-    private(set) var pill = PillMachine()
+    var pill = PillMachine()
     var title = ""
     var caption = ""
     private(set) var askPrompt: String?
