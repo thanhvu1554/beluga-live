@@ -4,7 +4,7 @@
 //!
 //! ```text
 //! StudyConfig::from_env(server_dir: &Path) -> StudyConfig            // .env + process env, see below
-//! StudyService::new(data_dir: PathBuf, cfg: StudyConfig) -> StudyService   // OpenRouter client if a key exists
+//! StudyService::new(data_dir: PathBuf, cfg: StudyConfig) -> StudyService   // DeepSeek / OpenRouter by the keys present
 //! StudyService::with_llm(data_dir, cfg, llm: Arc<dyn Llm>) -> StudyService // tests / other providers
 //! svc.available() -> bool                                              // an LLM is configured
 //! svc.start_ingest(IngestRequest{folder_id, subject, goal, files}) -> Result<IngestHandle, String>
@@ -23,16 +23,27 @@
 //! ```
 //!
 //! Files: `<data_dir>/folders/<folderId>/knowledge.json`, `…/ingest/records.json` (compact question
-//! records, re-merged on the next ingest), `…/exams/<examId>.json`, and `<data_dir>/study/usage.jsonl`.
+//! records), `…/ingest/assign.json` (question group → form id), `…/ingest/pages/*.json` (page cache:
+//! sha256 of the page + prompt version + model), `…/exams/<examId>.json`, `<data_dir>/study/usage.jsonl`.
 //!
-//! Env: `OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL`, `BELUGA_INGEST_MODEL` (default
-//! `anthropic/claude-haiku-5.5`), `BELUGA_INGEST_EFFORT` (default `high`), `BELUGA_MERGE_MODEL`,
-//! `BELUGA_MERGE_EFFORT` (default: ingest values), `BELUGA_EXAM_MODEL` (default `anthropic/claude-haiku-5.5`),
-//! `BELUGA_EXAM_EFFORT` (default `high`), `BELUGA_INGEST_CONCURRENCY` (4), `BELUGA_INGEST_BATCH` (3 images).
+//! Modules: `pages` (page units, checks, cache, escalation), `merge` (incremental tree + deterministic
+//! knowledge), `ingest` (the job), `exam`, `harness` (one call: retry, jitter, cancel), `llm` (DeepSeek,
+//! OpenRouter, failover, routing).
+//!
+//! Env (defaults chosen by `examples/ingest_bench.rs`, see NOTES.md): `DEEPSEEK_API_KEY`,
+//! `DEEPSEEK_BASE_URL`, `OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL`, `BELUGA_INGEST_MODEL`
+//! (`deepseek-flash`), `BELUGA_INGEST_EFFORT` (`none`), `BELUGA_ESCALATE_MODEL`
+//! (`anthropic/claude-haiku-5.5`, `none` = never), `BELUGA_ESCALATE_EFFORT` (`none`), `BELUGA_PDF_MODEL`
+//! (escalation model), `BELUGA_MERGE_MODEL` (`anthropic/claude-haiku-5.5`), `BELUGA_MERGE_EFFORT` (`none`),
+//! `BELUGA_EXAM_MODEL` (`anthropic/claude-haiku-5.5`), `BELUGA_EXAM_EFFORT` (`high`),
+//! `BELUGA_INGEST_CONCURRENCY` (8), `BELUGA_DEEPSEEK_PRICE` (`in,cached,out` USD per million).
 
 pub mod exam;
+pub mod harness;
 pub mod ingest;
 pub mod llm;
+pub mod merge;
+pub mod pages;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -45,12 +56,16 @@ use tokio::task::JoinHandle;
 
 pub use exam::{render_html, ExamOptions};
 pub use ingest::{FileKind, IngestError, IngestFile, IngestOptions, Records};
-pub use llm::{FakeLlm, Llm, OpenRouter};
+pub use llm::{DeepSeek, FakeLlm, Llm, OpenRouter, Price, Providers};
 
 #[derive(Clone, Debug)]
 pub struct StudyConfig {
+    /// OpenRouter key.
     pub api_key: Option<String>,
     pub base_url: Option<String>,
+    pub deepseek_key: Option<String>,
+    pub deepseek_base_url: Option<String>,
+    pub deepseek_price: Price,
     pub ingest: IngestOptions,
     pub exam: ExamOptions,
     pub timeout_secs: u64,
@@ -61,6 +76,9 @@ impl Default for StudyConfig {
         StudyConfig {
             api_key: None,
             base_url: None,
+            deepseek_key: None,
+            deepseek_base_url: None,
+            deepseek_price: Price::DEEPSEEK_FLASH,
             ingest: IngestOptions::default(),
             exam: ExamOptions { model: "anthropic/claude-haiku-5.5".into(), effort: Some("high".into()), ..ExamOptions::default() },
             timeout_secs: 300,
@@ -93,7 +111,7 @@ impl StudyConfig {
     pub fn from_env(server_dir: &Path) -> StudyConfig {
         let mut env = std::fs::read_to_string(server_dir.join(".env")).map(|t| parse_env_file(&t)).unwrap_or_default();
         for (k, v) in std::env::vars() {
-            if k.starts_with("BELUGA_") || k.starts_with("OPENROUTER_") {
+            if k.starts_with("BELUGA_") || k.starts_with("OPENROUTER_") || k.starts_with("DEEPSEEK_") {
                 env.insert(k, v);
             }
         }
@@ -106,20 +124,32 @@ impl StudyConfig {
             let e = get(k).unwrap_or_else(|| d.to_string()).to_lowercase();
             (e != "none" && e != "off").then_some(e)
         };
+        let model = |k: &str| get(k).map(|m| (m.to_lowercase() != "none" && m.to_lowercase() != "off").then_some(m));
         let mut c = StudyConfig::default();
         c.api_key = get("OPENROUTER_API_KEY");
         c.base_url = get("OPENROUTER_BASE_URL");
+        c.deepseek_key = get("DEEPSEEK_API_KEY");
+        c.deepseek_base_url = get("DEEPSEEK_BASE_URL");
+        if let Some(p) = get("BELUGA_DEEPSEEK_PRICE").and_then(|p| Price::parse(&p)) {
+            c.deepseek_price = p;
+        }
         if let Some(m) = get("BELUGA_INGEST_MODEL") {
             c.ingest.model = m;
         }
-        c.ingest.effort = effort("BELUGA_INGEST_EFFORT", "high");
-        c.ingest.merge_model = get("BELUGA_MERGE_MODEL").unwrap_or_else(|| c.ingest.model.clone());
-        c.ingest.merge_effort = if get("BELUGA_MERGE_EFFORT").is_some() { effort("BELUGA_MERGE_EFFORT", "high") } else { c.ingest.effort.clone() };
+        c.ingest.effort = effort("BELUGA_INGEST_EFFORT", "none");
+        if let Some(m) = model("BELUGA_ESCALATE_MODEL") {
+            c.ingest.escalate_model = m;
+        }
+        c.ingest.escalate_effort = effort("BELUGA_ESCALATE_EFFORT", "none");
+        if let Some(m) = model("BELUGA_PDF_MODEL") {
+            c.ingest.pdf_model = m;
+        }
+        if let Some(m) = get("BELUGA_MERGE_MODEL") {
+            c.ingest.merge_model = m;
+        }
+        c.ingest.merge_effort = effort("BELUGA_MERGE_EFFORT", "none");
         if let Some(n) = get("BELUGA_INGEST_CONCURRENCY").and_then(|v| v.parse().ok()) {
             c.ingest.concurrency = n;
-        }
-        if let Some(n) = get("BELUGA_INGEST_BATCH").and_then(|v| v.parse().ok()) {
-            c.ingest.batch_images = n;
         }
         if let Some(m) = get("BELUGA_EXAM_MODEL") {
             c.exam.model = m;
@@ -168,9 +198,14 @@ pub fn safe_id(id: &str) -> bool {
 
 impl StudyService {
     pub fn new(data_dir: PathBuf, cfg: StudyConfig) -> Self {
-        let llm: Option<Arc<dyn Llm>> = cfg.api_key.clone().map(|k| {
-            Arc::new(OpenRouter::new(k, cfg.base_url.clone(), Duration::from_secs(cfg.timeout_secs))) as Arc<dyn Llm>
-        });
+        let t = Duration::from_secs(cfg.timeout_secs);
+        let or: Option<Arc<dyn Llm>> = cfg.api_key.clone().map(|k| Arc::new(OpenRouter::new(k, cfg.base_url.clone(), t)) as Arc<dyn Llm>);
+        let ds: Option<Arc<dyn Llm>> = cfg
+            .deepseek_key
+            .clone()
+            .map(|k| Arc::new(DeepSeek::new(k, cfg.deepseek_base_url.clone(), t, cfg.deepseek_price)) as Arc<dyn Llm>);
+        let p = Providers::new(ds, or, t);
+        let llm: Option<Arc<dyn Llm>> = (!p.is_empty()).then(|| Arc::new(p) as Arc<dyn Llm>);
         Self::build(data_dir, cfg, llm)
     }
 
@@ -228,7 +263,7 @@ impl StudyService {
         if !safe_id(&req.folder_id) {
             return Err("folderId không hợp lệ".into());
         }
-        let llm = self.inner.llm.clone().ok_or("thiếu OPENROUTER_API_KEY")?;
+        let llm = self.inner.llm.clone().ok_or("thiếu khóa API (OPENROUTER_API_KEY hoặc DEEPSEEK_API_KEY)")?;
         if req.files.is_empty() {
             return Err("chưa có tệp nào".into());
         }
@@ -325,7 +360,7 @@ impl StudyService {
             emit(exam::exam_event(folder_id, &exam_id, "error", &m, None));
             Err(m)
         };
-        let Some(llm) = self.inner.llm.clone() else { return fail("thiếu OPENROUTER_API_KEY".into()) };
+        let Some(llm) = self.inner.llm.clone() else { return fail("thiếu khóa API (OPENROUTER_API_KEY hoặc DEEPSEEK_API_KEY)".into()) };
         let Some(k) = self.knowledge(folder_id) else { return fail("folder chưa có kiến thức (hãy nạp đề trước)".into()) };
         let opts = self.inner.cfg.exam.clone();
         let spent = Mutex::new(llm::Usage::default());

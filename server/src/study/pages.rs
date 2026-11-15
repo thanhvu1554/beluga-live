@@ -266,8 +266,8 @@ pub fn check_page(p: &PageOut, subject: &str) -> Vec<String> {
         let Some(b) = base_num(&q.n) else { continue };
         if let Some((sec, l)) = &last {
             let same_sec = *sec == q.section;
-            if b == 1 && (!same_sec || l >= &1) && b <= *l {
-                // numbering restarts (new part)
+            if b == 1 {
+                // numbering restarts (a new part)
             } else if same_sec && b < *l {
                 issues.push(format!("thứ tự câu lộn xộn ({l} rồi {b})"));
             } else if same_sec && b > l + 1 {

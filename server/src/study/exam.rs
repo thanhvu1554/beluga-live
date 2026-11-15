@@ -2,8 +2,10 @@
 //! knowledge exactly, plus the printable A4 HTML (exam, then the answer key on its own page).
 //!
 //! Rust owns the blueprint: one slot per question with section, kind, level, points, topic and form
-//! taken from the structure's matrix. The model only writes the content of each slot; Rust checks every
-//! slot is filled once with the right shape (choices, answer, solution) and asks for one repair if not.
+//! taken from the structure's matrix. The model only writes the content of each slot, one call per
+//! section in parallel; Rust checks every slot is filled once with the right shape (choices, answer,
+//! solution), repairs only the failing sections once, and checks the assembled exam against the
+//! structure before it is stored.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -413,8 +415,12 @@ pub fn exam_event(folder_id: &str, exam_id: &str, state: &str, note: &str, title
     v
 }
 
-/// Generate one exam. `emit` receives `exam` events (writing → checking → [writing → checking] → done |
-/// error is emitted by the caller on `Err`). Returns the exam document (not yet stored).
+/// Generate one exam. Every section is written by its own call, all in parallel (wall time = the
+/// slowest section); each section's items are checked in Rust against the blueprint (count, kind,
+/// choices, answer shape, copied samples, `$` balance) and only the sections with problems get one
+/// repair call. `emit` receives `exam` events (writing → checking → [writing → checking]); done / error
+/// is emitted by the caller. Returns the exam document (not yet stored).
+#[allow(clippy::too_many_arguments)]
 pub async fn gen_exam(
     llm: Arc<dyn Llm>,
     opts: &ExamOptions,
@@ -429,26 +435,31 @@ pub async fn gen_exam(
     let (st, slots) = blueprint(k, structure_id)?;
     let banned: HashSet<String> = slots.iter().map(|s| norm(&s.example)).filter(|s| !s.is_empty()).collect();
     emit(exam_event(&folder, exam_id, "writing", &format!("Đang viết {} câu theo cấu trúc “{}”", slots.len(), s_of(&st["title"])), None));
-    let prompt = exam_prompt(k, &st, &slots, note);
-    let mut usage = Usage::default();
-    let mut req = LlmRequest {
-        tag: "exam",
-        model: opts.model.clone(),
-        effort: opts.effort.clone(),
-        system: EXAM_SYSTEM.to_string(),
-        parts: vec![Part::Text(prompt.clone())],
-        schema: Some(("exam".into(), exam_schema())),
-        max_tokens: opts.max_tokens,
-    };
-    let call = |req: LlmRequest| {
+    let mut groups: Vec<Vec<Slot>> = Vec::new();
+    for s in &slots {
+        match groups.iter_mut().find(|g| g[0].section == s.section) {
+            Some(g) => g.push(s.clone()),
+            None => groups.push(vec![s.clone()]),
+        }
+    }
+    let usage = std::sync::Mutex::new(Usage::default());
+    let call = |tag: &'static str, parts: Vec<Part>| {
         let llm = llm.clone();
+        let usage = &usage;
         async move {
+            let mut req = LlmRequest::new(tag, &opts.model, opts.effort.clone(), EXAM_SYSTEM, parts, opts.max_tokens);
+            req.schema = Some(("exam".into(), exam_schema()));
             let mut last = String::new();
-            for _ in 0..=opts.retries {
+            for attempt in 0..=opts.retries {
+                if attempt > 0 {
+                    tokio::time::sleep(super::harness::backoff(1000, attempt)).await;
+                }
                 match llm.complete(req.clone()).await {
                     Ok(r) => {
-                        tracing::info!(tag = req.tag, ms = r.elapsed_ms, cost = r.usage.cost_usd, out = r.usage.output_tokens, "study llm call");
-                        return Ok((r.json(), r.usage));
+                        tracing::info!(tag, ms = r.elapsed_ms, cost = r.usage.cost_usd, out = r.usage.output_tokens, "study llm call");
+                        usage.lock().unwrap().add(&r.usage);
+                        spent.lock().unwrap().add(&r.usage);
+                        return Ok(r.json().unwrap_or(Value::Null));
                     }
                     Err(e) => {
                         last = e.to_string();
@@ -461,37 +472,52 @@ pub async fn gen_exam(
             Err(last)
         }
     };
-    let (first, u) = call(req.clone()).await?;
-    usage.add(&u);
-    spent.lock().unwrap().add(&u);
+    let prompts: Vec<String> = groups.iter().map(|g| exam_prompt(k, &st, g, note)).collect();
+    let firsts = futures_util::future::join_all(prompts.iter().map(|p| call("exam", vec![Part::Text(p.clone())]))).await;
+    let mut items: Vec<Value> = Vec::new();
+    for r in firsts {
+        items.push(r?);
+    }
     emit(exam_event(&folder, exam_id, "checking", "Đang kiểm tra số câu, loại câu, điểm và đáp án", None));
-    let mut items = first.unwrap_or(Value::Null);
-    let mut errs = validate_items(&items, &slots, &banned);
-    let repairs = errs.clone();
-    if !errs.is_empty() {
-        tracing::warn!("exam needs repair: {}", errs.join("; "));
-        emit(exam_event(&folder, exam_id, "writing", &format!("Đang sửa {} lỗi trong đề", errs.len()), None));
-        req.tag = "repair";
-        req.parts = vec![
-            Part::Text(prompt),
-            Part::Text(format!(
-                "YOUR PREVIOUS OUTPUT:\n{}\nPROBLEMS:\n- {}\nReturn the complete corrected JSON (all slots).",
-                serde_json::to_string(&items).unwrap_or_default(),
-                errs.join("\n- ")
-            )),
-        ];
-        let (second, u) = call(req).await?;
-        usage.add(&u);
-        spent.lock().unwrap().add(&u);
+    let errs: Vec<Vec<String>> = items.iter().zip(&groups).map(|(v, g)| validate_items(v, g, &banned)).collect();
+    let repairs: Vec<String> = errs.iter().flatten().cloned().collect();
+    if !repairs.is_empty() {
+        tracing::warn!("exam needs repair: {}", repairs.join("; "));
+        emit(exam_event(&folder, exam_id, "writing", &format!("Đang sửa {} lỗi trong đề", repairs.len()), None));
+        let todo: Vec<usize> = (0..groups.len()).filter(|i| !errs[*i].is_empty()).collect();
+        let fixed = futures_util::future::join_all(todo.iter().map(|&i| {
+            call(
+                "repair",
+                vec![
+                    Part::Text(prompts[i].clone()),
+                    Part::Text(format!(
+                        "YOUR PREVIOUS OUTPUT:\n{}\nPROBLEMS:\n- {}\nReturn the complete corrected JSON (all slots).",
+                        serde_json::to_string(&items[i]).unwrap_or_default(),
+                        errs[i].join("\n- ")
+                    )),
+                ],
+            )
+        }))
+        .await;
         emit(exam_event(&folder, exam_id, "checking", "Đang kiểm tra lại đề đã sửa", None));
-        items = second.unwrap_or(Value::Null);
-        errs = validate_items(&items, &slots, &banned);
-        if !errs.is_empty() {
-            return Err(format!("đề sinh ra chưa đúng cấu trúc: {}", errs.into_iter().take(4).collect::<Vec<_>>().join("; ")));
+        for (&i, r) in todo.iter().zip(fixed) {
+            items[i] = r?;
+            let e = validate_items(&items[i], &groups[i], &banned);
+            if !e.is_empty() {
+                return Err(format!("đề sinh ra chưa đúng cấu trúc: {}", e.into_iter().take(4).collect::<Vec<_>>().join("; ")));
+            }
         }
     }
+    let title = items.iter().map(|v| s_of(&v["title"])).find(|t| !t.is_empty()).unwrap_or_default();
+    let all: Vec<Value> = items.iter().flat_map(|v| v["questions"].as_array().cloned().unwrap_or_default()).collect();
+    let merged = json!({"title": title, "questions": all});
+    let usage = usage.into_inner().unwrap();
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
-    let mut exam = assemble(k, &st, &slots, &items, exam_id, note, &opts.model, &usage, &now);
+    let mut exam = assemble(k, &st, &slots, &merged, exam_id, note, &opts.model, &usage, &now);
+    let problems = check_exam(&exam, &st);
+    if !problems.is_empty() {
+        return Err(format!("đề ghép lại sai cấu trúc: {}", problems.join("; ")));
+    }
     if !repairs.is_empty() {
         // What the first draft got wrong (diagnostics for prompt tuning).
         exam["repairs"] = json!(repairs);
