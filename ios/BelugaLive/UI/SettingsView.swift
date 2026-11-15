@@ -10,7 +10,7 @@ struct SettingsView: View {
     @State private var codeDraft = ""
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: Binding(get: { controller.settingsPath }, set: { controller.settingsPath = $0 })) {
             Form {
                 Section {
                     LabeledContent(s("settings.host")) {
@@ -80,6 +80,11 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    NavigationLink(value: SettingsRoute.voices) {
+                        LabeledContent(s("voices.row")) {
+                            Text(verbatim: voiceSummary).foregroundStyle(Ink.secondary)
+                        }
+                    }
                     VStack(alignment: .leading, spacing: Space.s) {
                         Text(verbatim: s("settings.talkMode"))
                         Picker(s("settings.talkMode"), selection: $settings.handsFree) {
@@ -120,6 +125,14 @@ struct SettingsView: View {
                     Text(verbatim: s("settings.section.language"))
                 }
 
+                Section {
+                    NavigationLink(value: SettingsRoute.diagnostics) {
+                        Text(verbatim: s("diag.title"))
+                    }
+                } header: {
+                    Text(verbatim: s("diag.section"))
+                }
+
                 if controller.isMock {
                     Section {
                         Text(verbatim: s("settings.mock"))
@@ -129,6 +142,12 @@ struct SettingsView: View {
                 }
             }
             .tint(Color(uiColor: .systemGray))
+            .navigationDestination(for: SettingsRoute.self) { route in
+                switch route {
+                case .voices: VoiceSettingsView(controller: controller)
+                case .diagnostics: DiagnosticsView()
+                }
+            }
             .navigationTitle(s("settings.title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -154,6 +173,12 @@ struct SettingsView: View {
     private var modelSummary: String {
         let name = controller.currentModel?.label ?? settings.model
         return settings.effort.isEmpty ? name : name + " · " + s("effort.\(settings.effort)")
+    }
+
+    private var voiceSummary: String {
+        guard let catalog = controller.library.voices else { return "" }
+        if catalog.isDevice { return s("voices.deviceName") }
+        return controller.library.voice(catalog.current)?.name ?? ""
     }
 
     private func applyConnection() {

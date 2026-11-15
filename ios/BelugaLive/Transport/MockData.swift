@@ -9,7 +9,7 @@ enum MockData {
     [{"id":"sonnet","label":"Claude Sonnet","provider":"claude","efforts":["low","medium","high"],"defaultEffort":"medium","vision":true,"tracked":true},
      {"id":"opus","label":"Claude Opus","provider":"claude","efforts":["low","medium","high","xhigh","max"],"defaultEffort":"low","vision":true,"tracked":true},
      {"id":"haiku","label":"Claude Haiku","provider":"claude","efforts":[],"vision":true,"tracked":true},
-     {"id":"deepseek","label":"DeepSeek","provider":"anthropic-compatible","efforts":[],"vision":false,"tracked":false}]
+     {"id":"deepseek","label":"DeepSeek Flash","provider":"anthropic-compatible","efforts":[],"vision":true,"tracked":false}]
     """#)
 
     static let folders: [JSONValue] = parse(#"""
@@ -105,6 +105,22 @@ enum MockData {
     [{"examId":"e-2","title":"Đề giữa kỳ 1 · Lần 2","structureId":"s1","createdAt":"2026-11-14T21:00:00Z","questions":17},
      {"examId":"e-1","title":"Kiểm tra 45 phút · Căn thức","structureId":"s2","createdAt":"2026-11-12T20:30:00Z","questions":4}]
     """#).array ?? []
+
+    /// The real catalogue (`server/voices.json`), all with preview clips.
+    static let voiceItems: JSONValue = parse(#"""
+    [{"id":"5yEPTrA0uAhZsBEhHjfi","name":"Chi","gender":"female","accent":"north","desc":"Nữ trẻ miền Bắc, ấm, tự nhiên như đang trò chuyện.","preview":true},
+     {"id":"0ggMuQ1r9f9jqBu50nJn","name":"Thắm","gender":"female","accent":"north","desc":"Nữ trẻ miền Bắc, nhẹ nhàng, gần gũi.","preview":true},
+     {"id":"qByVAGjXwGlkcRDJoiHg","name":"Kiều Linh","gender":"female","accent":"south","desc":"Nữ trẻ Sài Gòn, rõ ràng, tự tin.","preview":true},
+     {"id":"8PEPqUGgvwN1Fk9KR8jV","name":"An Nhiên","gender":"female","accent":"south","desc":"Nữ trẻ miền Nam, tươi sáng, vui vẻ.","preview":true},
+     {"id":"K7ewtjKRNtwwt3lKQ6M0","name":"Tony Hoàng","gender":"male","accent":"north","desc":"Nam trẻ miền Bắc, giọng giảng bài rõ ràng.","preview":true},
+     {"id":"RxhjHDfpO54FYotYtKpw","name":"Phong","gender":"male","accent":"north","desc":"Nam trẻ miền Bắc, ấm, truyền cảm.","preview":true},
+     {"id":"M0rVwr32hdQ5UXpkI3ni","name":"Hào","gender":"male","accent":"south","desc":"Nam trẻ miền Nam, ấm, thân thiện, nhịp vừa.","preview":true},
+     {"id":"JxmKvRaNYFidf0N27Vng","name":"Sơn","gender":"male","accent":"central","desc":"Nam trẻ miền Trung, nói chuyện thoải mái.","preview":true}]
+    """#)
+
+    static func voices(current: String) -> JSONValue {
+        ["t": "voices", "items": voiceItems, "current": .string(current), "provider": "genvoice"]
+    }
 
     static let usage: JSONValue = parse(#"""
     {"t":"usage",

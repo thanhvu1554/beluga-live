@@ -6,13 +6,22 @@ import BelugaCore
 /// Calls are queued until the page posts `{type:"ready"}`. When the app bundle has no such page, `available`
 /// is false and the screen shows its native fallback instead.
 @MainActor @Observable
-final class WebPage: NSObject, @preconcurrency WKScriptMessageHandler {
+final class WebPage: NSObject, @preconcurrency WKScriptMessageHandler, @preconcurrency WKNavigationDelegate {
     let name: String
     private(set) var ready = false
     private(set) var available: Bool
     let webView: WKWebView
     @ObservationIgnored var onMessage: (([String: Any]) -> Void)?
+    /// The page was reloaded after its web process died (memory pressure, long background): it is blank again
+    /// and the owner must draw its content once more (calls are queued until the page is ready).
+    @ObservationIgnored var onReload: (() -> Void)?
     @ObservationIgnored private var queue: [String] = []
+    /// Last call of the setup methods, replayed after a reload.
+    @ObservationIgnored private var sticky: [String: String] = [:]
+    private static let stickyMethods: Set<String> = ["setInsets", "setFileBase"]
+    /// Calls queued while the page is not ready: beyond this, the oldest are dropped (a page that never loads
+    /// must not grow memory for the whole session).
+    private static let maxQueue = 4000
     @ObservationIgnored private var theme = "light"
     @ObservationIgnored private var lang = "vi"
     @ObservationIgnored private var loadedRemote = false
@@ -27,6 +36,7 @@ final class WebPage: NSObject, @preconcurrency WKScriptMessageHandler {
         available = bundled != nil
         super.init()
         for handler in ["board", name] { controller.add(WeakPageHandler(self), name: handler) }
+        webView.navigationDelegate = self
         webView.isOpaque = false
         webView.backgroundColor = .clear
         webView.scrollView.backgroundColor = .clear
@@ -49,7 +59,9 @@ final class WebPage: NSObject, @preconcurrency WKScriptMessageHandler {
 
     /// `object.method(args...)` where every argument is JSON.
     func invoke(_ method: String, _ args: JSONValue...) {
-        call("\(name).\(method)(\(args.map(\.jsonString).joined(separator: ",")))")
+        let js = "\(name).\(method)(\(args.map(\.jsonString).joined(separator: ",")))"
+        if Self.stickyMethods.contains(method) { sticky[method] = js }
+        call(js)
     }
 
     func setTheme(_ dark: Bool) {
@@ -66,8 +78,21 @@ final class WebPage: NSObject, @preconcurrency WKScriptMessageHandler {
     func clearQueue() { queue.removeAll() }
 
     func call(_ js: String) {
-        guard ready else { queue.append(js); return }
+        guard ready else {
+            queue.append(js)
+            if queue.count > Self.maxQueue { queue.removeFirst(queue.count - Self.maxQueue) }
+            return
+        }
         webView.evaluateJavaScript(js, completionHandler: nil)
+    }
+
+    /// The web content process was killed (it is not our process: the app lives on, the view goes blank).
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        Diagnostics.log("web: \(name) content process ended, reloading")
+        ready = false
+        queue = Array(sticky.values)
+        webView.reload()
+        onReload?()
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {

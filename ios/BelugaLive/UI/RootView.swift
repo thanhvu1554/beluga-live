@@ -21,14 +21,25 @@ struct RootView: View {
         .animation(Motion.panel, value: controller.mode)
         .onAppear { applyTheme(scheme) }
         .onChange(of: scheme) { _, new in applyTheme(new) }
-        .onChange(of: phase) { _, new in if new == .active { controller.appBecameActive() } }
+        .onChange(of: phase) { _, new in
+            // "phase active/background" lines also tell the next launch whether the app died in the foreground.
+            Diagnostics.log("phase \(Self.name(new))")
+            if new == .active { controller.appBecameActive() }
+        }
+        .onAppear { Diagnostics.log("phase \(Self.name(phase))") }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+            Diagnostics.log("memory warning")
+        }
         .sheet(isPresented: $controller.showProgress) {
             NavigationStack { LearningProgressView(controller: controller) }
                 .tint(Ink.primary)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
-        .sheet(isPresented: $controller.showSettings) {
+        .sheet(isPresented: $controller.showSettings, onDismiss: {
+            controller.voicePreview.stop()
+            controller.settingsPath = []
+        }) {
             SettingsView(controller: controller, settings: controller.settings)
                 .presentationDragIndicator(.visible)
         }
@@ -51,6 +62,15 @@ struct RootView: View {
         .sheet(item: $controller.preview) { file in
             QuickLookView(url: file.url)
                 .ignoresSafeArea()
+        }
+    }
+
+    private static func name(_ p: ScenePhase) -> String {
+        switch p {
+        case .active: return "active"
+        case .inactive: return "inactive"
+        case .background: return "background"
+        @unknown default: return "unknown"
         }
     }
 

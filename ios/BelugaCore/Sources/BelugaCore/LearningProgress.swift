@@ -12,7 +12,7 @@ struct FlexibleText: Decodable, Sendable {
         let c = try decoder.singleValueContainer()
         if c.decodeNil() { value = nil }
         else if let s = try? c.decode(String.self) { value = s.isEmpty ? nil : s }
-        else if let n = try? c.decode(Double.self) { value = String(Int64(n)) }
+        else if let n = try? c.decode(Double.self) { value = JSONValue.clampedInt(n).map(String.init) }
         else { value = nil }
     }
 }
@@ -37,7 +37,7 @@ public struct WeakTopic: Sendable, Equatable, Codable, Identifiable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         topic = (try? c.decode(String.self, forKey: .topic)) ?? ""
         note = (try? c.decode(String.self, forKey: .note)) ?? ""
-        count = (try? c.decode(Int.self, forKey: .count)) ?? Int((try? c.decode(Double.self, forKey: .count)) ?? 0)
+        count = (try? c.decode(Int.self, forKey: .count)) ?? (try? c.decode(Double.self, forKey: .count)).flatMap(JSONValue.clampedInt) ?? 0
         lastSeen = (try? c.decode(FlexibleText.self, forKey: .lastSeen))?.value
         due = (try? c.decode(FlexibleText.self, forKey: .due))?.value
     }
@@ -95,9 +95,9 @@ public struct SubjectProgress: Sendable, Equatable, Codable, Identifiable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = (try? c.decode(String.self, forKey: .id)) ?? ""
         name = (try? c.decode(String.self, forKey: .name)) ?? id
-        weakTopics = (try? c.decode([WeakTopic].self, forKey: .weakTopics)) ?? []
-        mastered = (try? c.decode([DatedTopic].self, forKey: .mastered)) ?? []
-        recent = (try? c.decode([DatedTopic].self, forKey: .recent)) ?? []
+        weakTopics = ((try? c.decode([WeakTopic].self, forKey: .weakTopics)) ?? []).uniquedByID()
+        mastered = ((try? c.decode([DatedTopic].self, forKey: .mastered)) ?? []).uniquedByID()
+        recent = ((try? c.decode([DatedTopic].self, forKey: .recent)) ?? []).uniquedByID()
     }
 
     /// True when there is nothing to show for this subject.
@@ -119,7 +119,7 @@ public struct LearningProgress: Sendable, Equatable, Codable {
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        subjects = (try? c.decode([SubjectProgress].self, forKey: .subjects)) ?? []
+        subjects = ((try? c.decode([SubjectProgress].self, forKey: .subjects)) ?? []).uniquedByID()
         style = (try? c.decode([String].self, forKey: .style)) ?? []
         updatedAt = (try? c.decode(FlexibleText.self, forKey: .updatedAt))?.value
     }

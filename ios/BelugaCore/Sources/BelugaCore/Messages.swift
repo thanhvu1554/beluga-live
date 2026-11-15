@@ -18,14 +18,20 @@ public struct TutorSettings: Codable, Sendable, Equatable {
     public var mode: SessionMode
     /// Let the server fix speech recognition with a cheap model (section 7).
     public var sttFix: Bool
+    /// Tutor voice id from `voices`. Only sent when the user picks one (nil = leave the server's choice alone).
+    public var voice: String?
     public init(lang: Lang = .vi, model: String = "sonnet", effort: String? = nil, rigor: Rigor = .medium,
-                mode: SessionMode = .chat, sttFix: Bool = true) {
+                mode: SessionMode = .chat, sttFix: Bool = true, voice: String? = nil) {
         self.lang = lang; self.model = model; self.effort = effort; self.rigor = rigor; self.mode = mode; self.sttFix = sttFix
+        self.voice = voice
     }
 
     var json: JSONValue {
-        ["lang": .string(lang.rawValue), "model": .string(model), "rigor": .string(rigor.rawValue),
-         "mode": .string(mode.rawValue), "sttFix": .bool(sttFix), "effort": effort.map(JSONValue.string) ?? .null]
+        var o: [String: JSONValue] = ["lang": .string(lang.rawValue), "model": .string(model), "rigor": .string(rigor.rawValue),
+                                      "mode": .string(mode.rawValue), "sttFix": .bool(sttFix),
+                                      "effort": effort.map(JSONValue.string) ?? .null]
+        if let voice, !voice.isEmpty { o["voice"] = .string(voice) }
+        return .object(o)
     }
 }
 
@@ -69,7 +75,7 @@ public struct Ready: Sendable, Equatable {
               audioWaitMs: v["audioWaitMs"]?.int ?? 3000,
               folderId: v["folderId"]?.nonEmptyString,
               mode: v["mode"]?.string.flatMap(SessionMode.init(rawValue:)) ?? .chat,
-              models: (v["models"]?.array ?? []).compactMap(ModelInfo.from),
+              models: (v["models"]?.array ?? []).compactMap(ModelInfo.from).uniquedByID(),
               model: v["model"]?.nonEmptyString,
               effort: v["effort"]?.nonEmptyString)
     }
@@ -189,7 +195,7 @@ public struct LessonEvent: Sendable, Equatable {
         case "done": kind = .done
         case "turn_end": kind = .turnEnd(interrupted: v["interrupted"]?.bool ?? false)
         case "user":
-            kind = .user(text: v["text"]?.string ?? "", files: (v["files"]?.array ?? []).compactMap(FileRef.from),
+            kind = .user(text: v["text"]?.string ?? "", files: (v["files"]?.array ?? []).compactMap(FileRef.from).uniqued { $0.fileId },
                          via: v["via"]?.string ?? "text")
         case "chat": kind = .chat(md: v["md"]?.string ?? "")
         default: return nil
@@ -226,6 +232,7 @@ public enum ServerMessage: Sendable, Equatable {
     case exams(folderId: String, items: [ExamItem])
     case usage(Usage)
     case greeting(Greeting)
+    case voices(VoiceCatalog)
     case unknown(type: String)
 
     public static func decode(_ data: Data) throws -> ServerMessage {
@@ -262,7 +269,7 @@ public enum ServerMessage: Sendable, Equatable {
         case "snapshot":
             return .snapshot(events: (v["events"]?.array ?? []).compactMap(LessonEvent.from))
         case "sessions":
-            return .sessions((v["items"]?.array ?? []).compactMap(SessionItem.from))
+            return .sessions((v["items"]?.array ?? []).compactMap(SessionItem.from).uniquedByID())
         case "progress":
             return .progress(LearningProgress.from(v))
         case "notice":
@@ -270,7 +277,7 @@ public enum ServerMessage: Sendable, Equatable {
         case "error":
             return .error(code: v["code"]?.string ?? "", text: v["text"]?.string ?? "", fatal: v["fatal"]?.bool ?? false)
         case "folders":
-            return .folders((v["items"]?.array ?? []).compactMap(Folder.from))
+            return .folders((v["items"]?.array ?? []).compactMap(Folder.from).uniquedByID())
         case "folder_created":
             return .folderCreated(id: v["id"]?.string ?? v["folderId"]?.string ?? "")
         case "ingest":
@@ -282,11 +289,13 @@ public enum ServerMessage: Sendable, Equatable {
         case "exam":
             return .exam(ExamStatus.from(v))
         case "exams":
-            return .exams(folderId: v["folderId"]?.string ?? "", items: (v["items"]?.array ?? []).compactMap(ExamItem.from))
+            return .exams(folderId: v["folderId"]?.string ?? "", items: (v["items"]?.array ?? []).compactMap(ExamItem.from).uniquedByID())
         case "usage":
             return .usage(Usage.from(v))
         case "greeting":
             return .greeting(Greeting.from(v))
+        case "voices":
+            return .voices(VoiceCatalog.from(v))
         default:
             return .unknown(type: t)
         }
@@ -330,6 +339,7 @@ public enum ClientMessage: Sendable, Equatable {
     case deleteExam(examId: String)
     case getUsage
     case getGreeting(localTime: String, name: String?)
+    case getVoices
 
     public var json: JSONValue {
         func obj(_ t: String, _ fields: [String: JSONValue?] = [:]) -> JSONValue {
@@ -386,6 +396,7 @@ public enum ClientMessage: Sendable, Equatable {
         case .deleteExam(let examId): return obj("delete_exam", ["examId": .string(examId)])
         case .getUsage: return obj("get_usage")
         case let .getGreeting(localTime, name): return obj("get_greeting", ["localTime": .string(localTime), "name": str(name)])
+        case .getVoices: return obj("get_voices")
         }
     }
 

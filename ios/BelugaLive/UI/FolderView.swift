@@ -282,18 +282,20 @@ struct IngestSheet: View {
             .onChange(of: photoItems) { _, items in
                 guard !items.isEmpty else { return }
                 photoItems = []
-                Task {
-                    for (i, item) in items.enumerated() {
-                        guard let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data) else { continue }
-                        controller.addImage(image, name: "de-\(basket.attachments.count + 1)-\(i + 1).jpg", to: basket)
-                    }
-                }
+                controller.addPhotos(items, namePrefix: "de-\(basket.attachments.count + 1)", to: basket)
             }
             .fileImporter(isPresented: $showFiles, allowedContentTypes: [.pdf, .image], allowsMultipleSelection: true) { result in
-                if case .success(let urls) = result { FileLoader.load(urls, controller: controller, basket: basket) }
+                switch result {
+                case .success(let urls): controller.addFiles(urls, to: basket)
+                case .failure(let error): Diagnostics.log("ingest: file importer failed: \(error.localizedDescription)")
+                }
             }
         }
         .tint(Ink.primary)
+        .onAppear { Diagnostics.log("ingest: sheet open (\(basket.attachments.count) files)") }
+        .onDisappear { Diagnostics.log("ingest: sheet closed") }
+        .onChange(of: showPhotos) { _, open in if open { Diagnostics.log("ingest: photo picker") } }
+        .onChange(of: showFiles) { _, open in if open { Diagnostics.log("ingest: file importer") } }
     }
 }
 

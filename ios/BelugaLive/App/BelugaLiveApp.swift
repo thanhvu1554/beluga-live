@@ -7,6 +7,14 @@ struct BelugaLiveApp: App {
 
     init() {
         let options = LaunchOptions.current()
+        // Real runs only: screenshot runs are killed by the script, which would look like a crash next time.
+        if !options.mock {
+            #if DEBUG
+            Diagnostics.shared.start(redirectStderr: false)
+            #else
+            Diagnostics.shared.start(redirectStderr: true)
+            #endif
+        }
         // Mock runs never touch the user's saved settings.
         let settings = options.mock
             ? AppSettings(defaults: UserDefaults(suiteName: "mock") ?? .standard, persist: false)

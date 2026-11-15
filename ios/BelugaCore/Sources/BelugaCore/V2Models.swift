@@ -24,7 +24,7 @@ public struct ModelInfo: Sendable, Equatable, Identifiable, Hashable {
     static func from(_ v: JSONValue) -> ModelInfo? {
         guard let id = v["id"]?.nonEmptyString else { return nil }
         return ModelInfo(id: id, label: v["label"]?.nonEmptyString ?? id, provider: v["provider"]?.string ?? "claude",
-                         efforts: v["efforts"]?.strings ?? [], defaultEffort: v["defaultEffort"]?.nonEmptyString,
+                         efforts: (v["efforts"]?.strings ?? []).uniqued { $0 }, defaultEffort: v["defaultEffort"]?.nonEmptyString,
                          vision: v["vision"]?.bool ?? true, tracked: v["tracked"]?.bool ?? false)
     }
 
@@ -58,7 +58,7 @@ public struct Folder: Sendable, Equatable, Identifiable, Hashable {
         guard let id = v["id"]?.nonEmptyString else { return nil }
         let ingest = v["ingest"].flatMap { $0.object == nil ? nil : IngestStatus.from($0) }
         return Folder(id: id, name: v["name"]?.string ?? "", subject: v["subject"]?.nonEmptyString ?? "chung",
-                      sessionCount: v["sessionCount"]?.numeric.map { Int($0) } ?? 0, updatedAt: v["updatedAt"]?.dateText ?? "",
+                      sessionCount: v["sessionCount"]?.integer ?? 0, updatedAt: v["updatedAt"]?.dateText ?? "",
                       hasKnowledge: v["hasKnowledge"]?.bool ?? false, ingest: ingest)
     }
 
@@ -89,10 +89,10 @@ public struct IngestStatus: Sendable, Equatable, Hashable {
     static func from(_ v: JSONValue) -> IngestStatus {
         IngestStatus(folderId: v["folderId"]?.string ?? "", jobId: v["jobId"]?.string ?? "",
                      state: v["state"]?.string.flatMap(State.init(rawValue:)) ?? .reading,
-                     done: v["done"]?.numeric.map { Int($0) } ?? 0, total: v["total"]?.numeric.map { Int($0) } ?? 0,
+                     done: v["done"]?.integer ?? 0, total: v["total"]?.integer ?? 0,
                      note: v["note"]?.string ?? "",
-                     foundQuestions: v["found"]?["questions"]?.numeric.map { Int($0) },
-                     foundTopics: v["found"]?["topics"]?.numeric.map { Int($0) },
+                     foundQuestions: v["found"]?["questions"]?.integer,
+                     foundTopics: v["found"]?["topics"]?.integer,
                      costUsd: v["costUsd"]?.numeric)
     }
 
@@ -162,25 +162,25 @@ public struct Knowledge: Sendable, Equatable {
             guard let id = c["id"]?.string else { return nil }
             let topics = (c["topics"]?.array ?? []).compactMap { t -> Topic? in
                 guard let tid = t["id"]?.string else { return nil }
-                return Topic(id: tid, title: t["title"]?.string ?? tid, count: t["count"]?.numeric.map { Int($0) } ?? 0,
+                return Topic(id: tid, title: t["title"]?.string ?? tid, count: t["count"]?.integer ?? 0,
                              share: t["share"]?.numeric ?? 0, forms: t["forms"]?.array?.count ?? 0)
             }
-            return Chapter(id: id, title: c["title"]?.string ?? id, topics: topics)
-        }
+            return Chapter(id: id, title: c["title"]?.string ?? id, topics: topics.uniquedByID())
+        }.uniquedByID()
         let structures = (v["structures"]?.array ?? []).compactMap { s -> Structure? in
             guard let id = s["id"]?.string else { return nil }
             let sections = s["sections"]?.array ?? []
-            let count = sections.reduce(0) { $0 + ($1["count"]?.numeric.map { Int($0) } ?? 0) }
-            return Structure(id: id, title: s["title"]?.string ?? id, durationMin: s["durationMin"]?.numeric.map { Int($0) },
+            let count = sections.reduce(0) { $0 + ($1["count"]?.integer ?? 0) }
+            return Structure(id: id, title: s["title"]?.string ?? id, durationMin: s["durationMin"]?.integer,
                              totalPoints: s["totalPoints"]?.numeric, sections: sections.compactMap { $0["title"]?.string },
                              questions: count)
-        }
+        }.uniquedByID()
         var byLevel: [String: Int] = [:]
-        for (k, n) in v["stats"]?["byLevel"]?.object ?? [:] { byLevel[k] = n.numeric.map { Int($0) } ?? 0 }
+        for (k, n) in v["stats"]?["byLevel"]?.object ?? [:] { byLevel[k] = n.integer ?? 0 }
         let sp = v["schoolProgress"]
         return Knowledge(raw: v, subject: v["subject"]?.string ?? "chung", grade: v["grade"]?.dateText, goal: v["goal"]?.nonEmptyString,
                          updatedAt: v["updatedAt"]?.dateText, sources: v["sources"]?.array?.count ?? 0,
-                         questions: v["stats"]?["questions"]?.numeric.map { Int($0) } ?? 0, byLevel: byLevel,
+                         questions: v["stats"]?["questions"]?.integer ?? 0, byLevel: byLevel,
                          chapters: chapters, structures: structures, currentTopicId: sp?["currentTopicId"]?.nonEmptyString,
                          coveredTopicIds: sp?["coveredTopicIds"]?.strings ?? [], progressNote: sp?["note"]?.nonEmptyString)
     }
@@ -258,7 +258,7 @@ public struct FolderReview: Sendable, Equatable {
 
     static func weakTopic(_ v: JSONValue) -> WeakTopic? {
         guard let topic = v["topic"]?.string else { return nil }
-        return WeakTopic(topic: topic, note: v["note"]?.string ?? "", count: v["count"]?.numeric.map { Int($0) } ?? 0,
+        return WeakTopic(topic: topic, note: v["note"]?.string ?? "", count: v["count"]?.integer ?? 0,
                          lastSeen: v["lastSeen"]?.dateText, due: v["due"]?.dateText)
     }
 
@@ -267,9 +267,9 @@ public struct FolderReview: Sendable, Equatable {
             guard let id = t["topicId"]?.string ?? t["title"]?.string else { return nil }
             return Topic(topicId: id, title: t["title"]?.string ?? id, chapter: t["chapter"]?.string ?? "",
                          state: t["state"]?.string.flatMap(Topic.State.init(rawValue:)) ?? .new,
-                         wrong: t["wrong"]?.numeric.map { Int($0) } ?? 0, right: t["right"]?.numeric.map { Int($0) } ?? 0,
+                         wrong: t["wrong"]?.integer ?? 0, right: t["right"]?.integer ?? 0,
                          lastSeen: t["lastSeen"]?.dateText)
-        }
+        }.uniquedByID()
         var weekly: Weekly?
         if let w = v["weekly"], let md = w["md"]?.string {
             weekly = Weekly(from: w["from"]?.dateText ?? "", to: w["to"]?.dateText ?? "", md: md)
@@ -278,11 +278,11 @@ public struct FolderReview: Sendable, Equatable {
             guard let id = s["sessionId"]?.nonEmptyString else { return nil }
             return Lesson(sessionId: id, title: s["title"]?.string ?? "", updatedAt: s["updatedAt"]?.dateText ?? "",
                           mode: s["mode"]?.string.flatMap(SessionMode.init(rawValue:)) ?? .live,
-                          steps: s["steps"]?.numeric.map { Int($0) } ?? 0)
-        }
+                          steps: s["steps"]?.integer ?? 0)
+        }.uniquedByID()
         var review = FolderReview(folderId: v["folderId"]?.string ?? "", topics: topics,
-                                  weak: (v["weak"]?.array ?? []).compactMap(weakTopic),
-                                  due: (v["due"]?.array ?? []).compactMap(weakTopic),
+                                  weak: (v["weak"]?.array ?? []).compactMap(weakTopic).uniquedByID(),
+                                  due: (v["due"]?.array ?? []).compactMap(weakTopic).uniquedByID(),
                                   weekly: weekly, sessions: lessons, updatedAt: v["updatedAt"]?.dateText)
         review.raw = v
         return review
@@ -309,7 +309,7 @@ public struct ExamItem: Sendable, Equatable, Identifiable, Hashable {
     static func from(_ v: JSONValue) -> ExamItem? {
         guard let id = v["examId"]?.nonEmptyString else { return nil }
         return ExamItem(examId: id, title: v["title"]?.string ?? "", structureId: v["structureId"]?.string ?? "",
-                        createdAt: v["createdAt"]?.dateText ?? "", questions: v["questions"]?.numeric.map { Int($0) } ?? 0)
+                        createdAt: v["createdAt"]?.dateText ?? "", questions: v["questions"]?.integer ?? 0)
     }
 }
 
@@ -351,7 +351,7 @@ public struct UsageBucket: Sendable, Equatable {
     }
 
     static func from(_ v: JSONValue?) -> UsageBucket {
-        func i(_ k: String) -> Int { v?[k]?.numeric.map { Int($0) } ?? 0 }
+        func i(_ k: String) -> Int { v?[k]?.integer ?? 0 }
         return UsageBucket(inputTokens: i("inputTokens"), outputTokens: i("outputTokens"), cacheReadTokens: i("cacheReadTokens"),
                            cacheWriteTokens: i("cacheWriteTokens"), costUsd: v?["costUsd"]?.numeric ?? 0, turns: i("turns"))
     }

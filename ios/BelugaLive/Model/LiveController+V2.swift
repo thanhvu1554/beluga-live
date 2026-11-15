@@ -1,5 +1,7 @@
 import SwiftUI
 import UIKit
+import PhotosUI
+import UniformTypeIdentifiers
 import BelugaCore
 
 // Protocol v2 (PROTOCOL sections 7-15): chat mode, attachments, dictation, folders, knowledge ingest,
@@ -25,6 +27,8 @@ extension LiveController {
         }
         transport?.send(.listFolders)
         transport?.send(.listSessions())
+        // Older servers ignore it; the Settings row shows the current voice.
+        transport?.send(.getVoices)
         requestGreeting()
     }
 
@@ -41,7 +45,14 @@ extension LiveController {
     func toChat(_ e: LessonEvent) {
         guard e.seq > chatSeq else { return }
         chatSeq = e.seq
+        chatLog.append(e.raw)
         toChat(e.raw)
+    }
+
+    /// The chat page came back blank (its web process was killed): draw the session again, without animation.
+    func redrawChat() {
+        chatPage.call("chat.reset()")
+        chatPage.call("chat.load(\(JSONValue.array(chatLog).jsonString))")
     }
 
     func toChat(_ raw: JSONValue) {
@@ -52,6 +63,7 @@ extension LiveController {
     func loadChatHistory(_ events: [LessonEvent]) {
         let raws = events.sorted { $0.seq < $1.seq }.map(\.raw)
         transcript.load(raws)
+        chatLog = raws
         chatSeq = events.map(\.seq).max() ?? 0
         chatPage.clearQueue()
         chatPage.call("chat.reset()")
@@ -109,6 +121,7 @@ extension LiveController {
 
     func setMode(_ new: SessionMode) {
         guard new != mode else { return }
+        Diagnostics.log("mode → \(new.rawValue)")
         if new == .chat {
             if timeline.isSpeaking { interrupt() }
             stopLiveListening()
@@ -138,6 +151,7 @@ extension LiveController {
 
     var uploader: Uploader { Uploader(base: settings.httpBase, token: settings.pairToken, mock: isMock) }
 
+    /// A photo from the system camera (already decoded by UIKit).
     func addImage(_ image: UIImage, name: String, to basket: ChatComposer? = nil) {
         let basket = basket ?? composer
         guard basket.attachments.count < ChatComposer.maxAttachments, let data = Uploader.prepareImage(image) else { return }
@@ -145,6 +159,64 @@ extension LiveController {
         let a = Attachment(name: name, kind: "image", mime: "image/jpeg", thumbnail: thumb, data: data)
         basket.attachments.append(a)
         upload(a, in: basket)
+    }
+
+    /// An image file's bytes (photo library, Files): downsampled off the main thread, then uploaded.
+    func addImage(data: Data, name: String, to basket: ChatComposer? = nil) async {
+        let basket = basket ?? composer
+        guard basket.attachments.count < ChatComposer.maxAttachments else { return }
+        let prepared = await Task.detached(priority: .userInitiated) { ImageLoader.prepare(data) }.value
+        guard let prepared else {
+            Diagnostics.log("attach: image not decodable (\(data.count) bytes)")
+            showNotice(strings("attach.failed"))
+            return
+        }
+        guard basket.attachments.count < ChatComposer.maxAttachments else { return }
+        let a = Attachment(name: name, kind: "image", mime: "image/jpeg", thumbnail: prepared.thumbnail, data: prepared.jpeg)
+        basket.attachments.append(a)
+        upload(a, in: basket)
+    }
+
+    /// Photos chosen in the PhotosPicker, loaded one at a time (each original can be tens of MB).
+    func addPhotos(_ items: [PhotosPickerItem], namePrefix: String, to basket: ChatComposer) {
+        Diagnostics.log("attach: \(items.count) photos picked")
+        Task { [weak self] in
+            for (i, item) in items.enumerated() {
+                let data: Data?
+                do { data = try await item.loadTransferable(type: Data.self) } catch {
+                    Diagnostics.log("attach: photo \(i + 1) failed to load: \(error.localizedDescription)")
+                    data = nil
+                }
+                guard let self else { return }
+                guard let data else { continue }
+                await self.addImage(data: data, name: "\(namePrefix)-\(i + 1).jpg", to: basket)
+            }
+        }
+    }
+
+    /// Files chosen in the Files app: PDFs as they are, images downsampled. Read off the main thread.
+    func addFiles(_ urls: [URL], to basket: ChatComposer) {
+        Diagnostics.log("attach: \(urls.count) files picked")
+        Task { [weak self] in
+            for url in urls {
+                let loaded = await Task.detached(priority: .userInitiated) { () -> Data? in
+                    let scoped = url.startAccessingSecurityScopedResource()
+                    defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                    return try? Data(contentsOf: url)
+                }.value
+                guard let self else { return }
+                guard let data = loaded else {
+                    Diagnostics.log("attach: file unreadable \(url.lastPathComponent)")
+                    self.showNotice(self.strings("attach.failed"))
+                    continue
+                }
+                if UTType(filenameExtension: url.pathExtension)?.conforms(to: .pdf) == true {
+                    self.addPDF(data, name: url.lastPathComponent, to: basket)
+                } else {
+                    await self.addImage(data: data, name: url.deletingPathExtension().lastPathComponent + ".jpg", to: basket)
+                }
+            }
+        }
     }
 
     func addPDF(_ data: Data, name: String, to basket: ChatComposer? = nil) {
@@ -165,13 +237,16 @@ extension LiveController {
     private func upload(_ a: Attachment, in basket: ChatComposer) {
         let uploader = self.uploader
         let id = a.id, data = a.data, name = a.name, mime = a.mime
+        Diagnostics.log("upload: start \(name) \(data.count / 1024) KB")
         Task { [weak self] in
             do {
                 let result = try await uploader.upload(data, name: name, mime: mime) { [weak basket] p in
                     basket?.update(id) { $0.progress = p }
                 }
                 basket.update(id) { $0.fileId = result.fileId; $0.progress = 1 }
+                Diagnostics.log("upload: done \(name)")
             } catch {
+                Diagnostics.log("upload: failed \(name): \(error)")
                 basket.update(id) { $0.failed = true }
                 self?.showNotice(self?.strings("attach.failed") ?? "")
             }
@@ -188,9 +263,12 @@ extension LiveController {
         guard !composer.dictating, !composer.transcribing else { return }
         if isMock { composer.dictating = true; Haptics.tap(); return }
         guard canListen() else { return }
+        guard audio?.startListening(lang: settings.lang, serverSTT: connected && !needsDeviceSTT()) == true else {
+            showNotice(strings("notice.micUnavailable"))
+            return
+        }
         composer.dictating = true
         Haptics.tap()
-        audio?.startListening(lang: settings.lang, serverSTT: connected && !needsDeviceSTT())
     }
 
     /// Dictation goes to the composer, never straight to the tutor (`draft`, PROTOCOL section 7).
@@ -203,7 +281,10 @@ extension LiveController {
             return
         }
         guard let audio else { return }
-        switch await audio.stopListening() {
+        let heard = await audio.stopListening()
+        // In chat the engine only ran for this dictation: release the microphone (the orange dot goes off).
+        if mode == .chat { audio.suspend() }
+        switch heard {
         case .text(let text):
             // Device recognition: the server corrects it (when allowed and reachable), else use it as is.
             guard connected, settings.sttFix else { composer.insertDictation(text); return }
@@ -341,6 +422,8 @@ extension LiveController {
             library.usage = u
         case .greeting(let g):
             if !g.text.isEmpty { library.greeting = g }
+        case .voices(let catalog):
+            library.voices = catalog
         default:
             break
         }
@@ -472,6 +555,40 @@ extension LiveController {
         transport?.send(.getUsage)
     }
 
+    // MARK: Voices
+
+    func requestVoices() {
+        transport?.send(.getVoices)
+    }
+
+    /// The owner picked a voice: `settings{voice}` (the only time a voice id goes into settings); the server
+    /// answers with a fresh `voices`, which also undoes the optimistic tick if it refused the id.
+    func selectVoice(_ id: String) {
+        guard connected, library.voices?.current != id else { return }
+        Diagnostics.log("voice: select \(id)")
+        var s = settings.tutor(mode: mode)
+        s.voice = id
+        transport?.send(.settings(s))
+        library.voices?.current = id
+        Haptics.tap()
+    }
+
+    /// A preview is about to play: the tutor must not talk over it, and the mic must not hear it.
+    func prepareForPreview() {
+        if timeline.isSpeaking { interrupt() }
+        if pill.micOpen { stopLiveListening() }
+        if composer.dictating { Task { await stopDictation() } }
+    }
+
+    /// `GET /voice/<id>.mp3` request with the pairing token (PROTOCOL section 16).
+    func voicePreviewRequest(_ id: String) -> URLRequest? {
+        guard let base = settings.httpBase else { return nil }
+        let url = base.appendingPathComponent("voice").appendingPathComponent("\(id).mp3")
+        var req = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
+        req.setValue("Bearer \(settings.pairToken ?? "")", forHTTPHeaderField: "Authorization")
+        return req
+    }
+
     // MARK: Mock
 
     /// `-mockChat 1`: types and sends a question, as a student would.
@@ -551,6 +668,17 @@ extension LiveController {
                 await self?.exportExam("e-2", title: "Đề giữa kỳ 1 · Lần 2")
                 try? await Task.sleep(for: .seconds(1.5))
                 self?.sceneBusy -= 1
+            }
+        case .voices:
+            // The voice screen with one preview playing (Phong).
+            settingsPath = [.voices]
+            showSettings = true
+            sceneBusy += 1
+            Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(900))
+                guard let self else { return }
+                self.voicePreview.toggle("RxhjHDfpO54FYotYtKpw", controller: self)
+                self.sceneBusy -= 1
             }
         case .replay:
             applyLiveScene(.replay, mock: mock)

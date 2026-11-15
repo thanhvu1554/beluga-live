@@ -4,7 +4,7 @@ import BelugaCore
 
 /// Owns the board WKWebView and speaks the JS contract in PROTOCOL section 3.
 @MainActor @Observable
-final class BoardBridge: NSObject, @preconcurrency WKScriptMessageHandler {
+final class BoardBridge: NSObject, @preconcurrency WKScriptMessageHandler, @preconcurrency WKNavigationDelegate {
     private(set) var ready = false
     private(set) var stepCount = 0
     private(set) var currentStep = 0
@@ -14,6 +14,9 @@ final class BoardBridge: NSObject, @preconcurrency WKScriptMessageHandler {
     @ObservationIgnored private var queue: [String] = []
     @ObservationIgnored private var theme = "light"
     @ObservationIgnored private var lang = "vi"
+    /// Events on the board since the last reset, to redraw it if the web process dies.
+    @ObservationIgnored private var history: [JSONValue] = []
+    @ObservationIgnored private var insets: String?
 
     /// Version of the board bundled with the app (`board/version.json`).
     static let bundledVersion: Int = {
@@ -30,6 +33,7 @@ final class BoardBridge: NSObject, @preconcurrency WKScriptMessageHandler {
         webView = WKWebView(frame: .zero, configuration: config)
         super.init()
         controller.add(WeakHandler(self), name: "board")
+        webView.navigationDelegate = self
         webView.isOpaque = false
         webView.backgroundColor = .clear
         webView.scrollView.backgroundColor = .clear
@@ -55,6 +59,7 @@ final class BoardBridge: NSObject, @preconcurrency WKScriptMessageHandler {
 
     func reset() {
         stepCount = 0; currentStep = 0; hasContent = false
+        history.removeAll()
         call("board.reset()")
     }
 
@@ -63,12 +68,15 @@ final class BoardBridge: NSObject, @preconcurrency WKScriptMessageHandler {
         // The position comes from the page's `stepChanged` (it may stay on an older step the user is reading).
         if case .step(let index, _) = event.kind { stepCount = max(stepCount, index + 1) }
         hasContent = true
+        history.append(event.raw)
         call(restoring ? "board.restore([\(event.raw.jsonString)])" : "board.apply(\(event.raw.jsonString))")
     }
 
     /// Space (px) kept clear for native chrome; the live panel keeps the default 128 at the bottom.
     func setInsets(top: Int, bottom: Int) {
-        call("board.setInsets&&board.setInsets(\(top),\(bottom))")
+        let js = "board.setInsets&&board.setInsets(\(top),\(bottom))"
+        insets = js
+        call(js)
     }
 
     func goto(_ index: Int) {
@@ -83,6 +91,15 @@ final class BoardBridge: NSObject, @preconcurrency WKScriptMessageHandler {
     func setLang(_ l: Lang) {
         lang = l.rawValue
         call("board.setLang(\"\(lang)\")")
+    }
+
+    /// The web content process was killed (memory pressure, long background): reload and redraw silently.
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        Diagnostics.log("web: board content process ended, reloading")
+        ready = false
+        queue = [insets, history.isEmpty ? nil : "board.restore(\(JSONValue.array(history).jsonString))",
+                 "board.goto(\(currentStep))"].compactMap { $0 }
+        webView.reload()
     }
 
     private func call(_ js: String) {

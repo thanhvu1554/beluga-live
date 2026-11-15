@@ -35,6 +35,8 @@
 	<string>Beluga Live dùng micro để nghe bạn nói trong lúc học.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Lời bạn nói được chuyển thành chữ để gửi cho gia sư.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Beluga Live lưu ảnh hoặc đề bạn chọn "Lưu ảnh" vào thư viện ảnh.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Beluga Live kết nối với máy tính của bạn để chạy gia sư.</string>
 	<key>NSAppTransportSecurity</key>

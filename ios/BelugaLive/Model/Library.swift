@@ -19,6 +19,13 @@ final class Library {
     var usage: Usage?
     var greeting: Greeting
     var models: [ModelInfo] = ModelInfo.fallback
+    /// Tutor voices (nil until the server answered `get_voices`).
+    var voices: VoiceCatalog?
+
+    func voice(_ id: String?) -> VoiceInfo? {
+        guard let id else { return nil }
+        return voices?.items.first { $0.id == id }
+    }
 
     init(lang: Lang = .vi) {
         let hour = Calendar.current.component(.hour, from: Date())

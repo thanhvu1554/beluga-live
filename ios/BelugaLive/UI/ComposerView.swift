@@ -41,7 +41,10 @@ struct ComposerView: View {
                       matching: .images)
         .onChange(of: photoItems) { _, items in loadPhotos(items) }
         .fileImporter(isPresented: $showFiles, allowedContentTypes: [.pdf, .image], allowsMultipleSelection: true) { result in
-            if case .success(let urls) = result { FileLoader.load(urls, controller: controller, basket: composer) }
+            switch result {
+            case .success(let urls): controller.addFiles(urls, to: composer)
+            case .failure(let error): Diagnostics.log("attach: file importer failed: \(error.localizedDescription)")
+            }
         }
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker { image in controller.addImage(image, name: "chup-\(Int(Date().timeIntervalSince1970)).jpg") }
@@ -145,12 +148,7 @@ struct ComposerView: View {
     private func loadPhotos(_ items: [PhotosPickerItem]) {
         guard !items.isEmpty else { return }
         photoItems = []
-        Task {
-            for (i, item) in items.enumerated() {
-                guard let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data) else { continue }
-                controller.addImage(image, name: "anh-\(i + 1).jpg", to: composer)
-            }
-        }
+        controller.addPhotos(items, namePrefix: "anh", to: composer)
     }
 }
 
@@ -281,24 +279,6 @@ private struct UploadRing: View {
                 .rotationEffect(.degrees(-90))
         }
         .animation(.easeOut(duration: Motion.quick), value: progress)
-    }
-}
-
-/// Files chosen in the Files app: PDFs as they are, images re-encoded.
-@MainActor
-enum FileLoader {
-    static func load(_ urls: [URL], controller: LiveController, basket: ChatComposer) {
-        for url in urls {
-            let scoped = url.startAccessingSecurityScopedResource()
-            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-            guard let data = try? Data(contentsOf: url) else { continue }
-            let type = UTType(filenameExtension: url.pathExtension)
-            if type?.conforms(to: .pdf) == true {
-                controller.addPDF(data, name: url.lastPathComponent, to: basket)
-            } else if let image = UIImage(data: data) {
-                controller.addImage(image, name: url.deletingPathExtension().lastPathComponent + ".jpg", to: basket)
-            }
-        }
     }
 }
 

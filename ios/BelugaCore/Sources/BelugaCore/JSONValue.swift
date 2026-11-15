@@ -40,7 +40,18 @@ public enum JSONValue: Sendable, Equatable, Codable {
 
     public var string: String? { if case .string(let s) = self { return s }; return nil }
     public var double: Double? { if case .number(let n) = self { return n }; return nil }
-    public var int: Int? { double.map { Int($0) } }
+    /// Whole number; nil for NaN, infinity or values outside `Int` (converting those with `Int(_:)` traps).
+    public var int: Int? { double.flatMap(JSONValue.clampedInt) }
+    /// Number (or number text) as `Int`, never trapping: see `int`.
+    public var integer: Int? { numeric.flatMap(JSONValue.clampedInt) }
+
+    /// `Int(d)` without the runtime trap on NaN, infinity or out-of-range values.
+    public static func clampedInt(_ d: Double) -> Int? {
+        guard d.isFinite else { return nil }
+        if d >= 9.0e18 { return Int.max }
+        if d <= -9.0e18 { return Int.min }
+        return Int(d)
+    }
     public var bool: Bool? { if case .bool(let b) = self { return b }; return nil }
     public var array: [JSONValue]? { if case .array(let a) = self { return a }; return nil }
     public var object: [String: JSONValue]? { if case .object(let o) = self { return o }; return nil }
@@ -52,7 +63,7 @@ public enum JSONValue: Sendable, Equatable, Codable {
     /// A date sent as text or as epoch seconds/milliseconds, kept as text.
     public var dateText: String? {
         if let s = nonEmptyString { return s }
-        if let n = double { return String(Int64(n)) }
+        if let n = double, let i = JSONValue.clampedInt(n) { return String(i) }
         return nil
     }
     /// String array; non-string items are dropped.
@@ -85,4 +96,18 @@ extension JSONValue: ExpressibleByStringLiteral, ExpressibleByIntegerLiteral, Ex
     public init(dictionaryLiteral elements: (String, JSONValue)...) {
         self = .object(Dictionary(elements, uniquingKeysWith: { _, b in b }))
     }
+}
+
+extension Array {
+    /// Keeps the first element for each id. Server lists feed SwiftUI `ForEach`/`List`, where a repeated id is
+    /// undefined behaviour and can abort the app ("Duplicate keys ... were found in a Dictionary").
+    public func uniqued<ID: Hashable>(by id: (Element) -> ID) -> [Element] {
+        var seen = Set<ID>()
+        return filter { seen.insert(id($0)).inserted }
+    }
+}
+
+extension Array where Element: Identifiable {
+    /// `uniqued(by: \.id)`.
+    public func uniquedByID() -> [Element] { uniqued { $0.id } }
 }

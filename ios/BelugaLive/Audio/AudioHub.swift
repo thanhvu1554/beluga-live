@@ -98,6 +98,9 @@ final class TTSFeeder: @unchecked Sendable {
             if done { finish() }
             return
         }
+        // The node was started (`play()`) on the main actor before the synthesizer began. Scheduling on a node
+        // whose engine stopped meanwhile (route change, interruption) is pointless: give up on this line.
+        guard node.engine?.isRunning == true else { finish(); return }
         guard let out = convert(pcm) else { return }
         lock.lock(); pending += 1; gotAudio = true; lock.unlock()
         node.scheduleBuffer(out, completionCallbackType: .dataPlayedBack) { [weak self] _ in
@@ -105,7 +108,6 @@ final class TTSFeeder: @unchecked Sendable {
             self.lock.lock(); self.pending -= 1; let done = self.pending == 0 && self.writingDone; self.lock.unlock()
             if done { self.finish() }
         }
-        if !node.isPlaying { node.play() }
     }
 
     func finish() {
@@ -137,19 +139,34 @@ final class RequestBox: @unchecked Sendable {
 }
 
 /// Owns the audio engine: speech out (system voice or server mp3), mic in (STT), earcons.
+///
+/// AVAudioEngine reports misuse with Objective-C exceptions that Swift cannot catch, so every call that can raise
+/// one is guarded here:
+/// - the graph (attach, connect, output tap) is built once per engine instance: a second `installTap` on the same
+///   bus raises "Tap() already exists";
+/// - `AVAudioPlayerNode.play()` raises when the engine is not running, so it is only called on the main actor right
+///   after `ensureRunning()` confirmed the engine runs (route changes, phone calls, Siri and backgrounding all stop
+///   the engine behind our back);
+/// - the input tap uses the input's current format and only when that format is valid (0 Hz / 0 channels raises);
+/// - a media-services reset invalidates every node: the engine is rebuilt from scratch.
+/// The microphone side (voice processing) is only set up once record permission is granted; before that the
+/// engine is output-only, so speaking never triggers a permission prompt or fails for lack of one.
 @MainActor
 final class AudioHub {
     let inputLevel = LevelMeter()
     let outputLevel = LevelMeter()
 
-    private let engine = AVAudioEngine()
-    private let ttsNode = AVAudioPlayerNode()
-    private let fileNode = AVAudioPlayerNode()
-    private let earconNode = AVAudioPlayerNode()
+    private var engine = AVAudioEngine()
+    private var ttsNode = AVAudioPlayerNode()
+    private var fileNode = AVAudioPlayerNode()
+    private var earconNode = AVAudioPlayerNode()
     private let ttsFormat = AVAudioFormat(standardFormatWithSampleRate: 22_050, channels: 1)!
     private let synth = AVSpeechSynthesizer()
     private var feeder: TTSFeeder?
-    private var started = false
+    /// Graph built for the current engine instance.
+    private var configured = false
+    /// The current engine has the voice-processing input (built after record permission was granted).
+    private var hasInput = false
     private var earcons: [Earcon: AVAudioPCMBuffer] = [:]
 
     private var recognizer: SFSpeechRecognizer?
@@ -163,53 +180,159 @@ final class AudioHub {
 
     enum Grant: Sendable { case granted, undetermined, denied }
 
+    /// The engine runs (the shared audio session is set up for it).
+    var isRunning: Bool { configured && engine.isRunning }
+
     // MARK: Lifecycle
 
-    func start() {
-        guard !started else { return }
+    /// Builds the graph if needed and starts the engine. Returns whether it runs.
+    @discardableResult
+    func ensureRunning() -> Bool {
+        let wantInput = Self.microphoneGrant() == .granted
+        if configured, wantInput, !hasInput {
+            Diagnostics.log("audio: rebuilding engine with microphone")
+            rebuild()
+        }
+        if !configured {
+            // Session first: voice processing is set up against a play-and-record session.
+            prepareSession(record: wantInput)
+            configure(withInput: wantInput)
+        }
+        guard !engine.isRunning else { return true }
+        prepareSession(record: hasInput)
+        engine.prepare()
+        do {
+            try engine.start()
+            Diagnostics.log("audio: engine started (input \(hasInput))")
+        } catch {
+            Diagnostics.log("audio: engine start failed \(error.localizedDescription)")
+        }
+        return engine.isRunning
+    }
+
+    /// Category (only when it differs: setting it re-routes audio) and activation. Only while the engine is stopped.
+    private func prepareSession(record: Bool) {
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetoothA2DP])
+            let category: AVAudioSession.Category = record ? .playAndRecord : .playback
+            let options: AVAudioSession.CategoryOptions = record ? [.defaultToSpeaker, .allowBluetoothA2DP] : []
+            if session.category != category || session.categoryOptions != options {
+                try session.setCategory(category, mode: .default, options: options)
+            }
             try session.setActive(true)
         } catch {
-            print("audio session error: \(error)")
+            Diagnostics.log("audio: session error \(error.localizedDescription)")
         }
-        // Echo cancellation so the loudspeaker can be used while the mic is open.
-        do { try engine.inputNode.setVoiceProcessingEnabled(true) } catch { print("voice processing: \(error)") }
-        // The voice-processing input keeps running with the engine; keep it muted except while listening.
-        engine.inputNode.isVoiceProcessingInputMuted = true
+    }
+
+    private func configure(withInput: Bool) {
+        configured = true
+        hasInput = withInput
+        if withInput {
+            // Echo cancellation so the loudspeaker can be used while the mic is open.
+            do { try engine.inputNode.setVoiceProcessingEnabled(true) } catch {
+                Diagnostics.log("audio: voice processing \(error.localizedDescription)")
+            }
+            // The voice-processing input keeps running with the engine; keep it muted except while listening.
+            engine.inputNode.isVoiceProcessingInputMuted = true
+        }
         for n in [ttsNode, fileNode, earconNode] { engine.attach(n) }
         engine.connect(ttsNode, to: engine.mainMixerNode, format: ttsFormat)
         engine.connect(earconNode, to: engine.mainMixerNode, format: Earcon.format)
         engine.connect(fileNode, to: engine.mainMixerNode, format: nil)
         Self.installOutputTap(engine.mainMixerNode, meter: outputLevel)
-        earcons = Earcon.renderAll()
-        engine.prepare()
-        do { try engine.start(); started = true } catch { print("engine start: \(error)") }
+        if earcons.isEmpty { earcons = Earcon.renderAll() }
         installObservers()
     }
 
-    /// Restarts the engine after route changes (headphones, Bluetooth) and phone-call interruptions.
+    /// A fresh engine and nodes (after a media-services reset, or to add the microphone).
+    /// `afterReset`: the old engine and nodes are dead (media services reset) and are not touched again.
+    private func rebuild(afterReset: Bool = false) {
+        if afterReset {
+            feeder?.finish(); feeder = nil
+            listening = false
+            recognitionTask?.cancel()
+            recognitionTask = nil; requestBox = nil; collector = nil
+            inputLevel.set(0); outputLevel.set(0)
+        } else {
+            stopSpeaking()
+            endListeningNow()
+            if configured {
+                engine.mainMixerNode.removeTap(onBus: 0)
+                engine.stop()
+            }
+        }
+        engine = AVAudioEngine()
+        ttsNode = AVAudioPlayerNode()
+        fileNode = AVAudioPlayerNode()
+        earconNode = AVAudioPlayerNode()
+        configured = false
+        hasInput = false
+    }
+
+    /// Leaving Live or ending dictation: stop the engine and give the audio session back (the microphone
+    /// indicator goes off, other apps' audio may resume). `ensureRunning()` brings it back.
+    func suspend() {
+        guard configured else { return }
+        stopSpeaking()
+        endListeningNow()
+        if engine.isRunning { engine.stop() }
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        } catch {
+            Diagnostics.log("audio: deactivate \(error.localizedDescription)")
+        }
+        Diagnostics.log("audio: suspended")
+    }
+
+    /// Restarts the engine after route changes, interruptions and media-services resets.
     private func installObservers() {
         guard observers.isEmpty else { return }
         let nc = NotificationCenter.default
-        observers.append(nc.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.recoverEngine() }
+        // Registered for any engine (it is replaced on rebuild); queue .main, so assumeIsolated holds.
+        observers.append(nc.addObserver(forName: .AVAudioEngineConfigurationChange, object: nil, queue: .main) { [weak self] note in
+            let source = note.object.map { ObjectIdentifier($0 as AnyObject) }
+            MainActor.assumeIsolated { self?.configurationChanged(source: source) }
         })
         observers.append(nc.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
             let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+            MainActor.assumeIsolated { self?.interruption(began: raw == AVAudioSession.InterruptionType.began.rawValue) }
+        })
+        observers.append(nc.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
-                if raw == AVAudioSession.InterruptionType.ended.rawValue {
-                    try? AVAudioSession.sharedInstance().setActive(true)
-                    self?.recoverEngine()
-                }
+                Diagnostics.log("audio: media services reset")
+                self?.rebuild(afterReset: true)
             }
         })
     }
 
-    private func recoverEngine() {
-        guard started, !engine.isRunning else { return }
-        do { try engine.start() } catch { print("engine restart: \(error)") }
+    private func configurationChanged(source: ObjectIdentifier?) {
+        guard configured, source == nil || source == ObjectIdentifier(engine) else { return }
+        Diagnostics.log("audio: configuration change (listening \(listening))")
+        // The engine stopped itself; a player waiting for completion may never get it.
+        stopSpeaking()
+        let wasListening = listening
+        if wasListening { engine.inputNode.removeTap(onBus: 0) }
+        guard ensureRunning() else { return }
+        // Formats may have changed (Bluetooth headset, other sample rate): put the mic tap back with the new one.
+        if wasListening, let box = requestBox, !installInputTap(box: box, collector: collector) {
+            Diagnostics.log("audio: input tap not restored")
+        }
+    }
+
+    private func interruption(began: Bool) {
+        Diagnostics.log("audio: interruption \(began ? "began" : "ended")")
+        if began {
+            stopSpeaking()
+        } else if configured {
+            ensureRunning()
+        }
+    }
+
+    /// Back in the foreground in Live: the engine was stopped while the app was away.
+    func resumeIfNeeded() {
+        guard configured, !engine.isRunning else { return }
+        ensureRunning()
     }
 
     private nonisolated static func installOutputTap(_ node: AVAudioMixerNode, meter: LevelMeter) {
@@ -222,11 +345,13 @@ final class AudioHub {
 
     /// Speaks with the system voice; returns when playback finished or was stopped.
     func speak(_ text: String, lang: Lang) async {
-        start()
         stopSpeaking()
+        guard ensureRunning() else { return }
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = AVSpeechSynthesisVoice(language: lang == .vi ? "vi-VN" : "en-US")
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+        // Started here, on the main actor, while the engine is known to run; the feeder only schedules buffers.
+        ttsNode.play()
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
             let feeder = TTSFeeder(node: ttsNode, format: ttsFormat) { cont.resume() }
             self.feeder = feeder
@@ -244,16 +369,23 @@ final class AudioHub {
         synth.write(u) { buffer in feeder.receive(buffer) }
     }
 
-    /// Plays server mp3; returns false when the data cannot be decoded.
+    /// Plays server mp3; returns false when it cannot (undecodable data, engine not running).
     func play(mp3 data: Data) async -> Bool {
-        start()
         stopSpeaking()
+        guard ensureRunning() else { return false }
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("say-\(UUID().uuidString).mp3")
-        guard (try? data.write(to: url)) != nil, let file = try? AVAudioFile(forReading: url) else { return false }
+        guard (try? data.write(to: url)) != nil else { return false }
         defer { try? FileManager.default.removeItem(at: url) }
+        guard let file = try? AVAudioFile(forReading: url) else { return false }
+        let format = file.processingFormat
+        // A format the mixer cannot take would raise inside `connect`.
+        guard format.sampleRate > 0, (1...2).contains(format.channelCount) else {
+            Diagnostics.log("audio: mp3 format rejected \(format)")
+            return false
+        }
         engine.disconnectNodeOutput(fileNode)
-        engine.connect(fileNode, to: engine.mainMixerNode, format: file.processingFormat)
-        if !engine.isRunning { try? engine.start() }
+        engine.connect(fileNode, to: engine.mainMixerNode, format: format)
+        guard engine.isRunning else { return false }
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
             Self.schedule(file, on: fileNode) { cont.resume() }
             fileNode.play()
@@ -267,6 +399,7 @@ final class AudioHub {
 
     func stopSpeaking() {
         if synth.isSpeaking { synth.stopSpeaking(at: .immediate) }
+        // `stop()` also fires pending completion handlers, which ends the waits above.
         ttsNode.stop()
         fileNode.stop()
         feeder?.finish()
@@ -315,22 +448,34 @@ final class AudioHub {
         SFSpeechRecognizer.requestAuthorization { done($0 == .authorized) }
     }
 
-    func startListening(lang: Lang, serverSTT: Bool) {
-        start()
-        guard !listening else { return }
+    /// Opens the microphone. False when it cannot (engine not running, no valid input format): nothing changed.
+    func startListening(lang: Lang, serverSTT: Bool) -> Bool {
+        guard !listening else { return true }
+        guard ensureRunning(), hasInput else {
+            Diagnostics.log("audio: cannot listen (running \(engine.isRunning), input \(hasInput))")
+            return false
+        }
         transcript = ""; transcriptFinal = false
         let collector = serverSTT ? PCMCollector() : nil
         var request: SFSpeechAudioBufferRecognitionRequest?
         if !serverSTT {
-            let rec = SFSpeechRecognizer(locale: Locale(identifier: lang == .vi ? "vi-VN" : "en-US"))
-            recognizer = rec
             let r = SFSpeechAudioBufferRecognitionRequest()
             r.shouldReportPartialResults = true
-            if rec?.supportsOnDeviceRecognition == true { r.requiresOnDeviceRecognition = true }
             r.taskHint = .dictation
             request = r
+        }
+        let box = RequestBox(request)
+        engine.inputNode.removeTap(onBus: 0)
+        guard installInputTap(box: box, collector: collector) else {
+            Diagnostics.log("audio: no valid input format")
+            return false
+        }
+        if let request {
+            let rec = SFSpeechRecognizer(locale: Locale(identifier: lang == .vi ? "vi-VN" : "en-US"))
+            recognizer = rec
+            if rec?.supportsOnDeviceRecognition == true { request.requiresOnDeviceRecognition = true }
             if let rec {
-                recognitionTask = Self.recognize(rec, r) { [weak self] text, final in
+                recognitionTask = Self.recognize(rec, request) { [weak self] text, final in
                     Task { @MainActor in
                         self?.transcript = text
                         if final { self?.transcriptFinal = true }
@@ -338,15 +483,21 @@ final class AudioHub {
                 }
             }
         }
-        let box = RequestBox(request)
         requestBox = box
         self.collector = collector
-        let input = engine.inputNode
-        input.removeTap(onBus: 0)
-        input.isVoiceProcessingInputMuted = false
-        Self.installInputTap(input, meter: inputLevel, box: box, collector: collector)
-        if !engine.isRunning { try? engine.start() }
+        engine.inputNode.isVoiceProcessingInputMuted = false
         listening = true
+        Diagnostics.log("audio: listening (\(serverSTT ? "server" : "device") STT)")
+        return true
+    }
+
+    /// Installs the mic tap with the input's current format; false (and no tap) when that format is unusable.
+    private func installInputTap(box: RequestBox, collector: PCMCollector?) -> Bool {
+        let input = engine.inputNode
+        let format = input.outputFormat(forBus: 0)
+        guard format.sampleRate > 0, format.channelCount > 0 else { return false }
+        Self.installInputTap(input, format: format, meter: inputLevel, box: box, collector: collector)
+        return true
     }
 
     private nonisolated static func recognize(_ rec: SFSpeechRecognizer, _ r: SFSpeechAudioBufferRecognitionRequest,
@@ -356,13 +507,27 @@ final class AudioHub {
         }
     }
 
-    private nonisolated static func installInputTap(_ node: AVAudioInputNode, meter: LevelMeter, box: RequestBox, collector: PCMCollector?) {
-        let format = node.outputFormat(forBus: 0)
+    private nonisolated static func installInputTap(_ node: AVAudioInputNode, format: AVAudioFormat, meter: LevelMeter,
+                                                    box: RequestBox, collector: PCMCollector?) {
         node.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
             meter.set(db: LevelMeter.rmsDB(buffer))
             box.request?.append(buffer)
             collector?.append(buffer)
         }
+    }
+
+    /// Drops the microphone at once (no result).
+    private func endListeningNow() {
+        guard listening else { return }
+        listening = false
+        if hasInput {
+            engine.inputNode.removeTap(onBus: 0)
+            engine.inputNode.isVoiceProcessingInputMuted = true
+        }
+        requestBox?.request?.endAudio()
+        recognitionTask?.cancel()
+        recognitionTask = nil; requestBox = nil; collector = nil
+        inputLevel.set(0)
     }
 
     enum Heard { case text(String), wav(Data), nothing }
@@ -371,11 +536,14 @@ final class AudioHub {
     func stopListening(discard: Bool = false) async -> Heard {
         guard listening else { return .nothing }
         listening = false
-        engine.inputNode.removeTap(onBus: 0)
-        engine.inputNode.isVoiceProcessingInputMuted = true
+        if hasInput {
+            engine.inputNode.removeTap(onBus: 0)
+            engine.inputNode.isVoiceProcessingInputMuted = true
+        }
         inputLevel.set(0)
         if let collector {
             self.collector = nil
+            requestBox = nil
             return discard ? .nothing : .wav(collector.wav())
         }
         requestBox?.request?.endAudio()
@@ -396,8 +564,7 @@ final class AudioHub {
     // MARK: Earcons
 
     func play(_ e: Earcon) {
-        start()
-        guard started, let buffer = earcons[e] else { return }
+        guard ensureRunning(), let buffer = earcons[e] else { return }
         earconNode.scheduleBuffer(buffer, at: nil, options: .interrupts, completionHandler: nil)
         if !earconNode.isPlaying { earconNode.play() }
     }

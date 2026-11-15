@@ -7,7 +7,7 @@ enum MockScene: String, CaseIterable {
     case idle, listening, thinking, tool, lesson, ask, done, offline, review, longcaption
     // Chat mode and the v2 screens.
     case home, chat, chatfiles, drawer, sessions, settings, progress
-    case folder, knowledge, ingest, folderreview, exams, models, usage, exampdf, replay
+    case folder, knowledge, ingest, folderreview, exams, models, usage, exampdf, replay, voices
 
     var isLive: Bool {
         switch self {
@@ -105,6 +105,10 @@ final class LiveController {
     var showModels = false
     var showReplay = false
     var showIngest: String?
+    /// Navigation inside the Settings sheet (voices, crash report).
+    var settingsPath: [SettingsRoute] = []
+    /// Preview clips of the voice screen.
+    let voicePreview = VoicePreviewPlayer()
     var genExamRequest: GenExamRequest?
     var preview: PreviewFile?
     /// Exam being turned into a PDF.
@@ -141,6 +145,8 @@ final class LiveController {
     @ObservationIgnored var liveTurns: Set<Int> = []
     /// Highest seq already handed to the chat transcript.
     @ObservationIgnored var chatSeq = 0
+    /// Sequenced events shown in the chat page, to redraw it if its web process dies.
+    @ObservationIgnored var chatLog: [JSONValue] = []
     /// Folder whose data is on the knowledge page.
     @ObservationIgnored var knowledgeFolder: String?
     /// Open the folder the server creates next (created from the drawer).
@@ -173,6 +179,10 @@ final class LiveController {
         knowledgePage.invoke("setInsets", 8, 32)
         chatPage.onMessage = { [weak self] body in self?.chatPageMessage(body) }
         knowledgePage.onMessage = { [weak self] body in self?.knowledgePageMessage(body) }
+        chatPage.onReload = { [weak self] in self?.redrawChat() }
+        knowledgePage.onReload = { [weak self] in
+            if let self, let folder = self.knowledgeFolder { self.renderKnowledge(folder) }
+        }
     }
 
     var strings: Strings { Strings(lang: settings.lang) }
@@ -228,6 +238,7 @@ final class LiveController {
     /// Back in the foreground: pick up permissions changed in Settings and retry a dropped connection.
     func appBecameActive() {
         guard !isMock else { return }
+        if mode == .live { audio?.resumeIfNeeded() }
         if CameraController.accessGranted {
             if permissionIssue == .camera { permissionIssue = nil }
             if mode == .live, camera?.isRunning == false { camera?.start() }
@@ -278,6 +289,7 @@ final class LiveController {
         reconnectTask?.cancel()
         if !isMock {
             guard let url = settings.webSocketURL else { return }
+            Diagnostics.log("ws: connect")
             attach(WebSocketTransport(url: url))
         }
         transport?.connect()
@@ -310,7 +322,8 @@ final class LiveController {
 
     private func handle(_ event: TransportEvent) {
         switch event {
-        case .closed:
+        case .closed(let reason):
+            Diagnostics.log("ws: closed \(reason ?? "")")
             let wasConnected = connected
             connected = false
             stopAudioForDisconnect()
@@ -325,6 +338,7 @@ final class LiveController {
     func handle(_ m: ServerMessage) {
         switch m {
         case .ready(let r):
+            Diagnostics.log("ws: ready v\(r.v) mode \(r.mode.rawValue) tts \(r.tts) stt \(r.stt) board \(r.boardVersion)")
             let reconnect = r.sessionId == sessionId && (board.hasContent || !transcript.isEmpty)
             ready = r
             connected = true
@@ -403,6 +417,7 @@ final class LiveController {
             default: showNotice(text.isEmpty ? code : text)
             }
         case let .error(code, text, fatal):
+            Diagnostics.log("server error \(code) fatal \(fatal)")
             if code == "bad_pair" {
                 // Drop the stale token and take the user to the pairing code field.
                 settings.pairToken = nil
@@ -411,7 +426,7 @@ final class LiveController {
                 showSettings = true
             } else { showNotice(text.isEmpty ? code : text) }
             if fatal { fatalStop = true; transport?.disconnect(); connected = false; pill.handle(.disconnected) }
-        case .folders, .folderCreated, .ingest, .knowledge, .review, .exam, .exams, .usage, .greeting:
+        case .folders, .folderCreated, .ingest, .knowledge, .review, .exam, .exams, .usage, .greeting, .voices:
             handleLibrary(m)
         case .unknown:
             break
@@ -426,6 +441,7 @@ final class LiveController {
         askPrompt = nil
         liveTurns.removeAll()
         chatSeq = 0
+        chatLog.removeAll()
         transcript.reset()
         chatPage.clearQueue()
         chatPage.call("chat.reset()")
@@ -598,12 +614,17 @@ final class LiveController {
     private func openMic() -> Bool {
         guard connected || isMock else { return false }
         guard canListen() else { return false }
+        if !isMock {
+            guard audio?.startListening(lang: settings.lang, serverSTT: !needsDeviceSTT()) == true else {
+                showNotice(strings("notice.micUnavailable"))
+                return false
+            }
+        }
         vad.reset()
         pill.handle(.micOpened)
         cue(.listen)
         Haptics.tap()
-        if isMock { mockScriptedLevel = .listening; return true }
-        audio?.startListening(lang: settings.lang, serverSTT: !needsDeviceSTT())
+        if isMock { mockScriptedLevel = .listening }
         return true
     }
 
@@ -663,7 +684,12 @@ final class LiveController {
     /// Leaving live: hands-free off, mic closed.
     func stopLiveListening() {
         handsFreeActive = false
-        Task { await closeMic(send: false) }
+        Task { [weak self] in
+            await self?.closeMic(send: false)
+            // Back in chat: stop the engine so the microphone is released until Live or dictation needs it.
+            guard let self, self.mode == .chat, !self.composer.dictating else { return }
+            self.audio?.suspend()
+        }
     }
 
     // MARK: Camera
@@ -716,8 +742,10 @@ final class LiveController {
 
     // MARK: Feedback
 
+    /// Earcons belong to Live. In chat they would start the whole voice-processing engine (and its microphone)
+    /// just to beep, e.g. on every dropped connection.
     func cue(_ e: Earcon) {
-        guard !isMock else { return }
+        guard !isMock, mode == .live else { return }
         audio?.play(e)
     }
 

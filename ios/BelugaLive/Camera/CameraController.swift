@@ -55,9 +55,20 @@ final class CameraController: NSObject, @unchecked Sendable, AVCapturePhotoCaptu
     func capture() async -> UIImage? {
         await withCheckedContinuation { (cont: CheckedContinuation<UIImage?, Never>) in
             queue.async { [self] in
-                guard configured, session.isRunning else { cont.resume(returning: nil); return }
-                let settings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg])
-                settings.photoQualityPrioritization = .quality
+                // `capturePhoto` raises an Objective-C exception (uncatchable, kills the app) without an active,
+                // enabled video connection: the session can be interrupted (camera taken by another app, system
+                // pressure) while `isRunning` is still true.
+                guard configured, session.isRunning, !session.isInterrupted,
+                      let connection = photoOutput.connection(with: .video), connection.isActive, connection.isEnabled else {
+                    Diagnostics.log("camera: capture skipped (no active connection)")
+                    cont.resume(returning: nil); return
+                }
+                // JPEG when offered (an unsupported codec also raises); otherwise the default (HEIC).
+                let settings = photoOutput.availablePhotoCodecTypes.contains(.jpeg)
+                    ? AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg])
+                    : AVCapturePhotoSettings()
+                // Must not exceed the output's maximum, or it raises.
+                settings.photoQualityPrioritization = photoOutput.maxPhotoQualityPrioritization == .quality ? .quality : .balanced
                 lock.lock(); pending[settings.uniqueID] = cont; lock.unlock()
                 photoOutput.capturePhoto(with: settings, delegate: self)
             }
@@ -68,6 +79,13 @@ final class CameraController: NSObject, @unchecked Sendable, AVCapturePhotoCaptu
         let image = photo.fileDataRepresentation().flatMap(UIImage.init(data:))
         lock.lock(); let cont = pending.removeValue(forKey: photo.resolvedSettings.uniqueID); lock.unlock()
         cont?.resume(returning: image)
+    }
+
+    /// Always the last callback of a capture: answers a waiter that got no photo (capture failed early).
+    func photoOutput(_ output: AVCapturePhotoOutput, didFinishCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings, error: Error?) {
+        lock.lock(); let cont = pending.removeValue(forKey: resolvedSettings.uniqueID); lock.unlock()
+        if let error { Diagnostics.log("camera: capture error \(error.localizedDescription)") }
+        cont?.resume(returning: nil)
     }
 }
 
