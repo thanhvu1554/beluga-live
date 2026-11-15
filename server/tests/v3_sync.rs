@@ -24,34 +24,29 @@ fn text_of(req: &LlmRequest) -> String {
     req.parts.iter().filter_map(|p| if let Part::Text(t) = p { Some(t.as_str()) } else { None }).collect::<Vec<_>>().join("\n")
 }
 
+/// Page reply: one full exam per photo (the fake image bytes carry its number), 2 MCQ + 1 essay.
 fn extract_reply(req: &LlmRequest) -> String {
-    let pages = req.parts.iter().filter(|p| matches!(p, Part::Image { .. } | Part::Pdf { .. })).count();
-    let first_photo = text_of(req).split('"').nth(1).unwrap_or("x").to_string();
-    let mut qs = Vec::new();
-    for p in 1..=pages {
-        for j in 0..3 {
+    let p = req.parts.iter().find_map(|x| if let Part::Image { data, .. } = x { data.last().copied() } else { None }).unwrap_or(0);
+    let qs: Vec<Value> = (0..3)
+        .map(|j| {
             let essay = j == 2;
-            qs.push(json!({
-                "src": "A", "page": p, "section": if essay { "II" } else { "I" }, "n": format!("{}{}", p, j),
-                "kind": if essay { "essay" } else { "mcq" }, "level": (["nb", "th", "vd"][j]),
-                "points": if essay { 1.5 } else { 0.25 },
+            json!({"sec": if essay { "II" } else { "I" }, "n": (if essay { 1 } else { j + 1 }).to_string(),
+                "kind": if essay { "essay" } else { "mcq" }, "level": (["nb", "th", "vd"][j]), "pts": if essay { 1.5 } else { 0.25 },
                 "chapter": "Căn bậc hai, căn bậc ba",
-                "topic": if j == 0 { "Căn bậc hai".to_string() } else { "Biến đổi căn thức".to_string() },
+                "topic": if j == 0 { "Căn bậc hai" } else { "Biến đổi căn thức" },
                 "form": if j == 0 { "Tìm điều kiện xác định".to_string() } else { format!("Rút gọn biểu thức {j}") },
-                "text": format!("Câu {first_photo} {p}-{j}: rút gọn $\\sqrt{{{}}}$", p * 10 + j),
-                "hasFigure": false, "answer": ""
-            }));
-        }
-    }
-    json!({"sources": [{"key": "A", "pages": (1..=pages).collect::<Vec<_>>(), "title": format!("Đề ôn {first_photo}"),
-        "kind": "exam", "school": "THCS Nguyễn Du", "date": "", "grade": "9", "durationMin": 90, "totalPoints": 0,
-        "fullExam": true, "continuesPrevious": false,
-        "sections": [{"label": "I", "title": "Trắc nghiệm", "kind": "mcq", "instructions": "Chọn đáp án đúng."},
-                     {"label": "II", "title": "Tự luận", "kind": "essay", "instructions": ""}]}],
+                "text": format!("Câu {p}-{j}: rút gọn $\\sqrt{{{}}}$", 10 + j), "fig": false, "ans": ""})
+        })
+        .collect();
+    json!({"doc": {"title": format!("Đề ôn {p}"), "kind": "exam", "school": "THCS Nguyễn Du", "date": "", "grade": "9", "minutes": 90,
+        "points": 0, "fullExam": true, "continues": false}, "empty": false,
+        "sections": [{"label": "I", "title": "Trắc nghiệm", "kind": "mcq", "note": "Chọn đáp án đúng."},
+                     {"label": "II", "title": "Tự luận", "kind": "essay", "note": ""}],
         "questions": qs})
     .to_string()
 }
 
+/// Merge reply: one chapter, a topic per distinct raw topic, one form per raw.
 fn merge_reply(req: &LlmRequest) -> String {
     let t = text_of(req);
     let raw_part = t.split("RAW (").nth(1).unwrap_or("");
@@ -68,15 +63,9 @@ fn merge_reply(req: &LlmRequest) -> String {
             None => topics.push((topic, vec![(form, cols[0].to_string())])),
         }
     }
-    let sources: Vec<String> = t.lines().filter(|l| l.starts_with('S') && l.contains(" | exam | yes")).map(|l| l.split(" | ").next().unwrap().to_string()).collect();
-    json!({
-        "grade": "9",
-        "curriculum": [{"title": "Căn bậc hai, căn bậc ba", "topics": topics.iter().map(|(t, fs)| json!({
-            "title": t, "summary": "Tóm tắt", "forms": fs.iter().map(|(f, r)| json!({"title": f, "method": "1. Bước một", "raw": [r]})).collect::<Vec<_>>()
-        })).collect::<Vec<_>>()}],
-        "structures": [{"title": "Đề giữa kỳ I (12 TN + tự luận)", "sources": sources}],
-        "progress": {"covered": ["1.1"], "current": "1.2", "confidence": 0.6, "note": "Suy từ đề mới nhất"}
-    })
+    json!({"chapters": [{"id": "", "title": "Căn bậc hai, căn bậc ba", "topics": topics.iter().map(|(t, fs)| json!({
+        "id": "", "title": t, "summary": "Tóm tắt", "forms": fs.iter().map(|(f, r)| json!({"id": "", "title": f, "method": "1. Bước một", "raw": [r]})).collect::<Vec<_>>()
+    })).collect::<Vec<_>>()}]})
     .to_string()
 }
 
@@ -101,7 +90,6 @@ fn exam_reply(req: &LlmRequest) -> String {
 fn study_cfg() -> StudyConfig {
     let mut c = StudyConfig::default();
     c.ingest.retry_base_ms = 1;
-    c.ingest.batch_images = 2;
     c.ingest.concurrency = 2;
     c
 }

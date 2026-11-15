@@ -1,0 +1,1268 @@
+{
+ "version": 1,
+ "note": "see hard_pages.py",
+ "docs": [
+  {
+   "id": "de1",
+   "title": "ĐỀ ÔN TẬP KIỂM TRA GIỮA HỌC KÌ I – MÔN: TOÁN 9 – ĐỀ SỐ 1",
+   "kind": "exam",
+   "fullExam": true,
+   "files": [
+    "de1_p1.jpg",
+    "de1_p2.jpg",
+    "de1_p3.jpg"
+   ],
+   "questions": [
+    {
+     "key": "I.1",
+     "section": "I",
+     "n": "1",
+     "kind": "mcq",
+     "math": [
+      "\\pm7"
+     ],
+     "vi": [
+      "Căn bậc hai số học của 49"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "I.2",
+     "section": "I",
+     "n": "2",
+     "kind": "mcq",
+     "math": [
+      "\\sqrt{2x-6}",
+      "x\\ge3",
+      "x\\ge-3"
+     ],
+     "vi": [
+      "Điều kiện xác định của biểu thức"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "I.3",
+     "section": "I",
+     "n": "3",
+     "kind": "mcq",
+     "math": [
+      "\\sqrt{12}\\cdot\\sqrt{3}",
+      "\\sqrt{15}"
+     ],
+     "vi": [
+      "Kết quả của phép tính"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "I.4",
+     "section": "I",
+     "n": "4",
+     "kind": "mcq",
+     "math": [
+      "\\sqrt{(1-\\sqrt{2})^2}",
+      "1-\\sqrt{2}",
+      "-1-\\sqrt{2}"
+     ],
+     "vi": [
+      "Giá trị của biểu thức"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "I.5",
+     "section": "I",
+     "n": "5",
+     "kind": "mcq",
+     "math": [
+      "\\frac{2}{\\sqrt{5}-1}",
+      "\\frac{\\sqrt{5}+1}{2}",
+      "2\\sqrt{5}+2"
+     ],
+     "vi": [
+      "Trục căn thức ở mẫu"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "I.6",
+     "section": "I",
+     "n": "6",
+     "kind": "mcq",
+     "math": [
+      "-27",
+      "\\pm3"
+     ],
+     "vi": [
+      "Căn bậc ba của",
+      "không tồn tại"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "I.7",
+     "section": "I",
+     "n": "7",
+     "kind": "mcq",
+     "math": [
+      "2x-y=3",
+      "(2;-1)"
+     ],
+     "vi": [
+      "Cặp số nào sau đây là nghiệm của phương trình"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "I.8",
+     "section": "I",
+     "n": "8",
+     "kind": "mcq",
+     "math": [
+      "x+y=5",
+      "x-y=1",
+      "(3;2)"
+     ],
+     "vi": [
+      "Hệ phương trình",
+      "có nghiệm là"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "I.9",
+     "section": "I",
+     "n": "9",
+     "kind": "mcq",
+     "math": [
+      "3x-6>0",
+      "x>-2"
+     ],
+     "vi": [
+      "Nghiệm của bất phương trình"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "I.10",
+     "section": "I",
+     "n": "10",
+     "kind": "mcq",
+     "math": [
+      "\\frac{x+1}{x-2}=\\frac{3}{x-2}",
+      "x\\ne2"
+     ],
+     "vi": [
+      "có điều kiện xác định là"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "I.11",
+     "section": "I",
+     "n": "11",
+     "kind": "mcq",
+     "math": [
+      "AB=3",
+      "AC=4",
+      "\\frac{3}{5}",
+      "\\frac{4}{3}"
+     ],
+     "vi": [
+      "vuông tại"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "I.12",
+     "section": "I",
+     "n": "12",
+     "kind": "mcq",
+     "math": [
+      "\\cos\\alpha=\\frac{1}{2}",
+      "60^\\circ"
+     ],
+     "vi": [
+      "là góc nhọn",
+      "Số đo góc"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "II.1a",
+     "section": "II",
+     "n": "1a",
+     "kind": "essay",
+     "math": [
+      "B=\\sqrt{18}-2\\sqrt{50}+3\\sqrt{8}",
+      "\\frac{\\sqrt{x}}{\\sqrt{x}-2}",
+      "\\frac{4}{x-2\\sqrt{x}}",
+      "\\frac{\\sqrt{x}}{\\sqrt{x}+2}"
+     ],
+     "vi": [
+      "Tính giá trị của"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "II.1b",
+     "section": "II",
+     "n": "1b",
+     "kind": "essay",
+     "math": [],
+     "vi": [
+      "Rút gọn biểu thức"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "II.2a",
+     "section": "II",
+     "n": "2a",
+     "kind": "essay",
+     "math": [
+      "3x+2y=7",
+      "2x-y=0"
+     ],
+     "vi": [
+      "Giải hệ phương trình"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "II.2b",
+     "section": "II",
+     "n": "2b",
+     "kind": "essay",
+     "math": [],
+     "vi": [
+      "quyên góp được 180 quyển vở",
+      "nhiều hơn lớp 9B là 20 quyển"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "II.3",
+     "section": "II",
+     "n": "3",
+     "kind": "essay",
+     "math": [
+      "\\frac{2x-1}{3}-\\frac{x+1}{2}\\le1"
+     ],
+     "vi": [
+      "Giải bất phương trình"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "II.4a",
+     "section": "II",
+     "n": "4a",
+     "kind": "essay",
+     "math": [
+      "BH=4",
+      "HC=9"
+     ],
+     "vi": [
+      "đường cao",
+      "Tính độ dài"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "II.4b",
+     "section": "II",
+     "n": "4b",
+     "kind": "essay",
+     "math": [
+      "AB^2=BH\\cdot BC"
+     ],
+     "vi": [
+      "làm tròn đến độ",
+      "chứng minh"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "II.5",
+     "section": "II",
+     "n": "5",
+     "kind": "essay",
+     "math": [
+      "x+y=1",
+      "P=\\frac{1}{x}+\\frac{4}{y}"
+     ],
+     "vi": [
+      "các số thực dương thỏa mãn",
+      "giá trị nhỏ nhất"
+     ],
+     "chem": false,
+     "figure": false
+    }
+   ]
+  },
+  {
+   "id": "phieu",
+   "title": "PHIẾU BÀI TẬP TUẦN 8 – TOÁN 9",
+   "kind": "worksheet",
+   "fullExam": false,
+   "files": [
+    "phieu.jpg"
+   ],
+   "questions": [
+    {
+     "key": "1a",
+     "section": "",
+     "n": "1a",
+     "kind": "essay",
+     "math": [
+      "\\sqrt{3-x}"
+     ],
+     "vi": [
+      "Tìm điều kiện xác định"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "1b",
+     "section": "",
+     "n": "1b",
+     "kind": "essay",
+     "math": [
+      "\\sqrt{\\frac{1}{x-2}}"
+     ],
+     "vi": [],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "2a",
+     "section": "",
+     "n": "2a",
+     "kind": "essay",
+     "math": [
+      "\\sqrt{20}-\\sqrt{45}+3\\sqrt{5}"
+     ],
+     "vi": [],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "2b",
+     "section": "",
+     "n": "2b",
+     "kind": "essay",
+     "math": [
+      "(\\sqrt{3}+1)^2-2\\sqrt{3}"
+     ],
+     "vi": [],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "3a",
+     "section": "",
+     "n": "3a",
+     "kind": "essay",
+     "math": [
+      "\\frac{3}{\\sqrt{6}}"
+     ],
+     "vi": [
+      "Trục căn thức ở mẫu"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "3b",
+     "section": "",
+     "n": "3b",
+     "kind": "essay",
+     "math": [
+      "\\frac{4}{\\sqrt{7}+\\sqrt{3}}"
+     ],
+     "vi": [],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "4a",
+     "section": "",
+     "n": "4a",
+     "kind": "essay",
+     "math": [
+      "\\sqrt{x-1}=3"
+     ],
+     "vi": [
+      "Giải phương trình"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "4b",
+     "section": "",
+     "n": "4b",
+     "kind": "essay",
+     "math": [
+      "\\sqrt{4x^2-4x+1}=5"
+     ],
+     "vi": [],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "5a",
+     "section": "",
+     "n": "5a",
+     "kind": "essay",
+     "math": [
+      "C=\\frac{\\sqrt{x}+1}{\\sqrt{x}-3}",
+      "x=16"
+     ],
+     "vi": [],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "5b",
+     "section": "",
+     "n": "5b",
+     "kind": "essay",
+     "math": [],
+     "vi": [
+      "nhận giá trị nguyên"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "6",
+     "section": "",
+     "n": "6",
+     "kind": "essay",
+     "math": [
+      "D=\\frac{1}{\\sqrt{x}+1}+\\frac{1}{\\sqrt{x}-1}-\\frac{2\\sqrt{x}}{x-1}",
+      "x\\ne1"
+     ],
+     "vi": [
+      "Rút gọn"
+     ],
+     "chem": false,
+     "figure": false
+    }
+   ]
+  },
+  {
+   "id": "hard_math",
+   "title": "ĐỀ KIỂM TRA CUỐI HỌC KÌ I – MÔN TOÁN 12",
+   "kind": "exam",
+   "fullExam": true,
+   "files": [
+    "hard_math.jpg"
+   ],
+   "questions": [
+    {
+     "key": "I.1",
+     "section": "I",
+     "n": "1",
+     "kind": "mcq",
+     "math": [
+      "\\log_{2}(x^2-4x+3)",
+      "(-\\infty;1)\\cup(3;+\\infty)",
+      "\\mathbb{R}\\setminus\\{1;3\\}"
+     ],
+     "vi": [
+      "Tập xác định của hàm số"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "I.2",
+     "section": "I",
+     "n": "2",
+     "kind": "mcq",
+     "math": [
+      "\\int_{0}^{1}(3x^2-2x+1)dx"
+     ],
+     "vi": [
+      "Tích phân"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "I.3",
+     "section": "I",
+     "n": "3",
+     "kind": "mcq",
+     "math": [
+      "\\lim_{x\\to2}\\frac{\\sqrt{x+2}-2}{x-2}",
+      "+\\infty"
+     ],
+     "vi": [
+      "Giới hạn"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "I.4",
+     "section": "I",
+     "n": "4",
+     "kind": "mcq",
+     "math": [
+      "y=e^{2x}\\sin x",
+      "e^{2x}(2\\sin x+\\cos x)",
+      "e^{2x}(\\sin x+2\\cos x)"
+     ],
+     "vi": [
+      "Đạo hàm của hàm số"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "I.5",
+     "section": "I",
+     "n": "5",
+     "kind": "mcq",
+     "math": [
+      "3^{2x-1}=27",
+      "x=\\frac{3}{2}"
+     ],
+     "vi": [
+      "Nghiệm của phương trình"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "I.6",
+     "section": "I",
+     "n": "6",
+     "kind": "mcq",
+     "math": [
+      "\\vec{a}=(1;-2;3)",
+      "\\vec{b}=(2;1;0)",
+      "\\vec{a}\\cdot\\vec{b}"
+     ],
+     "vi": [
+      "Trong không gian",
+      "Tích vô hướng"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "II.1",
+     "section": "II",
+     "n": "1",
+     "kind": "truefalse",
+     "math": [
+      "f(x)=x^3-3x^2+2",
+      "f'(x)=3x^2-6x",
+      "\\int_{0}^{2}f(x)dx=0"
+     ],
+     "vi": [
+      "đồng biến trên khoảng",
+      "Giá trị cực đại"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "III.1",
+     "section": "III",
+     "n": "1",
+     "kind": "short",
+     "math": [
+      "\\sum_{k=1}^{10}(2k-1)"
+     ],
+     "vi": [
+      "Tính tổng"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "III.2",
+     "section": "III",
+     "n": "2",
+     "kind": "short",
+     "math": [
+      "\\log_ab=2",
+      "\\log_ac=3",
+      "\\log_a\\frac{a^2b^3}{\\sqrt{c}}"
+     ],
+     "vi": [
+      "Tính"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "IV.1",
+     "section": "IV",
+     "n": "1",
+     "kind": "essay",
+     "math": [
+      "y=\\frac{1}{3}x^3-mx^2+(m^2-1)x+2"
+     ],
+     "vi": [
+      "Tìm tham số",
+      "đạt cực tiểu tại"
+     ],
+     "chem": false,
+     "figure": false
+    }
+   ]
+  },
+  {
+   "id": "hard_2col",
+   "title": "ĐỀ THI THỬ TUYỂN SINH VÀO LỚP 10 – MÔN TOÁN",
+   "kind": "exam",
+   "fullExam": true,
+   "files": [
+    "hard_2col.jpg"
+   ],
+   "questions": [
+    {
+     "key": "1",
+     "section": "",
+     "n": "1",
+     "kind": "mcq",
+     "math": [
+      "y=(m-2)x+3",
+      "m\\geq2"
+     ],
+     "vi": [
+      "đồng biến trên"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "2",
+     "section": "",
+     "n": "2",
+     "kind": "mcq",
+     "math": [
+      "x^2-5x+6=0",
+      "\\{-2;-3\\}"
+     ],
+     "vi": [
+      "Tập nghiệm của phương trình"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "3",
+     "section": "",
+     "n": "3",
+     "kind": "mcq",
+     "math": [
+      "y=ax^2",
+      "M(2;-8)"
+     ],
+     "vi": [
+      "Đồ thị hàm số",
+      "đi qua điểm"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "4",
+     "section": "",
+     "n": "4",
+     "kind": "mcq",
+     "math": [
+      "2x^2-7x+3=0",
+      "-\\frac{7}{2}"
+     ],
+     "vi": [
+      "Tổng hai nghiệm"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "5",
+     "section": "",
+     "n": "5",
+     "kind": "mcq",
+     "math": [
+      "180^\\circ"
+     ],
+     "vi": [
+      "Góc nội tiếp chắn nửa đường tròn"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "6",
+     "section": "",
+     "n": "6",
+     "kind": "mcq",
+     "math": [
+      "R=3",
+      "9\\pi",
+      "18\\pi"
+     ],
+     "vi": [
+      "Diện tích hình tròn có bán kính"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "7",
+     "section": "",
+     "n": "7",
+     "kind": "mcq",
+     "math": [
+      "r=3",
+      "h=4",
+      "48\\pi"
+     ],
+     "vi": [
+      "Thể tích hình nón",
+      "chiều cao"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "8",
+     "section": "",
+     "n": "8",
+     "kind": "mcq",
+     "math": [
+      "2x-y=1",
+      "x+y=5",
+      "(-2;3)"
+     ],
+     "vi": [
+      "Hệ phương trình"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "9",
+     "section": "",
+     "n": "9",
+     "kind": "mcq",
+     "math": [
+      "\\sqrt{(x-3)^2}",
+      "\\pm(x-3)"
+     ],
+     "vi": [
+      "biểu thức"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "10",
+     "section": "",
+     "n": "10",
+     "kind": "mcq",
+     "math": [
+      "\\frac{\\sqrt{12}+\\sqrt{27}}{\\sqrt{3}}",
+      "3\\sqrt{3}"
+     ],
+     "vi": [
+      "Kết quả rút gọn biểu thức"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "11",
+     "section": "",
+     "n": "11",
+     "kind": "mcq",
+     "math": [],
+     "vi": [
+      "gửi tiết kiệm 100 triệu đồng",
+      "lãi suất",
+      "số tiền lãi"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "12",
+     "section": "",
+     "n": "12",
+     "kind": "mcq",
+     "math": [
+      "\\widehat{A}=70^\\circ",
+      "110^\\circ"
+     ],
+     "vi": [
+      "nội tiếp đường tròn",
+      "Số đo"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "13",
+     "section": "",
+     "n": "13",
+     "kind": "mcq",
+     "math": [
+      "x^2-2(m+1)x+m^2=0",
+      "m=-\\frac{1}{2}"
+     ],
+     "vi": [
+      "có nghiệm kép khi"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "14",
+     "section": "",
+     "n": "14",
+     "kind": "mcq",
+     "math": [
+      "\\tan\\alpha=\\frac{3}{4}",
+      "\\sin\\alpha"
+     ],
+     "vi": [
+      "Cho góc nhọn",
+      "Giá trị của"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "15",
+     "section": "",
+     "n": "15",
+     "kind": "mcq",
+     "math": [
+      "x^4-5x^2+4=0"
+     ],
+     "vi": [
+      "Số nghiệm của phương trình"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "16",
+     "section": "",
+     "n": "16",
+     "kind": "mcq",
+     "math": [
+      "-2x+5\\leq1",
+      "x\\geq-2"
+     ],
+     "vi": [
+      "Nghiệm của bất phương trình"
+     ],
+     "chem": false,
+     "figure": false
+    }
+   ]
+  },
+  {
+   "id": "hard_table",
+   "title": "ĐỀ KIỂM TRA 45 PHÚT – CHƯƠNG THỐNG KÊ – TOÁN 10",
+   "kind": "exam",
+   "fullExam": true,
+   "files": [
+    "hard_table.jpg"
+   ],
+   "questions": [
+    {
+     "key": "I.1",
+     "section": "I",
+     "n": "1",
+     "kind": "mcq",
+     "math": [],
+     "vi": [
+      "Điểm kiểm tra môn Toán của 40 học sinh",
+      "Mốt của mẫu số liệu"
+     ],
+     "chem": false,
+     "figure": true
+    },
+    {
+     "key": "I.2",
+     "section": "I",
+     "n": "2",
+     "kind": "mcq",
+     "math": [
+      "7,4",
+      "7,6"
+     ],
+     "vi": [
+      "Số trung bình của mẫu số liệu",
+      "làm tròn đến hàng phần mười"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "I.3",
+     "section": "I",
+     "n": "3",
+     "kind": "mcq",
+     "math": [
+      "8,5"
+     ],
+     "vi": [
+      "Trung vị của mẫu số liệu"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "I.4",
+     "section": "I",
+     "n": "4",
+     "kind": "mcq",
+     "math": [
+      "[20;30)",
+      "[30;40)"
+     ],
+     "vi": [
+      "tự học ở nhà",
+      "Nhóm chứa mốt",
+      "ghép nhóm"
+     ],
+     "chem": false,
+     "figure": true
+    },
+    {
+     "key": "II.1a",
+     "section": "II",
+     "n": "1a",
+     "kind": "essay",
+     "math": [
+      "\\Delta_Q"
+     ],
+     "vi": [
+      "khoảng biến thiên",
+      "khoảng tứ phân vị"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "II.1b",
+     "section": "II",
+     "n": "1b",
+     "kind": "essay",
+     "math": [],
+     "vi": [
+      "giá trị ngoại lệ"
+     ],
+     "chem": false,
+     "figure": false
+    },
+    {
+     "key": "II.2",
+     "section": "II",
+     "n": "2",
+     "kind": "essay",
+     "math": [
+      "s^2"
+     ],
+     "vi": [
+      "Tính phương sai",
+      "độ lệch chuẩn",
+      "làm tròn đến hàng phần trăm"
+     ],
+     "chem": false,
+     "figure": false
+    }
+   ]
+  },
+  {
+   "id": "hard_chem",
+   "title": "ĐỀ CƯƠNG ÔN TẬP CUỐI HỌC KÌ I – HÓA HỌC 10",
+   "kind": "review",
+   "fullExam": false,
+   "files": [
+    "hard_chem.jpg"
+   ],
+   "questions": [
+    {
+     "key": "A.1",
+     "section": "A",
+     "n": "1",
+     "kind": "mcq",
+     "math": [
+      "1s^22s^22p^63s^23p^63d^64s^2",
+      "1s^22s^22p^63s^23p^64s^23d^6",
+      "1s^22s^22p^63s^23p^63d^8",
+      "1s^22s^22p^63s^23p^63d^54s^1"
+     ],
+     "vi": [
+      "Cấu hình electron của nguyên tử"
+     ],
+     "chem": true,
+     "figure": false
+    },
+    {
+     "key": "A.2",
+     "section": "A",
+     "n": "2",
+     "kind": "mcq",
+     "math": [
+      "Fe+2HCl->FeCl2+H2"
+     ],
+     "vi": [
+      "Trong phản ứng",
+      "chất khử là"
+     ],
+     "chem": true,
+     "figure": false
+    },
+    {
+     "key": "A.3",
+     "section": "A",
+     "n": "3",
+     "kind": "mcq",
+     "math": [
+      "KMnO4"
+     ],
+     "vi": [
+      "Số oxi hóa của manganese"
+     ],
+     "chem": true,
+     "figure": false
+    },
+    {
+     "key": "A.4",
+     "section": "A",
+     "n": "4",
+     "kind": "mcq",
+     "math": [
+      "N2(g)+3H2(g)<=>2NH3(g)",
+      "-92"
+     ],
+     "vi": [
+      "Phản ứng thuận là phản ứng",
+      "tỏa nhiệt",
+      "thu nhiệt",
+      "xúc tác"
+     ],
+     "chem": true,
+     "figure": false
+    },
+    {
+     "key": "A.5",
+     "section": "A",
+     "n": "5",
+     "kind": "mcq",
+     "math": [
+      "NaCl"
+     ],
+     "vi": [
+      "Liên kết trong phân tử",
+      "cộng hóa trị không cực"
+     ],
+     "chem": true,
+     "figure": false
+    },
+    {
+     "key": "B.6",
+     "section": "B",
+     "n": "6",
+     "kind": "essay",
+     "math": [
+      "Cu+HNO3->Cu(NO3)2+NO+H2O"
+     ],
+     "vi": [
+      "phương pháp thăng bằng electron"
+     ],
+     "chem": true,
+     "figure": false
+    },
+    {
+     "key": "B.7",
+     "section": "B",
+     "n": "7",
+     "kind": "essay",
+     "math": [
+      "5,6",
+      "24,79"
+     ],
+     "vi": [
+      "Hòa tan hoàn toàn",
+      "dung dịch",
+      "Tính thể tích khí",
+      "thu được ở điều kiện chuẩn"
+     ],
+     "chem": true,
+     "figure": false
+    }
+   ]
+  }
+ ],
+ "pages": [
+  {
+   "file": "de1_p1.jpg",
+   "doc": "de1",
+   "keys": [
+    "I.1",
+    "I.2",
+    "I.3",
+    "I.4",
+    "I.5"
+   ],
+   "partial": [
+    "I.6"
+   ]
+  },
+  {
+   "file": "de1_p2.jpg",
+   "doc": "de1",
+   "keys": [
+    "I.6",
+    "I.7",
+    "I.8",
+    "I.9",
+    "I.10",
+    "I.11",
+    "I.12"
+   ],
+   "partial": [
+    "II.1a"
+   ]
+  },
+  {
+   "file": "de1_p3.jpg",
+   "doc": "de1",
+   "keys": [
+    "II.1a",
+    "II.1b",
+    "II.2a",
+    "II.2b",
+    "II.3",
+    "II.4a",
+    "II.4b",
+    "II.5"
+   ],
+   "partial": []
+  },
+  {
+   "file": "phieu.jpg",
+   "doc": "phieu",
+   "keys": [
+    "1a",
+    "1b",
+    "2a",
+    "2b",
+    "3a",
+    "3b",
+    "4a",
+    "4b",
+    "5a",
+    "5b",
+    "6"
+   ],
+   "partial": []
+  },
+  {
+   "file": "hard_math.jpg",
+   "doc": "hard_math",
+   "keys": [
+    "I.1",
+    "I.2",
+    "I.3",
+    "I.4",
+    "I.5",
+    "I.6",
+    "II.1",
+    "III.1",
+    "III.2",
+    "IV.1"
+   ],
+   "partial": []
+  },
+  {
+   "file": "hard_2col.jpg",
+   "doc": "hard_2col",
+   "keys": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16"
+   ],
+   "partial": []
+  },
+  {
+   "file": "hard_table.jpg",
+   "doc": "hard_table",
+   "keys": [
+    "I.1",
+    "I.2",
+    "I.3",
+    "I.4",
+    "II.1a",
+    "II.1b",
+    "II.2"
+   ],
+   "partial": []
+  },
+  {
+   "file": "hard_chem.jpg",
+   "doc": "hard_chem",
+   "keys": [
+    "A.1",
+    "A.2",
+    "A.3",
+    "A.4",
+    "A.5",
+    "B.6",
+    "B.7"
+   ],
+   "partial": []
+  }
+ ]
+}
