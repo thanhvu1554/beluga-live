@@ -9,7 +9,8 @@ struct DoodleView: View {
     let doodle: Doodle
     var active = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var start = Date()
+    @State private var start = Date.distantFuture
+    @State private var started = false
 
     private static let drawIn: Double = 0.9
 
@@ -31,6 +32,8 @@ struct DoodleView: View {
                 }
             }
         }
+        // The draw-in starts when the drawing is first on screen (not when the view value was made).
+        .onAppear { if !started { started = true; start = Date() } }
         .onChange(of: doodle) { _, _ in start = Date() }
     }
 

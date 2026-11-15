@@ -4462,13 +4462,13 @@
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "làm mới %@"
+            "value": "Làm mới %@"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "refills %@"
+            "value": "Refills %@"
           }
         }
       }
@@ -4479,13 +4479,13 @@
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Đề, từ trước tới nay"
+            "value": "Đọc và tạo đề, tất cả"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Exams, all time"
+            "value": "Exam reading and writing, all time"
           }
         }
       }

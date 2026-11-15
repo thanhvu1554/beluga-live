@@ -247,6 +247,8 @@ private struct LiveRoundButton: View {
                 .contentTransition(.symbolEffect(.replace))
                 .frame(width: Size.liveButton, height: Size.liveButton)
                 .opacity(enabled ? 1 : 0.4)
+                // Same dark base as the pill, so the three controls read with one weight over any picture.
+                .background(Circle().fill(Palette.scrim.opacity(0.35)))
                 .contentShape(.circle)
                 .glassEffect(.regular.tint(Palette.scrim.opacity(0.45)).interactive(), in: .circle)
         }

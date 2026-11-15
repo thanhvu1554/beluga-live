@@ -342,6 +342,9 @@ extension LiveController {
         closeDrawer()
         folderTab = tab
         path = [.folder(id)]
+        // Draw this folder's knowledge page now (from cache, then again when fresh data arrives) so the tab
+        // is ready before it is opened.
+        renderKnowledge(id)
         refreshFolder(id)
     }
 

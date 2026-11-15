@@ -19,9 +19,15 @@ struct FolderView: View {
         // control in the bar area; the knowledge page's own section strip is hidden and its sections are
         // reached from the list button in the navigation bar instead.
         ZStack {
+            // The knowledge page stays mounted (invisible) so it is laid out and painted before its tab is
+            // chosen: switching to it is then a cross-fade, not a blank second while WebKit paints.
+            KnowledgeTab(controller: controller, folderId: folderId)
+                .opacity(controller.folderTab == .knowledge ? 1 : 0)
+                .allowsHitTesting(controller.folderTab == .knowledge)
+                .accessibilityHidden(controller.folderTab != .knowledge)
             switch controller.folderTab {
             case .sessions: FolderSessions(controller: controller, folderId: folderId).transition(.opacity)
-            case .knowledge: KnowledgeTab(controller: controller, folderId: folderId).transition(.opacity)
+            case .knowledge: EmptyView()
             case .review: ReviewTab(controller: controller, folderId: folderId).transition(.opacity)
             case .exams: ExamsTab(controller: controller, folderId: folderId).transition(.opacity)
             }

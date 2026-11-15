@@ -266,8 +266,12 @@ struct ConnectionView: View {
                 Text(verbatim: s("settings.connection.footer"))
             }
             Section {
-                Button(s("settings.connect")) { apply(); focus = nil }
-                    .disabled(hostDraft.trimmingCharacters(in: .whitespaces).isEmpty)
+                Button { apply(); focus = nil } label: {
+                    Text(verbatim: s("settings.connect"))
+                        .font(TypeScale.body.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                }
+                .disabled(hostDraft.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .animation(Motion.snappy, value: controller.connected)

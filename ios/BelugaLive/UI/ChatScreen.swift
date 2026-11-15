@@ -272,7 +272,7 @@ struct HomeGreeting: View {
         GeometryReader { geo in
             VStack(spacing: Space.l) {
                 DoodleView(doodle: g.doodle, active: onScreen && controller.mode == .chat && !controller.drawerOpen)
-                    .frame(width: 216, height: 130)
+                    .frame(width: 240, height: 144)
                     .foregroundStyle(Ink.secondary)
                     .accessibilityHidden(true)
                 VStack(spacing: Space.s) {
@@ -303,8 +303,9 @@ struct HomeGreeting: View {
             }
             .padding(.horizontal, Space.xxl)
             .frame(maxWidth: .infinity)
-            // Optical centre: a little above the middle of the space between the bar and the suggestions.
-            .position(x: geo.size.width / 2, y: geo.size.height * 0.44)
+            // Weighted toward the composer: the greeting sits with the suggestions and the field it invites the
+            // owner to use, and the air goes to the top instead of splitting the screen into two empty halves.
+            .position(x: geo.size.width / 2, y: geo.size.height * 0.56)
         }
         .animation(Motion.gentle, value: g.text)
         .onAppear {
