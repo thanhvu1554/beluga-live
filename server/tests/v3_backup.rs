@@ -435,6 +435,8 @@ async fn unchanged_data_is_skipped_and_a_change_uploads_again() {
         assert!(matches!(first, Outcome::Uploaded { .. }), "{first:?}");
         let puts = || fake.log.lock().unwrap().iter().filter(|(m, _, _)| m == "PUT").count();
         let n = puts();
+        // Past a whole second: the temp dir each run makes inside `data` moves that directory's mtime.
+        tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
         let again = backup::run_backup(&cfg).await.unwrap();
         assert!(matches!(again, Outcome::Unchanged { .. }), "same data, even encrypted: {again:?}");
         assert_eq!(puts(), n, "nothing uploaded");

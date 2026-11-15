@@ -715,6 +715,9 @@ pub fn build_archive(src: &Sources, out: &Path, pass: Option<(&str, u32)>) -> io
         h.set_uid(0);
         h.set_gid(0);
         if is_dir {
+            // A directory's own mtime moves whenever an entry comes or goes, and each run creates
+            // and removes the temp dir inside `data`: left in, no two archives would ever hash the same.
+            h.set_mtime(0);
             h.set_entry_type(tar::EntryType::Directory);
             h.set_mode(0o755);
             h.set_size(0);
