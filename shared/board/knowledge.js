@@ -2,7 +2,9 @@
  * knowledge.render(data|null, review?)   data = knowledge.json; review = the `review` event (or {topics:[...]})
  * knowledge.progress(ingestEvent)        live ingest panel (state queued|reading|merging|done|error|cancelled)
  * knowledge.setTheme(t) / setLang(l) / setInsets(top, bottom) / show(sectionId)
+ * knowledge.setOptions({tabs:false})    hide the section strip (the app draws its own navigation)
  * -> {type:"ready", version}
+ * -> {type:"sections", items:[{id, title}]}   after each render, for a native section menu
  * -> {type:"gen_exam", structureId}
  * -> {type:"open_topic", topicId, title}
  * -> {type:"ingest_cancel"}             cancel button on a running ingest
@@ -304,8 +306,14 @@
     inner.innerHTML = sectionIds.map(function (id, i) {
       return '<button type="button" class="k-tab' + (i === 0 ? " on" : "") + '" data-tab="' + id + '">' + esc(lb.tabs[id] || id) + "</button>";
     }).join("");
-    tabs.style.display = sectionIds.length > 1 ? "" : "none";
+    tabs.style.display = sectionIds.length > 1 && showTabs ? "" : "none";
+    var key = sectionIds.join(",") + "|" + Beluga.lang();
+    if (key !== postedSections) {
+      postedSections = key;
+      Beluga.post({ type: "sections", items: sectionIds.length > 1 ? sectionIds.map(function (id) { return { id: id, title: lb.tabs[id] || id }; }) : [] });
+    }
   }
+  var showTabs = true, postedSections = "";
   var spyLock = 0;
   function setTab(id) {
     Array.prototype.forEach.call(tabs.querySelectorAll(".k-tab"), function (b) {
@@ -330,7 +338,7 @@
     if (!s) return;
     spyLock = Date.now() + 700;
     setTab(id);
-    var top = s.getBoundingClientRect().top + global.scrollY - tabs.offsetHeight + 1;
+    var top = s.getBoundingClientRect().top + global.scrollY - tabs.offsetHeight + 1 - (showTabs ? 0 : 8);
     global.scrollTo({ top: Math.max(0, top), behavior: smooth === false ? "auto" : "smooth" });
   }
 
@@ -447,7 +455,15 @@
       if (top != null) st.setProperty("--k-top", Math.max(0, +top || 0) + "px");
       if (bottom != null) st.setProperty("--k-bottom", Math.max(0, +bottom || 0) + "px");
     },
-    show: function (id) { show(id); }
+    show: function (id) { show(id); },
+    setOptions: function (o) {
+      o = o || {};
+      if ("tabs" in o) {
+        showTabs = !!o.tabs;
+        document.documentElement.classList.toggle("k-notabs", !showTabs);
+        tabs.style.display = sectionIds.length > 1 && showTabs ? "" : "none";
+      }
+    }
   };
 
   Beluga.onLang(function () { if (lastData || wrap.children.length) render(lastData, lastReview); });

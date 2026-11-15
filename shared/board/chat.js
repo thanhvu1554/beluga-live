@@ -49,25 +49,88 @@
   var stick = true;
   var lastAssistantTurn = null;
 
+  /* ---------- motion ----------
+   * One requestAnimationFrame loop drives both the text reveal of streaming answers and the glide that keeps
+   * the newest line in view. Text arrives from the socket in bursts; it is shown at an even pace a little
+   * behind (about 0.15 s), so lines grow smoothly instead of jumping a chunk at a time, and the view follows
+   * by easing toward the end instead of snapping by a line height. Reduce Motion shows everything at once. */
+  var reduceMotion = !!(global.matchMedia && global.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  var revealing = [];      // drafts being revealed: {el, text, shown, final, turn}
+  var gliding = false;
+  var loop = 0, lastFrame = 0;
+  function kick() {
+    if (loop) return;
+    lastFrame = 0;
+    loop = (global.requestAnimationFrame || function (f) { return setTimeout(function () { f(Date.now()); }, 16); })(frame);
+  }
+  function frame(now) {
+    loop = 0;
+    var dt = lastFrame ? Math.min(50, now - lastFrame) : 16;
+    lastFrame = now;
+    var grew = false;
+    for (var i = revealing.length - 1; i >= 0; i--) {
+      if (revealStep(revealing[i], dt)) grew = true;
+      if (revealing[i].done) revealing.splice(i, 1);
+    }
+    if (grew) updateToBottom();
+    glide(dt);
+    if (revealing.length || gliding) { loop = (global.requestAnimationFrame || setTimeout)(frame); }
+  }
+  function revealStep(d, dt) {
+    var len = d.text.length;
+    if (d.shown < len) {
+      var backlog = len - d.shown;
+      var step = Math.max(1, Math.ceil(backlog * Math.min(1, dt / 150)));
+      var end = d.shown + step;
+      // Prefer ending a frame on a word boundary when one is close.
+      if (end < len) { var ws = d.text.slice(end, end + 6).search(/\s/); if (ws >= 0) end += ws; }
+      d.shown = Math.min(len, end);
+      var complete = d.final && d.shown >= len;
+      patch(d.el, MD.block(d.text.slice(0, d.shown), { partial: !complete }));
+      if (complete) settleDraft(d);
+      if (stick) gliding = true;
+      return true;
+    }
+    if (d.final) { patch(d.el, MD.block(d.text)); settleDraft(d); }
+    return false;
+  }
+  function settleDraft(d) {
+    d.done = true;
+    if (!d.text.trim() && d.el.parentNode) d.el.parentNode.removeChild(d.el);
+    if (d.onDone) d.onDone();
+  }
+  function glide(dt) {
+    if (!gliding) return;
+    if (!stick || touching) { gliding = false; return; }
+    var target = scroller.scrollHeight - scroller.clientHeight;
+    var cur = scroller.scrollTop;
+    var diff = target - cur;
+    if (diff <= 0.5 || reduceMotion) { if (diff > 0) scroller.scrollTop = target; gliding = revealing.length > 0; return; }
+    // Exponential approach (time constant ~90 ms): fast for a big block, gentle for a line.
+    scroller.scrollTop = cur + Math.max(0.5, diff * Math.min(1, dt / 90));
+  }
+
   /* ---------- scrolling ---------- */
   function atBottom() { return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 64; }
   function toEnd(smooth) {
-    var top = scroller.scrollHeight;
-    if (smooth) scroller.scrollTo({ top: top, behavior: "smooth" }); else scroller.scrollTop = top;
+    if (smooth && !reduceMotion) { gliding = true; kick(); return; }
+    scroller.scrollTop = scroller.scrollHeight;
   }
-  function follow() { if (stick) toEnd(false); updateToBottom(); }
+  function follow() { if (stick) { gliding = true; kick(); } updateToBottom(); }
   function updateToBottom() {
     toBottom.classList.toggle("show", !stick && scroller.scrollHeight > scroller.clientHeight + 40);
   }
-  var touching = false;
-  scroller.addEventListener("touchstart", function () { touching = true; }, { passive: true });
-  scroller.addEventListener("touchend", function () { touching = false; }, { passive: true });
+  // Only the reader moves `stick` (a finger, its momentum, a wheel); the glide's own scrolling never does.
+  var touching = false, userUntil = 0;
+  scroller.addEventListener("touchstart", function () { touching = true; gliding = false; userUntil = Date.now() + 2000; }, { passive: true });
+  scroller.addEventListener("touchmove", function () { userUntil = Date.now() + 2000; }, { passive: true });
+  scroller.addEventListener("touchend", function () { touching = false; userUntil = Date.now() + 1200; }, { passive: true });
+  scroller.addEventListener("touchcancel", function () { touching = false; userUntil = Date.now() + 600; }, { passive: true });
   scroller.addEventListener("scroll", function () {
-    // Only the reader moves `stick`: content growth never scrolls up, so being near the end means following.
-    stick = atBottom();
+    if (touching || Date.now() < userUntil) stick = atBottom();
     updateToBottom();
   }, { passive: true });
-  scroller.addEventListener("wheel", function (e) { if (e.deltaY < 0) stick = false; }, { passive: true });
+  scroller.addEventListener("wheel", function (e) { userUntil = Date.now() + 600; if (e.deltaY < 0) stick = false; }, { passive: true });
   toBottom.addEventListener("click", function () { stick = true; toEnd(true); updateToBottom(); });
   if (global.ResizeObserver) new ResizeObserver(function () { follow(); }).observe(log);
   global.addEventListener("resize", follow);
@@ -95,50 +158,64 @@
     return t;
   }
 
-  // Replace a container's children with the parsed HTML, touching only the children that changed.
+  // Replace a container's children with the parsed HTML, touching only the children that changed. A child of
+  // the same kind is updated in place (a growing paragraph keeps its element, so its fade-in is not restarted);
+  // children that are new get the `fresh` class and fade in.
   function patch(el, html) {
     var tmp = document.createElement("div");
     tmp.innerHTML = html;
     var next = tmp.children, i;
     for (i = 0; i < next.length; i++) {
-      var cur = el.children[i];
-      if (cur && cur.outerHTML === next[i].outerHTML) continue;
-      var clone = next[i].cloneNode(true);
-      if (cur) el.replaceChild(clone, cur); else el.appendChild(clone);
+      var cur = el.children[i], nx = next[i];
+      if (cur && cur.tagName === nx.tagName && cur.className.replace(/\s*fresh\b/, "") === nx.className) {
+        if (cur.innerHTML !== nx.innerHTML) cur.innerHTML = nx.innerHTML;
+        continue;
+      }
+      var clone = nx.cloneNode(true);
+      if (cur) el.replaceChild(clone, cur);
+      else { if (!restoring) clone.classList.add("fresh"); el.appendChild(clone); }
     }
     while (el.children.length > next.length) el.removeChild(el.lastChild);
   }
 
   /* ---------- streaming draft ---------- */
-  var dirty = [];
-  var raf = 0;
   function scheduleDraft(t) {
-    if (dirty.indexOf(t) < 0) dirty.push(t);
-    if (raf) return;
-    raf = (global.requestAnimationFrame || setTimeout)(function () {
-      raf = 0;
-      var list = dirty; dirty = [];
-      list.forEach(function (tt) { if (tt.draft) patch(tt.draft.el, MD.block(tt.draft.text, { partial: true })); });
-      follow();
-    });
+    var d = t.draft;
+    if (!d) return;
+    if (reduceMotion) { d.shown = d.text.length; patch(d.el, MD.block(d.text, { partial: true })); follow(); return; }
+    if (revealing.indexOf(d) < 0) revealing.push(d);
+    kick();
   }
   function draftFor(t) {
     if (!t.draft) {
       var el = h("div", "seg md");
       t.body.appendChild(el);
-      t.draft = { el: el, text: "" };
+      t.draft = { el: el, text: "", shown: 0, final: false, done: false };
       t.sayEl = null;
     }
     return t.draft;
   }
+  // The final text of a segment: shown at once when restoring, otherwise the reveal finishes it at its pace
+  // (later blocks are appended after this element, so order never changes).
   function finishDraft(t, md) {
     var d = t.draft;
     if (!d && md == null) return;
     if (!d) { d = draftFor(t); }
     var text = md != null ? md : d.text;
-    patch(d.el, MD.block(text));
-    if (text.trim()) t.parts.push(text); else d.el.parentNode && d.el.parentNode.removeChild(d.el);
+    if (text.trim()) t.parts.push(text);
     t.draft = null;
+    d.text = text;
+    d.final = true;
+    if (restoring || reduceMotion || d.shown >= text.length) {
+      d.shown = text.length;
+      var i = revealing.indexOf(d);
+      if (i >= 0) revealing.splice(i, 1);
+      patch(d.el, MD.block(text));
+      settleDraft(d);
+      return;
+    }
+    if (revealing.indexOf(d) < 0) revealing.push(d);
+    kick();
   }
 
   function setThinking(on, kind) {
@@ -264,7 +341,7 @@
         thinking.classList.remove("on");
         if (t.draft) finishDraft(t, ev.md || "");
         else if (ev.md) {
-          var seg = h("div", "seg md", MD.block(ev.md));
+          var seg = h("div", "seg md" + (restoring ? "" : " fresh"), MD.block(ev.md));
           t.body.appendChild(seg);
           t.parts.push(ev.md);
         }
@@ -328,7 +405,10 @@
           finishDraft(t);
           if (ev.interrupted) t.body.appendChild(h("div", "stopped", MD.esc(L("stopped"))));
           t.ended = true;
-          addActions(t);
+          // The copy/retry row arrives when the answer has finished appearing, not before.
+          var pending = revealing.filter(function (d) { return !d.done && t.body.contains(d.el); });
+          if (pending.length && !restoring) pending[pending.length - 1].onDone = function () { addActions(t); follow(); };
+          else addActions(t);
         }
         break;
       case "state":
@@ -351,7 +431,7 @@
   var chat = {
     version: VERSION,
     reset: function () {
-      turns = {}; lastAssistantTurn = null; dirty = [];
+      turns = {}; lastAssistantTurn = null; revealing = []; gliding = false;
       log.innerHTML = "";
       thinking.classList.remove("on");
       log.appendChild(thinking);

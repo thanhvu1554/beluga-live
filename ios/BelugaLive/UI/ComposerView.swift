@@ -4,7 +4,11 @@ import UniformTypeIdentifiers
 import BelugaCore
 
 /// "+  [Nhắn cho Beluga…]  mic  Live": multi-line text, attachments (photos, camera, PDF), dictation,
-/// model choice in the "+" menu, and the switch to Live. Send replaces Live once there is something to send.
+/// model choice in the "+" menu, and the switch to Live. Once there is something to send, the Live button
+/// morphs into Send (one glass button whose label and width spring between the two).
+///
+/// Mode entry buttons live together at the trailing end (`modeButtons`, one `GlassEffectContainer`); a second
+/// entry (e.g. a call) goes next to Live there and steps aside the same way when Send takes over.
 struct ComposerView: View {
     let controller: LiveController
     @Bindable var composer: ChatComposer
@@ -16,26 +20,26 @@ struct ComposerView: View {
     @State private var showFiles = false
     @State private var showCamera = false
 
+    private var sending: Bool { composer.hasContent }
+
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s) {
             if !composer.attachments.isEmpty {
                 AttachmentStrip(composer: composer) { id in controller.retryUpload(id, in: composer) }
+                    .transition(.opacity.combined(with: .offset(y: 6)))
             }
             HStack(alignment: .bottom, spacing: Space.xs) {
                 plusMenu
                 field
                 MicButton(controller: controller, composer: composer)
-                if composer.hasContent {
-                    sendButton
-                } else {
-                    liveButton
-                }
+                modeButtons
             }
         }
         .padding(Space.xs + Space.xxs)
-        .glassEffect(.regular, in: .rect(cornerRadius: 28))
-        .animation(.easeOut(duration: Motion.quick), value: composer.hasContent)
-        .animation(.easeOut(duration: Motion.quick), value: composer.attachments.count)
+        .glassEffect(.regular, in: .rect(cornerRadius: Radius.composer, style: .continuous))
+        .animation(Motion.snappy, value: sending)
+        .animation(Motion.snappy, value: composer.attachments.isEmpty)
+        .animation(Motion.snappy, value: composer.dictating || composer.transcribing)
         .photosPicker(isPresented: $showPhotos, selection: $photoItems,
                       maxSelectionCount: max(1, ChatComposer.maxAttachments - composer.attachments.count),
                       matching: .images)
@@ -51,6 +55,9 @@ struct ComposerView: View {
                 .ignoresSafeArea()
         }
         .onChange(of: composer.focusTick) { _, _ in focused = true }
+        .onChange(of: composer.cameraTick) { _, _ in
+            if UIImagePickerController.isSourceTypeAvailable(.camera) { showCamera = true } else { showPhotos = true }
+        }
     }
 
     private var field: some View {
@@ -68,12 +75,14 @@ struct ComposerView: View {
                         .font(TypeScale.body)
                         .foregroundStyle(Ink.secondary)
                         .lineLimit(1)
+                        .contentTransition(.opacity)
                 }
+                .transition(.opacity)
             }
         }
         .padding(.vertical, 11)
         .padding(.horizontal, Space.xs)
-        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: Size.tap, alignment: .leading)
     }
 
     private var plusMenu: some View {
@@ -93,7 +102,7 @@ struct ComposerView: View {
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: Size.icon, weight: .medium))
-                .frame(width: 44, height: 44)
+                .frame(width: Size.tap, height: Size.tap)
                 .contentShape(.circle)
         }
         .foregroundStyle(Ink.primary)
@@ -106,39 +115,36 @@ struct ComposerView: View {
         return effort.isEmpty ? name : name + " · " + s("effort.\(effort)")
     }
 
-    private var sendButton: some View {
-        Button { controller.sendChat() } label: {
-            Image(systemName: "arrow.up")
-                .font(.system(size: Size.icon, weight: .semibold))
-                .foregroundStyle(inverse)
-                .frame(width: 30, height: 30)
-        }
-        .buttonStyle(.glassProminent)
-        .buttonBorderShape(.circle)
-        .tint(ink)
-        .frame(minWidth: 44, minHeight: 44)
-        .disabled(!composer.canSend)
-        .accessibilityLabel(s("composer.send"))
-        .transition(.scale.combined(with: .opacity))
-    }
-
-    private var liveButton: some View {
-        Button { controller.setMode(.live) } label: {
+    /// Live (and later other mode entries) or Send. Send is the same button as Live: the waveform turns into an
+    /// arrow and the word folds away, so the eye never loses the primary action.
+    private var modeButtons: some View {
+        GlassEffectContainer(spacing: Space.s) {
             HStack(spacing: Space.xs) {
-                Image(systemName: "waveform")
-                    .font(.system(size: 15, weight: .semibold))
-                Text(verbatim: "Live")
-                    .font(TypeScale.callout.weight(.semibold))
+                Button {
+                    if sending { controller.sendChat() } else { controller.setMode(.live) }
+                } label: {
+                    HStack(spacing: Space.xs) {
+                        Image(systemName: sending ? "arrow.up" : "waveform")
+                            .font(.system(size: sending ? Size.icon : 15, weight: .semibold))
+                            .contentTransition(.symbolEffect(.replace.downUp))
+                        if !sending {
+                            Text(verbatim: "Live")
+                                .font(TypeScale.callout.weight(.semibold))
+                                .fixedSize()
+                                .transition(.opacity.combined(with: .scale(0.5, anchor: .leading)))
+                        }
+                    }
+                    .foregroundStyle(inverse)
+                    .frame(minWidth: 30, minHeight: 30)
+                }
+                .buttonStyle(.glassProminent)
+                .buttonBorderShape(.capsule)
+                .tint(ink)
+                .disabled(sending && !composer.canSend)
+                .accessibilityLabel(s(sending ? "composer.send" : "live.enter"))
             }
-            .foregroundStyle(inverse)
-            .frame(height: 30)
         }
-        .buttonStyle(.glassProminent)
-        .buttonBorderShape(.capsule)
-        .tint(ink)
-        .frame(minHeight: 44)
-        .accessibilityLabel(s("live.enter"))
-        .transition(.scale.combined(with: .opacity))
+        .frame(minHeight: Size.tap)
     }
 
     /// Solid ink for the primary buttons (black in light, white in dark) and the text on it.
@@ -166,10 +172,13 @@ private struct MicButton: View {
             .foregroundStyle(composer.dictating ? Color(uiColor: .systemBackground) : Ink.primary)
             .frame(width: 36, height: 36)
             .background(Circle().fill(composer.dictating ? Ink.primary : Color.clear))
-            .frame(width: 44, height: 44)
+            .frame(width: Size.tap, height: Size.tap)
             .contentShape(.circle)
             .contentTransition(.symbolEffect(.replace))
             .opacity(composer.transcribing ? 0.4 : 1)
+            .scaleEffect(pressStart != nil ? 0.92 : 1)
+            .animation(Motion.snappy, value: composer.dictating)
+            .animation(Motion.snappy, value: pressStart != nil)
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { _ in
@@ -193,6 +202,7 @@ private struct MicButton: View {
 }
 
 /// Picked files as chips: thumbnail or document icon, upload ring, retry on failure, remove.
+/// Chips scale in and out on the shared spring; the upload veil fades away as the ring closes.
 struct AttachmentStrip: View {
     let composer: ChatComposer
     let retry: (UUID) -> Void
@@ -203,12 +213,14 @@ struct AttachmentStrip: View {
             HStack(spacing: Space.s) {
                 ForEach(composer.attachments) { a in
                     chip(a)
+                        .transition(.scale(0.85).combined(with: .opacity))
                 }
             }
             .padding(.horizontal, Space.xs)
             .padding(.top, Space.xs)
         }
         .scrollIndicators(.hidden)
+        .animation(Motion.snappy, value: composer.attachments.map(\.id))
     }
 
     private func chip(_ a: Attachment) -> some View {
@@ -231,24 +243,28 @@ struct AttachmentStrip: View {
                 }
             }
             .frame(width: a.thumbnail == nil ? 88 : 64, height: 64)
-            .clipShape(.rect(cornerRadius: Radius.m))
+            .clipShape(.rect(cornerRadius: Radius.m, style: .continuous))
             .overlay {
-                if !a.isUploaded {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: Radius.m).fill(Color.black.opacity(0.35))
-                        if a.failed {
-                            Button { retry(a.id) } label: {
-                                Image(systemName: "arrow.clockwise").font(.system(size: 16, weight: .semibold))
-                                    .frame(width: 44, height: 44)
-                            }
-                            .foregroundStyle(.white)
-                            .accessibilityLabel(s("attach.retry"))
-                        } else {
-                            UploadRing(progress: a.progress)
-                                .frame(width: 24, height: 24)
+                ZStack {
+                    RoundedRectangle(cornerRadius: Radius.m, style: .continuous).fill(Color.black.opacity(0.35))
+                    if a.failed {
+                        Button { retry(a.id) } label: {
+                            Image(systemName: "arrow.clockwise").font(.system(size: 16, weight: .semibold))
+                                .frame(width: Size.tap, height: Size.tap)
                         }
+                        .foregroundStyle(.white)
+                        .accessibilityLabel(s("attach.retry"))
+                        .transition(.opacity.combined(with: .scale(0.8)))
+                    } else {
+                        UploadRing(progress: a.isUploaded ? 1 : a.progress)
+                            .frame(width: 24, height: 24)
+                            .transition(.opacity)
                     }
                 }
+                .opacity(a.isUploaded ? 0 : 1)
+                .allowsHitTesting(!a.isUploaded)
+                .animation(Motion.snappy, value: a.failed)
+                .animation(Motion.smooth.delay(a.isUploaded ? 0.15 : 0), value: a.isUploaded)
             }
             Button { composer.remove(a.id) } label: {
                 Image(systemName: "xmark")
@@ -278,7 +294,7 @@ private struct UploadRing: View {
                 .stroke(Color.white, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
                 .rotationEffect(.degrees(-90))
         }
-        .animation(.easeOut(duration: Motion.quick), value: progress)
+        .animation(Motion.snappy, value: progress)
     }
 }
 

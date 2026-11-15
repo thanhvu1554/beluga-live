@@ -2,25 +2,36 @@ import SwiftUI
 import BelugaCore
 
 /// Small playful line drawings next to the greeting (PROTOCOL section 15). Stroke only, in the current
-/// foreground style, looping gently at 30 fps; Reduce Motion shows one still frame.
+/// foreground style. On arrival the lines draw themselves in once (0.9 s), then loop gently at 30 fps while
+/// the drawing is on screen (`active`); off screen, under Live or behind the drawer the clock stops, so the
+/// Canvas costs nothing. Reduce Motion shows one still frame.
 struct DoodleView: View {
     let doodle: Doodle
+    var active = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var start = Date()
+
+    private static let drawIn: Double = 0.9
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion || !active)) { context in
             let t = reduceMotion ? 0.6 : context.date.timeIntervalSinceReferenceDate
+            let k = reduceMotion ? 1 : min(1, max(0, context.date.timeIntervalSince(start) / Self.drawIn))
+            // Ease-out: fast at first, settling as the last stroke closes.
+            let reveal = 1 - pow(1 - k, 3)
             Canvas { ctx, size in
                 let style = StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round)
                 // Drawings are authored on a 160 x 96 box.
                 let k = min(size.width / 160, size.height / 96)
                 ctx.translateBy(x: (size.width - 160 * k) / 2, y: (size.height - 96 * k) / 2)
                 ctx.scaleBy(x: k, y: k)
-                for path in Self.paths(doodle, t: t) {
-                    ctx.stroke(path.path, with: .foreground, style: path.dashed ? StrokeStyle(lineWidth: 1.2, lineCap: .round, dash: [2, 5]) : style)
+                for line in Self.paths(doodle, t: t) {
+                    let path = reveal < 1 ? line.path.trimmedPath(from: 0, to: reveal) : line.path
+                    ctx.stroke(path, with: .foreground, style: line.dashed ? StrokeStyle(lineWidth: 1.2, lineCap: .round, dash: [2, 5]) : style)
                 }
             }
         }
+        .onChange(of: doodle) { _, _ in start = Date() }
     }
 
     struct Line { var path: Path; var dashed = false }

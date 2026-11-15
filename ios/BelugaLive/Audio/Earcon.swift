@@ -71,4 +71,15 @@ enum Haptics {
         guard enabled else { return }
         UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
+
+    /// A value passed a step (folder tab, a panel snapping home).
+    static func selection() {
+        guard enabled else { return }
+        UISelectionFeedbackGenerator().selectionChanged()
+    }
+
+    static func warning() {
+        guard enabled else { return }
+        UINotificationFeedbackGenerator().notificationOccurred(.warning)
+    }
 }

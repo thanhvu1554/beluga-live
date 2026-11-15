@@ -8,6 +8,8 @@ enum MockScene: String, CaseIterable {
     // Chat mode and the v2 screens.
     case home, chat, chatfiles, drawer, sessions, settings, progress
     case folder, knowledge, ingest, folderreview, exams, models, usage, exampdf, replay, voices
+    // Design pass: the computer page of Settings, and the composer with a long draft (Send instead of Live).
+    case connection, typing
 
     var isLive: Bool {
         switch self {
@@ -31,23 +33,27 @@ enum PermissionIssue: Sendable, Equatable {
 }
 
 /// Launch options: `-mock 1`, `-mockScene <name>`, `-mockMode live|chat` (start mode), `-mockChat 1`
-/// (send a chat message by itself once connected).
+/// (send a chat message by itself once connected), `-mockTour 1` (walk through the chat shell's transitions
+/// for the screen recording).
 struct LaunchOptions {
     var mock: Bool
     var scene: MockScene?
     var startMode: SessionMode?
     var autoChat: Bool
+    var tour = false
 
     static func current() -> LaunchOptions {
         let d = UserDefaults.standard
         return LaunchOptions(mock: d.bool(forKey: "mock"),
                              scene: d.string(forKey: "mockScene").flatMap(MockScene.init(rawValue:)),
                              startMode: d.string(forKey: "mockMode").flatMap(SessionMode.init(rawValue:)),
-                             autoChat: d.bool(forKey: "mockChat"))
+                             autoChat: d.bool(forKey: "mockChat"),
+                             tour: d.bool(forKey: "mockTour"))
     }
 }
 
 enum FolderTab: String, CaseIterable, Hashable { case sessions, knowledge, review, exams }
+struct KnowledgeSection: Hashable { let id: String; let title: String }
 enum Route: Hashable { case folder(String) }
 
 /// A file to show in QuickLook (exported exam PDF).
@@ -149,6 +155,11 @@ final class LiveController {
     @ObservationIgnored var chatLog: [JSONValue] = []
     /// Folder whose data is on the knowledge page.
     @ObservationIgnored var knowledgeFolder: String?
+    /// What the knowledge page shows now (folder, data, review) and the ingest panel, to skip identical redraws.
+    @ObservationIgnored var renderedKnowledge: JSONValue?
+    @ObservationIgnored var renderedIngest: JSONValue?
+    /// Sections of the knowledge page, for the jump menu in the folder's navigation bar.
+    var knowledgeSections: [KnowledgeSection] = []
     /// Open the folder the server creates next (created from the drawer).
     @ObservationIgnored var openCreatedFolder = false
     /// Folder for the session the next `hello` starts (new chat while offline).
@@ -181,7 +192,7 @@ final class LiveController {
         knowledgePage.onMessage = { [weak self] body in self?.knowledgePageMessage(body) }
         chatPage.onReload = { [weak self] in self?.redrawChat() }
         knowledgePage.onReload = { [weak self] in
-            if let self, let folder = self.knowledgeFolder { self.renderKnowledge(folder) }
+            if let self, let folder = self.knowledgeFolder { self.renderKnowledge(folder, force: true) }
         }
     }
 
@@ -197,6 +208,7 @@ final class LiveController {
             if options.scene == .offline { mock.reachable = false }
             attach(mock)
             if let scene = options.scene { applyScene(scene, mock: mock) } else { connect() }
+            if options.tour { runMockTour() }
             return
         }
         sessionId = settings.lastSessionId
@@ -204,7 +216,7 @@ final class LiveController {
         if sessionId != nil { timeline.reset(lastPlayed: settings.lastPlayedSeq) }
         // The camera is only needed in live mode; microphone and speech recognition are asked on first use.
         if mode == .live { startCamera() }
-        if hasHost { connect() } else { showSettings = true }
+        if hasHost { connect() } else { settingsPath = [.connection]; showSettings = true }
     }
 
     func startCamera() {
@@ -422,7 +434,8 @@ final class LiveController {
                 // Drop the stale token and take the user to the pairing code field.
                 settings.pairToken = nil
                 showNotice(strings("error.badPair"))
-                drawerOpen = false
+                closeDrawer()
+                settingsPath = [.connection]
                 showSettings = true
             } else { showNotice(text.isEmpty ? code : text) }
             if fatal { fatalStop = true; transport?.disconnect(); connected = false; pill.handle(.disconnected) }
@@ -718,7 +731,7 @@ final class LiveController {
     // MARK: Sessions
 
     func open(_ item: SessionItem, keepPath: Bool = false) {
-        drawerOpen = false
+        closeDrawer()
         if !keepPath { path = [] }
         guard item.sessionId != sessionId else { return }
         audio?.stopSpeaking(); speakTask?.cancel()

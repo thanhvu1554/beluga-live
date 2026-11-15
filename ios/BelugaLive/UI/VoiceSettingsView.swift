@@ -2,7 +2,7 @@ import SwiftUI
 import BelugaCore
 
 /// Screens pushed inside the Settings sheet.
-enum SettingsRoute: Hashable { case voices, diagnostics }
+enum SettingsRoute: Hashable { case voices, diagnostics, connection, usage }
 
 /// "Giọng nói": the tutor voices the server offers, a preview clip per voice, a tick on the one in use.
 struct VoiceSettingsView: View {

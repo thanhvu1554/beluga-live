@@ -19,7 +19,7 @@ struct BelugaLiveApp: App {
         let settings = options.mock
             ? AppSettings(defaults: UserDefaults(suiteName: "mock") ?? .standard, persist: false)
             : AppSettings()
-        if options.mock, options.scene == nil || options.scene == .settings {
+        if options.mock, options.scene == nil || options.scene == .settings || options.scene == .connection {
             settings.host = settings.host.isEmpty ? "beluga-pc" : settings.host
         }
         _controller = State(initialValue: LiveController(settings: settings, options: options))

@@ -17,16 +17,21 @@ xcrun simctl bootstatus "$UDID" -b
 xcrun simctl status_bar "$UDID" override --time 9:41 --batteryState charged --batteryLevel 100 \
   --cellularMode active --cellularBars 4 --wifiBars 3 || true
 xcrun simctl install "$UDID" "$APP" 2>/dev/null || true
-xcrun simctl ui "$UDID" appearance light
+xcrun simctl ui "$UDID" appearance "${DEMO_APPEARANCE:-light}"
 xcrun simctl terminate "$UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
 
-FILE="$OUT/demo.mp4"
+# DEMO_NAME / DEMO_ARGS / DEMO_APPEARANCE / VIDEO_SECONDS choose another run, e.g. the chat shell tour:
+#   DEMO_NAME=tour DEMO_ARGS="-mock 1 -mockTour 1" VIDEO_SECONDS=44 record-demo.sh ...
+NAME="${DEMO_NAME:-demo}"
+ARGS="${DEMO_ARGS:--mock 1 -mockMode live}"
+FILE="$OUT/$NAME.mp4"
 rm -f "$FILE"
 # Background jobs of a non-interactive shell ignore SIGINT; reset it so the recorder can finish the file.
 perl -e '$SIG{INT} = "DEFAULT"; exec @ARGV' -- xcrun simctl io "$UDID" recordVideo --codec=h264 --force "$FILE" &
 REC=$!
 sleep 2
-xcrun simctl launch "$UDID" "$BUNDLE_ID" -mock 1 -mockMode live >/dev/null
+# shellcheck disable=SC2086
+xcrun simctl launch "$UDID" "$BUNDLE_ID" $ARGS >/dev/null
 sleep "$SECONDS_TO_RECORD"
 kill -INT "$REC" 2>/dev/null || true
 for _ in $(seq 1 30); do kill -0 "$REC" 2>/dev/null || break; sleep 1; done

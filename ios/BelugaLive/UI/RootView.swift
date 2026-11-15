@@ -8,17 +8,19 @@ struct RootView: View {
     @Bindable var controller: LiveController
     @Environment(\.colorScheme) private var scheme
     @Environment(\.scenePhase) private var phase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
             ChatShell(controller: controller)
             if controller.mode == .live {
+                // Live rises over the chat like a sheet and sinks back on exit (a cross-fade with Reduce Motion).
                 LiveView(controller: controller)
-                    .transition(.move(edge: .bottom))
+                    .transition(reduceMotion ? .opacity : .move(edge: .bottom))
                     .zIndex(1)
             }
         }
-        .animation(Motion.panel, value: controller.mode)
+        .animation(Motion.respecting(reduceMotion, Motion.smooth), value: controller.mode)
         .onAppear { applyTheme(scheme) }
         .onChange(of: scheme) { _, new in applyTheme(new) }
         .onChange(of: phase) { _, new in
@@ -53,6 +55,8 @@ struct RootView: View {
             ModelPickerView(controller: controller)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
+                // Solid, not glass: at the medium detent a translucent sheet blurred the home screen into mud.
+                .presentationBackground(Color(uiColor: .systemGroupedBackground))
         }
         .sheet(isPresented: $controller.showReplay) {
             ReplayView(controller: controller)
@@ -100,7 +104,6 @@ struct LiveView: View {
                 BoardPanel(controller: controller)
                     .frame(height: boardHeight)
                     .offset(y: controller.boardVisible ? 0 : boardHeight + 48)
-                    .animation(Motion.panel, value: controller.boardVisible)
                     .allowsHitTesting(controller.boardVisible)
                     .accessibilityHidden(!controller.boardVisible)
                     .ignoresSafeArea(edges: .bottom)
@@ -109,7 +112,7 @@ struct LiveView: View {
                     TopBar(controller: controller)
                     if let issue = controller.permissionIssue {
                         PermissionBanner(issue: issue)
-                            .transition(.opacity)
+                            .transition(.opacity.combined(with: .scale(0.96, anchor: .top)))
                     }
                     Spacer(minLength: 0)
                 }
@@ -132,6 +135,8 @@ struct LiveView: View {
                     .padding(.horizontal, Space.l)
                     .padding(.bottom, Space.s)
             }
+            .animation(Motion.snappy, value: controller.caption.isEmpty)
+            .animation(Motion.snappy, value: controller.permissionIssue)
         }
         .background(Color.black.ignoresSafeArea())
     }
@@ -177,14 +182,7 @@ private struct TopBar: View {
     var body: some View {
         GlassEffectContainer(spacing: Space.l) {
             HStack(alignment: .center, spacing: Space.m) {
-                Button { controller.setMode(.chat) } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: Size.icon, weight: .medium))
-                        .frame(width: Size.control - Space.s, height: Size.control - Space.s)
-                }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-                .accessibilityLabel(s("live.exit"))
+                LiveRoundButton(symbol: "xmark", label: s("live.exit")) { controller.setMode(.chat) }
 
                 Spacer(minLength: 0)
 
@@ -195,23 +193,19 @@ private struct TopBar: View {
                         .lineLimit(2)
                         .padding(.horizontal, Space.m)
                         .padding(.vertical, Space.s)
-                        .glassEffect(.regular, in: .capsule)
-                        .transition(.opacity)
+                        .glassEffect(.regular.tint(Palette.scrim.opacity(0.4)), in: .capsule)
+                        .transition(.opacity.combined(with: .scale(0.94)))
                 }
 
                 Spacer(minLength: 0)
 
-                Button { controller.showSettings = true } label: {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: Size.icon, weight: .medium))
-                        .frame(width: Size.control - Space.s, height: Size.control - Space.s)
-                }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-                .accessibilityLabel(s("settings.title"))
+                LiveRoundButton(symbol: "gearshape", label: s("settings.title")) { controller.showSettings = true }
             }
+            .animation(Motion.snappy, value: controller.notice)
         }
-        .foregroundStyle(Ink.primary)
+        .foregroundStyle(Palette.glow)
+        // Camera chrome is dark in both appearances, like the pill: one family of controls over the picture.
+        .environment(\.colorScheme, .dark)
     }
 }
 
@@ -221,31 +215,43 @@ private struct ControlBar: View {
 
     var body: some View {
         GlassEffectContainer(spacing: Space.l) {
-            HStack(spacing: Space.l) {
-                Button { controller.manualCapture() } label: {
-                    Image(systemName: "camera")
-                        .font(.system(size: Size.icon, weight: .medium))
-                        .frame(width: Size.control - Space.s, height: Size.control - Space.s)
-                }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-                .accessibilityLabel(s("control.capture"))
+            HStack(spacing: Space.m) {
+                LiveRoundButton(symbol: "camera", label: s("control.capture")) { controller.manualCapture() }
 
                 PillView(controller: controller)
 
-                Button { controller.showBoard(!controller.boardVisible) } label: {
-                    Image(systemName: controller.boardVisible ? "chevron.down" : "rectangle.bottomhalf.inset.filled")
-                        .font(.system(size: Size.icon, weight: .medium))
-                        .frame(width: Size.control - Space.s, height: Size.control - Space.s)
-                        .contentTransition(.symbolEffect(.replace))
+                LiveRoundButton(symbol: controller.boardVisible ? "chevron.down" : "rectangle.bottomhalf.inset.filled",
+                                label: s(controller.boardVisible ? "control.hideBoard" : "control.showBoard")) {
+                    controller.showBoard(!controller.boardVisible)
                 }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
                 .disabled(!controller.board.hasContent)
-                .accessibilityLabel(s(controller.boardVisible ? "control.hideBoard" : "control.showBoard"))
             }
         }
-        .foregroundStyle(Ink.primary)
+        .foregroundStyle(Palette.glow)
+        .environment(\.colorScheme, .dark)
+    }
+}
+
+/// The round glass button of Live (top bar and both sides of the pill): one size, dark glass tinted like the
+/// pill, light glyph. Same weight on both sides so the pill is the only thing that stands out.
+private struct LiveRoundButton: View {
+    let symbol: String
+    let label: String
+    let action: () -> Void
+    @Environment(\.isEnabled) private var enabled
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 18, weight: .medium))
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: Size.liveButton, height: Size.liveButton)
+                .opacity(enabled ? 1 : 0.4)
+                .contentShape(.circle)
+                .glassEffect(.regular.tint(Palette.scrim.opacity(0.45)).interactive(), in: .circle)
+        }
+        .buttonStyle(PressScaleStyle(scale: 0.94))
+        .accessibilityLabel(label)
     }
 }
 
@@ -268,7 +274,7 @@ private struct PermissionBanner: View {
         }
         .padding(.horizontal, Space.l)
         .padding(.vertical, Space.m)
-        .glassEffect(.regular, in: .rect(cornerRadius: Radius.l))
+        .glassEffect(.regular, in: .rect(cornerRadius: Radius.card, style: .continuous))
         .frame(maxWidth: 340)
     }
 }
@@ -300,6 +306,6 @@ private struct CaptionView: View {
         .frame(maxWidth: 340)
         .frame(height: shownHeight)
         .opacity(textHeight > 0 ? 1 : 0)
-        .glassEffect(.regular, in: .rect(cornerRadius: Radius.l))
+        .glassEffect(.regular, in: .rect(cornerRadius: Radius.card, style: .continuous))
     }
 }
