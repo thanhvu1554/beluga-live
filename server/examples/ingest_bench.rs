@@ -213,19 +213,59 @@ fn strip_cmd_keep_arg(s: &str, cmd: &str) -> String {
     out
 }
 
+/// `\vec a` → `\vec{a}` (command, spaces, one alphanumeric char).
+fn brace_spaced_arg(s: &str, cmd: &str) -> String {
+    let mut out = String::new();
+    let mut rest = s;
+    while let Some(p) = rest.find(cmd) {
+        out.push_str(&rest[..p + cmd.len()]);
+        let after = &rest[p + cmd.len()..];
+        let trimmed = after.trim_start_matches(' ');
+        let mut cs = trimmed.chars();
+        match cs.next() {
+            Some(c) if trimmed.len() < after.len() && c.is_alphanumeric() => {
+                out.push('{');
+                out.push(c);
+                out.push('}');
+                rest = cs.as_str();
+            }
+            _ => rest = after,
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+fn sup_digit(ch: char) -> Option<char> {
+    match ch {
+        '⁰' => Some('0'),
+        '¹' => Some('1'),
+        '²' => Some('2'),
+        '³' => Some('3'),
+        '⁴'..='⁹' => char::from_digit(ch as u32 - '⁴' as u32 + 4, 10),
+        _ => None,
+    }
+}
+
 pub fn norm_math(s: &str) -> String {
-    let sub: String = s
-        .chars()
-        .map(|ch| match ch {
-            '₀'..='₉' => char::from_digit(ch as u32 - '₀' as u32, 10).unwrap(),
-            '⁰' => '0',
-            '¹' => '1',
-            '²' => '2',
-            '³' => '3',
-            '⁴'..='⁹' => char::from_digit(ch as u32 - '⁴' as u32 + 4, 10).unwrap(),
-            _ => ch,
-        })
-        .collect();
+    // Subscript digits → digits (chemistry); a run of superscript digits → an exponent (`x²` = `x^2`).
+    let mut sub = String::new();
+    let mut in_sup = String::new();
+    for ch in s.chars().chain(std::iter::once('\0')) {
+        if let Some(d) = sup_digit(ch) {
+            in_sup.push(d);
+            continue;
+        }
+        if !in_sup.is_empty() {
+            sub.push_str(&if in_sup.len() == 1 { format!("^{in_sup}") } else { format!("^{{{in_sup}}}") });
+            in_sup.clear();
+        }
+        match ch {
+            '\0' => {}
+            '₀'..='₉' => sub.push(char::from_digit(ch as u32 - '₀' as u32, 10).unwrap()),
+            _ => sub.push(ch),
+        }
+    }
     // `√12` → `\sqrt{12}` (a digit run under a unicode root sign)
     let sub = {
         let cs: Vec<char> = sub.chars().collect();
@@ -239,6 +279,27 @@ pub fn norm_math(s: &str) -> String {
                 }
                 o.push_str(&format!("\\sqrt{{{}}}", cs[i + 1..j].iter().collect::<String>()));
                 i = j;
+            } else if cs[i] == '√' && cs.get(i + 1) == Some(&'(') {
+                // `√((x-3)^2)` → `\sqrt{(x-3)^2}`: the outer parentheses are the radical's bar.
+                let mut depth = 0;
+                let end = (i + 1..cs.len()).find(|&j| {
+                    match cs[j] {
+                        '(' => depth += 1,
+                        ')' => depth -= 1,
+                        _ => {}
+                    }
+                    depth == 0
+                });
+                match end {
+                    Some(e) => {
+                        o.push_str(&format!("\\sqrt{{{}}}", cs[i + 2..e].iter().collect::<String>()));
+                        i = e + 1;
+                    }
+                    None => {
+                        o.push(cs[i]);
+                        i += 1;
+                    }
+                }
             } else {
                 o.push(cs[i]);
                 i += 1;
@@ -266,6 +327,10 @@ pub fn norm_math(s: &str) -> String {
     );
     for cmd in ["\\text", "\\mathrm", "\\textrm", "\\operatorname", "\\mbox"] {
         t = strip_cmd_keep_arg(&t, cmd);
+    }
+    // `\vec a`, `\sqrt x`: brace the one-letter argument before spaces go (else `\veca`).
+    for cmd in ["\\vec", "\\hat", "\\sqrt"] {
+        t = brace_spaced_arg(&t, cmd);
     }
     let t: String = t.chars().filter(|c| !c.is_whitespace()).collect();
     canon_braces(&t).replace("\\to", "->")
@@ -617,6 +682,12 @@ mod tests {
         assert_eq!(norm_math(r"60^{\circ}"), norm_math("60°"));
         assert_eq!(norm_math(r"\frac35"), norm_math(r"\dfrac{3}{5}"));
         assert_eq!(norm_math(r"x^{2}"), "x^2");
+        assert_eq!(norm_math("x² - 5x"), norm_math(r"x^2-5x"));
+        assert_eq!(norm_math("10¹²"), norm_math(r"10^{12}"));
+        assert_eq!(norm_math("√((x-3)²)"), norm_math(r"\sqrt{(x-3)^2}"));
+        assert_eq!(norm_math(r"\vec a=(1;2)"), norm_math(r"\vec{a}=(1;2)"));
+        assert_eq!(norm_math(r"\widehat{A}"), norm_math(r"\hat A"));
+        assert_eq!(norm_math("√12 · √3"), norm_math(r"\sqrt{12}\cdot\sqrt{3}"));
         assert_ne!(norm_math(r"\sqrt{2x-6}"), norm_math(r"\sqrt{2}x-6"));
         assert_eq!(norm_chem(r"\ce{Fe + 2HCl -> FeCl2 + H2}"), norm_chem("Fe + 2HCl → FeCl₂ + H₂"));
         assert_eq!(norm_chem(r"1s^{2}2s^{2}"), "1s22s2");

@@ -82,7 +82,10 @@ pub async fn call_json(
                     cost = resp.usage.cost_usd, inp = resp.usage.input_tokens, cached = resp.usage.cached_tokens,
                     out = resp.usage.output_tokens, think = resp.usage.reasoning_tokens, "study llm call");
                 resp.json().and_then(|v| {
-                    validate(&v).map_err(|m| LlmError { status: 0, message: m, retryable: true })?;
+                    validate(&v).map_err(|m| {
+                        tracing::warn!(tag = req.tag, "reply rejected ({m}): {}", resp.text.chars().take(400).collect::<String>());
+                        LlmError { status: 0, message: m, retryable: true }
+                    })?;
                     Ok(Reply { value: v, provider: resp.provider.clone(), usage: resp.usage.clone(), elapsed_ms: resp.elapsed_ms })
                 })
             }

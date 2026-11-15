@@ -138,9 +138,71 @@ pub trait Llm: Send + Sync {
     fn complete<'a>(&'a self, req: LlmRequest) -> BoxFuture<'a, Result<LlmResponse, LlmError>>;
 }
 
-/// Pull one JSON object out of model text: plain, fenced (```json … ```), or embedded in prose.
+/// Models sometimes write LaTeX into JSON strings without doubling the backslash: `\sqrt` is then
+/// invalid JSON and `\frac` silently becomes a form feed + "rac". Inside strings, a backslash that
+/// starts a LaTeX command (or any invalid escape) is doubled; real escapes (`\"`, `\\`, `\n` before a
+/// non-command, `\u…`) are kept.
+pub fn fix_latex_escapes(s: &str) -> String {
+    const CMDS: [&str; 26] = [
+        "frac", "beta", "bar", "begin", "big", "boxed", "binom", "neq", "ne ", "nu", "not", "nabla", "times", "text", "tan", "theta", "to",
+        "tfrac", "tau", "right", "rho", "rangle", "rceil", "rfloor", "forall", "bf",
+    ];
+    let c: Vec<char> = s.chars().collect();
+    let mut out = String::with_capacity(s.len() + 16);
+    let mut in_str = false;
+    let mut i = 0;
+    while i < c.len() {
+        let ch = c[i];
+        if !in_str {
+            if ch == '"' {
+                in_str = true;
+            }
+            out.push(ch);
+            i += 1;
+            continue;
+        }
+        match ch {
+            '"' => {
+                in_str = false;
+                out.push(ch);
+                i += 1;
+            }
+            '\\' => {
+                let next = c.get(i + 1).copied().unwrap_or(' ');
+                let rest: String = c[i + 1..(i + 9).min(c.len())].iter().collect();
+                let latex = match next {
+                    '"' | '\\' | '/' => false,
+                    // `\u` + 4 hex digits is a real escape (indexing by char: `rest` may hold non-ASCII).
+                    'u' => !(i + 6 <= c.len() && c[i + 2..i + 6].iter().all(|x| x.is_ascii_hexdigit())),
+                    'b' | 'f' | 'n' | 'r' | 't' => {
+                        CMDS.iter().any(|cmd| rest.starts_with(cmd))
+                            || (matches!(next, 'b' | 'f') && c.get(i + 2).is_some_and(|x| x.is_ascii_alphabetic()))
+                    }
+                    _ => true,
+                };
+                if latex {
+                    out.push_str("\\\\");
+                    i += 1;
+                } else {
+                    out.push('\\');
+                    out.push(next);
+                    i += 2;
+                }
+            }
+            _ => {
+                out.push(ch);
+                i += 1;
+            }
+        }
+    }
+    out
+}
+
+/// Pull one JSON object out of model text: plain, fenced (```json … ```), or embedded in prose. LaTeX
+/// backslashes the model forgot to escape are repaired first.
 pub fn parse_json_loose(text: &str) -> Option<Value> {
-    let t = text.trim();
+    let fixed = fix_latex_escapes(text);
+    let t = fixed.trim();
     if let Ok(v) = serde_json::from_str::<Value>(t) {
         if v.is_object() || v.is_array() {
             return Some(v);
@@ -668,6 +730,13 @@ mod tests {
         assert_eq!(parse_json_loose("```json\n{\"a\":2}\n```").unwrap()["a"], 2);
         assert_eq!(parse_json_loose("Here: {\"a\":3} done").unwrap()["a"], 3);
         assert!(parse_json_loose("nope").is_none());
+        // Unescaped LaTeX: invalid escapes and escapes that are really commands.
+        let v = parse_json_loose(r#"{"t":"$\frac{1}{2}+\sqrt{x}\neq \times\text{a}$","ok":"a\nb \"q\" \\frac é"}"#).unwrap();
+        assert_eq!(v["t"], r"$\frac{1}{2}+\sqrt{x}\neq \times\text{a}$");
+        assert_eq!(v["ok"], "a\nb \"q\" \\frac é");
+        // Non-ASCII right after a backslash must not panic; `é` stays a real escape.
+        let v = parse_json_loose(r#"{"t":"\uée é \ứ"}"#).unwrap();
+        assert_eq!(v["t"], "\\uée é \\ứ");
         let cut = LlmResponse { text: "{\"a\":1}".into(), usage: Usage::default(), finish: "length".into(), model: String::new(),
             elapsed_ms: 0, provider: String::new() };
         assert!(cut.json().unwrap_err().message.contains("max_tokens"));
