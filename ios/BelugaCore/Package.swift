@@ -9,6 +9,6 @@ let package = Package(
     ],
     targets: [
         .target(name: "BelugaCore"),
-        .testTarget(name: "BelugaCoreTests", dependencies: ["BelugaCore"]),
+        .testTarget(name: "BelugaCoreTests", dependencies: ["BelugaCore"], resources: [.copy("Fixtures")]),
     ]
 )

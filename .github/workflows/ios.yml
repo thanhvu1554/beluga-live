@@ -27,7 +27,9 @@ jobs:
         working-directory: ios/BelugaCore
         run: |
           xcodebuild -version
-          swift test 2>&1 | tail -n 80; exit ${PIPESTATUS[0]}
+          swift test 2>&1 | tee swift-test.log | tail -n 80; CODE=${PIPESTATUS[0]}
+          grep -E "AUDIOPROBE|failed|error:" swift-test.log | head -n 60 || true
+          exit $CODE
 
       - name: Generate project
         working-directory: ios
