@@ -222,7 +222,10 @@ pub async fn start_full(cfg: Config, listener: TcpListener, voice: Arc<Voice>, u
     );
     let folders = Arc::new(Folders::open(&cfg.data_dir));
     folders.sort_old_sessions(&store);
+    let voices = Arc::new(crate::voices::VoiceCatalog::load(&cfg.voices_path, &cfg.voice_clips_dir, &cfg.data_dir, &voice.default_voice_id));
+    tracing::info!("voices: {} in the catalogue, current {}", voices.entries().len(), voices.current());
     let deps = Deps {
+        voices,
         usage: Arc::new(Usage::open(&cfg.data_dir)),
         uploads: Arc::new(Uploads::open(&cfg.data_dir)),
         cfg: Arc::new(cfg),
@@ -240,6 +243,7 @@ pub async fn start_full(cfg: Config, listener: TcpListener, voice: Arc<Voice>, u
         .route("/upload", post(upload).layer(DefaultBodyLimit::max(MAX_UPLOAD_BYTES + 1024)))
         .route("/file/{id}", get(file_get))
         .route("/exam/{id}", get(exam_get))
+        .route("/voice/{file}", get(voice_preview_get))
         .route("/ws", get(ws_upgrade))
         .route("/mcp", post(mcp_general_post).get(mcp_get).delete(mcp_delete))
         .route("/mcp/{sid}", post(mcp_post).get(mcp_get).delete(mcp_delete))
@@ -299,6 +303,27 @@ async fn file_get(State(st): State<Arc<AppState>>, Path(id): Path<String>, Query
     match st.deps.uploads.read(&id) {
         Some((m, data)) => ([(header::CONTENT_TYPE, m.mime), (header::CACHE_CONTROL, "private, max-age=86400".to_string())], data).into_response(),
         None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// `GET /voice/<id>.mp3`: the stored preview clip of a catalogue voice (no credits spent).
+async fn voice_preview_get(State(st): State<Arc<AppState>>, Path(file): Path<String>, Query(q): Query<UploadQuery>, headers: HeaderMap) -> Response {
+    let token = q.token.unwrap_or_else(|| bearer(&headers));
+    if !st.deps.store.check_token(&token) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let Some(path) = file.strip_suffix(".mp3").and_then(|id| st.deps.voices.clip_path(id)) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    match tokio::fs::read(&path).await {
+        Ok(data) => ([(header::CONTENT_TYPE, "audio/mpeg"), (header::CACHE_CONTROL, "private, max-age=86400")], data).into_response(),
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+impl AppState {
+    fn voices_frame(&self) -> Value {
+        self.deps.voices.frame(self.deps.voice.active_tts_provider())
     }
 }
 
@@ -462,6 +487,11 @@ async fn handle_socket(st: Arc<AppState>, socket: WebSocket) {
     let mut audio: Option<AudioBuf> = None;
     // Language for server-side STT; follows the phone's settings.
     let mut lang = hello["settings"]["lang"].as_str().filter(|l| *l == "en").unwrap_or("vi").to_string();
+    if let Some(id) = hello["settings"]["voice"].as_str() {
+        if id != st.deps.voices.current() {
+            st.deps.voices.select(id);
+        }
+    }
     while let Some(Ok(msg)) = stream.next().await {
         match msg {
             Message::Binary(b) => {
@@ -473,13 +503,21 @@ async fn handle_socket(st: Arc<AppState>, socket: WebSocket) {
             }
             Message::Text(t) => {
                 let Ok(v) = serde_json::from_str::<Value>(t.as_str()) else { continue };
-                match v["t"].as_str().unwrap_or("") {
+                // `t` is the protocol's tag; `type` is accepted too for the voice messages.
+                match v["t"].as_str().or(v["type"].as_str()).unwrap_or("") {
                     "settings" => {
                         if let Some(l) = v["lang"].as_str().filter(|l| *l == "vi" || *l == "en") {
                             lang = l.to_string();
                         }
+                        // The voice is global (all sessions), so it is handled here, not per session.
+                        let picked = v["voice"].as_str().map(String::from);
                         let _ = session.send(Cmd::Settings(v));
+                        if let Some(id) = picked {
+                            st.deps.voices.select(&id);
+                            reply(st.voices_frame());
+                        }
                     }
+                    "get_voices" => reply(st.voices_frame()),
                     "user_text" => {
                         let files: Vec<String> = v["files"].as_array().into_iter().flatten().filter_map(|f| f.as_str().map(String::from)).collect();
                         if let Some(t) = v["text"].as_str() {

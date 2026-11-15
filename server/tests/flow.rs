@@ -54,6 +54,8 @@ async fn harness_with(voice: Arc<Voice>, delay_ms: u64, capture_ms: u64) -> Harn
         secrets: Default::default(),
         compact_tokens: 120_000,
         util_in_mock: false,
+        voices_path: std::path::PathBuf::from("no-voices.json"),
+        voice_clips_dir: std::path::PathBuf::from("no-voices"),
     };
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();

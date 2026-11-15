@@ -47,6 +47,8 @@ async fn real_claude_turn_with_capture_photo_tool() {
         secrets: Default::default(),
         compact_tokens: 120_000,
         util_in_mock: false,
+        voices_path: std::path::PathBuf::from("no-voices.json"),
+        voice_clips_dir: std::path::PathBuf::from("no-voices"),
     };
     tokio::spawn(async move {
         let _ = start_with(cfg, listener, Voice::none()).await;
@@ -119,6 +121,8 @@ async fn real_server(data: &std::path::Path) -> std::net::SocketAddr {
         secrets: Default::default(),
         compact_tokens: 120_000,
         util_in_mock: false,
+        voices_path: std::path::PathBuf::from("no-voices.json"),
+        voice_clips_dir: std::path::PathBuf::from("no-voices"),
     };
     tokio::spawn(async move {
         let _ = start_with(cfg, listener, Voice::none()).await;

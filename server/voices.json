@@ -1,0 +1,21 @@
+{
+  "sample": "Chào cậu! Hôm nay tớ với cậu cùng ôn phương trình bậc hai nhé. Đầu tiên, mình tính delta.",
+  "voices": [
+    {"id": "5yEPTrA0uAhZsBEhHjfi", "name": "Chi", "gender": "female", "accent": "north",
+     "desc": "Nữ trẻ miền Bắc, ấm, tự nhiên như đang trò chuyện."},
+    {"id": "0ggMuQ1r9f9jqBu50nJn", "name": "Thắm", "gender": "female", "accent": "north",
+     "desc": "Nữ trẻ miền Bắc, nhẹ nhàng, gần gũi."},
+    {"id": "qByVAGjXwGlkcRDJoiHg", "name": "Kiều Linh", "gender": "female", "accent": "south",
+     "desc": "Nữ trẻ Sài Gòn, rõ ràng, tự tin."},
+    {"id": "8PEPqUGgvwN1Fk9KR8jV", "name": "An Nhiên", "gender": "female", "accent": "south",
+     "desc": "Nữ trẻ miền Nam, tươi sáng, vui vẻ."},
+    {"id": "K7ewtjKRNtwwt3lKQ6M0", "name": "Tony Hoàng", "gender": "male", "accent": "north",
+     "desc": "Nam trẻ miền Bắc, giọng giảng bài rõ ràng."},
+    {"id": "RxhjHDfpO54FYotYtKpw", "name": "Phong", "gender": "male", "accent": "north",
+     "desc": "Nam trẻ miền Bắc, ấm, truyền cảm."},
+    {"id": "M0rVwr32hdQ5UXpkI3ni", "name": "Hào", "gender": "male", "accent": "south",
+     "desc": "Nam trẻ miền Nam, ấm, thân thiện, nhịp vừa."},
+    {"id": "JxmKvRaNYFidf0N27Vng", "name": "Sơn", "gender": "male", "accent": "central",
+     "desc": "Nam trẻ miền Trung, nói chuyện thoải mái."}
+  ]
+}

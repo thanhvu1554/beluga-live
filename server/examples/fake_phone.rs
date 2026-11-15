@@ -66,10 +66,65 @@ struct TurnStats {
     audio_bytes: usize,
 }
 
+/// `--voices [--pick <id>]`: no lesson and no credits. Pairs, asks `get_voices`, optionally picks a
+/// voice, then downloads the current voice's preview over HTTP and prints what it got.
+async fn voices_check(addr: &str, code: &str, pick: Option<String>) {
+    let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws")).await.expect("connect");
+    let send = |v: Value| Message::Text(v.to_string().into());
+    ws.send(send(json!({"t":"hello","v":2,"pairCode":code,"device":"fake-phone","settings":{"lang":"vi","model":"sonnet","rigor":"medium"}})))
+        .await
+        .unwrap();
+    async fn next<S: futures_util::Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin>(ws: &mut S, t: &str) -> Value {
+        loop {
+            match tokio::time::timeout(Duration::from_secs(10), ws.next()).await {
+                Ok(Some(Ok(Message::Text(x)))) => {
+                    let v: Value = serde_json::from_str(x.as_str()).unwrap();
+                    if v["t"] == t {
+                        return v;
+                    }
+                    if v["t"] == "error" {
+                        panic!("server error: {v}");
+                    }
+                }
+                Ok(Some(Ok(_))) => continue,
+                other => panic!("no {t} frame: {other:?}"),
+            }
+        }
+    }
+    let ready = next(&mut ws, "ready").await;
+    let token = ready["pairToken"].as_str().expect("pairToken (use the pairing code)").to_string();
+    println!("ready: tts={} audioWaitMs={}", ready["tts"], ready["audioWaitMs"]);
+    let t0 = Instant::now();
+    ws.send(send(json!({"t":"get_voices"}))).await.unwrap();
+    let mut voices = next(&mut ws, "voices").await;
+    println!("voices ({} ms): {}", t0.elapsed().as_millis(), serde_json::to_string_pretty(&voices).unwrap());
+    if let Some(id) = pick {
+        ws.send(send(json!({"t":"settings","lang":"vi","model":"sonnet","rigor":"medium","voice":id}))).await.unwrap();
+        voices = next(&mut ws, "voices").await;
+        println!("after settings.voice={id}: current={}", voices["current"]);
+    }
+    let id = voices["current"].as_str().unwrap_or("").to_string();
+    let t1 = Instant::now();
+    let r = reqwest::Client::new().get(format!("http://{addr}/voice/{id}.mp3")).bearer_auth(&token).send().await.expect("GET preview");
+    let (status, h) = (r.status(), r.headers().clone());
+    let body = r.bytes().await.unwrap_or_default();
+    let info = mp3_info(&body).map(|(br, s)| format!("{br} kbps, {s:.2} s")).unwrap_or_else(|| "not mp3".into());
+    println!(
+        "GET /voice/{id}.mp3 -> {status} {:?} cache={:?} {} byte ({info}) in {} ms",
+        h.get("content-type"),
+        h.get("cache-control"),
+        body.len(),
+        t1.elapsed().as_millis()
+    );
+}
+
 #[tokio::main]
 async fn main() {
     let addr = arg("--addr", "127.0.0.1:8787");
     let code = arg("--code", "");
+    if std::env::args().any(|a| a == "--voices") {
+        return voices_check(&addr, &code, std::env::args().position(|a| a == "--pick").map(|_| arg("--pick", ""))).await;
+    }
     let jpeg = std::fs::read(arg("--jpeg", "problem.jpg")).expect("--jpeg");
     // Other scenarios: `--wait-offer` lets the server speak first (review offer) and only then
     // sends `--first`; `--second` is the second student line.

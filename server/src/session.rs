@@ -113,6 +113,8 @@ pub struct Deps {
     pub folders: Arc<Folders>,
     /// Exam matrix engine (ingest, knowledge, exams).
     pub study: crate::study::StudyService,
+    /// The tutor's voice choice (global for every session) and the preview clips.
+    pub voices: Arc<crate::voices::VoiceCatalog>,
 }
 
 impl Deps {
@@ -981,6 +983,8 @@ impl Session {
         let voice = self.deps.voice.clone();
         let tx = self.self_tx.clone();
         let lang = self.settings.lang.clone();
+        // Read the choice when the sentence starts: a new pick applies from the next `say` on.
+        let voice_id = self.deps.voices.current();
         let wait = voice.tts_deadline(&text);
         let handle = tokio::spawn(async move {
             let Some(tts) = voice.tts.clone() else {
@@ -995,11 +999,11 @@ impl Session {
             // A dropped connection is common when several sentences start at once: retry it
             // once inside the same deadline before giving the sentence up.
             let attempt = async {
-                match tts.synth(&text, &lang).await {
+                match tts.synth_voice(&text, &lang, Some(&voice_id)).await {
                     Err(e) if e.status == 0 => {
                         tracing::info!("tts retry for seq {seq}: {}", e.message);
                         tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-                        tts.synth(&text, &lang).await
+                        tts.synth_voice(&text, &lang, Some(&voice_id)).await
                     }
                     other => other,
                 }

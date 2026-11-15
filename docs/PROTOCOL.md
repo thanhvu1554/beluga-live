@@ -379,6 +379,24 @@ Khi trang vẽ xong toàn bộ công thức nó đặt `document.documentElement
 (ví dụ "Có 2 mục Toán tới hạn ôn"), tùy chọn, server tự tính từ memory. `doodle` ∈ `cat_walk|cat_sleep|whale_swim|bird_hop|snail|paper_plane`
 (app vẽ nét SVG chuyển động; tên lạ thì dùng `cat_walk`). Model tiện ích viết, cache 3 giờ; app có sẵn danh sách dự phòng.
 
+## 16. Giọng gia sư
+
+Chọn giọng đọc của gia sư trong Cài đặt và nghe thử từng giọng. Nghe thử phát clip đã lưu sẵn, không tốn credit.
+
+- `get_voices` → `voices{items:[{id, name, gender:"female"|"male", accent:"north"|"central"|"south"|"", desc, preview:boolean}], current, provider:"genvoice"|"elevenlabs"|"device"}`.
+  `desc`: một dòng tiếng Việt. `preview:true` chỉ khi clip có trên server. `current`: giọng đang dùng (chưa chọn thì là giọng
+  trong `.env`, mặc định "Chi" `5yEPTrA0uAhZsBEhHjfi`). `provider:"device"` (server không tạo tiếng, kể cả khi GenVoice lỗi
+  hoặc hết credit giữa chừng) thì `items` rỗng.
+- `settings{..., voice?:<id>}`: chọn giọng. Áp dụng cho mọi câu `say` từ lúc đó, ở mọi phiên (một chủ nhà), lưu ở
+  `server/data/voice.json` nên còn sau khi khởi động lại. Server trả ngay một `voices` mới. Id không có trong danh mục: bỏ qua
+  (log cảnh báo), `voices` trả về vẫn là giọng cũ. `hello.settings.voice` cũng được áp dụng (không kèm `voices`).
+- `GET /voice/<id>.mp3` · header `Authorization: Bearer <pairToken>` (hoặc `?token=`, như `/file`) → clip nghe thử,
+  `audio/mpeg`, `Cache-Control: private, max-age=86400`. Sai token: 401. Id lạ hoặc chưa có clip: 404.
+- Khung `voices` có thêm `type:"voices"` (trùng `t`); server cũng nhận `{"type":"get_voices"}`. Tên chuẩn vẫn là `t`.
+- Danh mục: `server/voices.json` (`{sample, voices:[{id,name,gender,accent,desc}]}`; thiếu hoặc hỏng thì chỉ có "Chi"). Clip:
+  `server/voices/<id>.mp3`, tạo một lần bằng `beluga-server gen-voice-previews` (chỉ tạo clip còn thiếu, đọc câu `sample` bằng
+  `eleven_flash_v2_5`; xóa một file để tạo lại).
+
 ## Ghi chú triển khai server (v2)
 
 - Thông báo mới: `notice{code}` = `no_vision` (model không đọc ảnh, tệp bị bỏ), `bad_file` (fileId lạ), `compacted`.

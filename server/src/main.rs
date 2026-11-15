@@ -12,6 +12,9 @@ async fn main() {
         .init();
     let args: Vec<String> = std::env::args().skip(1).collect();
     let cfg = Config::from_args(&args);
+    if args.first().map(String::as_str) == Some("gen-voice-previews") {
+        std::process::exit(gen_voice_previews(&cfg).await);
+    }
 
     let listener = match TcpListener::bind(("0.0.0.0", cfg.port)).await {
         Ok(l) => l,
@@ -38,6 +41,52 @@ async fn main() {
         eprintln!("Server dừng: {e}");
         std::process::exit(1);
     }
+}
+
+/// `beluga-server gen-voice-previews`: create `server/voices/<id>.mp3` for every voice in
+/// `server/voices.json` that has no clip yet (one synthesis each; existing clips are kept, so
+/// delete a file to regenerate it). Spends voice credits.
+async fn gen_voice_previews(cfg: &Config) -> i32 {
+    use beluga_server::voice::{ElevenLabs, GenVoice, Tts};
+    use beluga_server::voices::VoiceCatalog;
+    let gv = cfg.genvoice.clone().map(GenVoice::new);
+    let tts: Box<dyn Tts> = match (&gv, &cfg.eleven) {
+        (Some(_), _) => Box::new(GenVoice::new(cfg.genvoice.clone().unwrap())),
+        (None, Some(e)) => Box::new(ElevenLabs::new(e.clone())),
+        _ => {
+            eprintln!("Cần GENVOICE_API_KEY (hoặc ELEVENLABS_API_KEY + ELEVENLABS_VOICE_ID) trong server/.env.");
+            return 2;
+        }
+    };
+    let cat = VoiceCatalog::load(&cfg.voices_path, &cfg.voice_clips_dir, &cfg.data_dir, "");
+    let missing: Vec<_> = cat.entries().iter().filter(|e| !cat.has_clip(&e.id)).map(|e| e.name.clone()).collect();
+    println!("Danh mục: {} ({} giọng), thư mục clip: {}", cfg.voices_path.display(), cat.entries().len(), cfg.voice_clips_dir.display());
+    if missing.is_empty() {
+        println!("Mọi giọng đã có clip, không tạo gì.");
+        return 0;
+    }
+    println!("Sẽ tạo {} clip: {}", missing.len(), missing.join(", "));
+    println!("Câu mẫu ({} ký tự): {}", cat.sample().chars().count(), cat.sample());
+    if let Some(g) = &gv {
+        match g.credit_balance().await {
+            Ok(c) => println!("Credit trước: {c}"),
+            Err(e) => println!("Không đọc được credit: {}", e.message),
+        }
+    }
+    let (made, failed) = cat.generate_missing(tts.as_ref(), "vi").await;
+    for id in &made {
+        let size = std::fs::metadata(cfg.voice_clips_dir.join(format!("{id}.mp3"))).map(|m| m.len()).unwrap_or(0);
+        println!("  ok   {id} ({size} byte)");
+    }
+    for (id, why) in &failed {
+        println!("  lỗi  {id}: {why}");
+    }
+    if let Some(g) = &gv {
+        if let Ok(c) = g.credit_balance().await {
+            println!("Credit sau: {c}");
+        }
+    }
+    if failed.is_empty() { 0 } else { 1 }
 }
 
 /// Fail early (with a clear message) if the CLI is missing; login problems surface per turn.

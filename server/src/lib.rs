@@ -17,6 +17,7 @@ pub mod uploads;
 pub mod usage;
 pub mod util_llm;
 pub mod voice;
+pub mod voices;
 
 pub use config::Config;
 pub use http::{start, AppState};

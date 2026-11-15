@@ -201,6 +201,9 @@ struct Opts {
     tts_base_ms: u64,
     tts_per_char_ms: u64,
     stt_base_ms: u64,
+    /// Reuse a data/catalogue dir (restart tests); a fresh temp dir otherwise.
+    dir: Option<std::path::PathBuf>,
+    tts_provider: &'static str,
 }
 
 impl Default for Opts {
@@ -215,6 +218,8 @@ impl Default for Opts {
             tts_base_ms: 8000,
             tts_per_char_ms: 60,
             stt_base_ms: 8000,
+            dir: None,
+            tts_provider: "auto",
         }
     }
 }
@@ -222,6 +227,7 @@ impl Default for Opts {
 struct Env {
     addr: SocketAddr,
     mock: Shared,
+    dir: std::path::PathBuf,
 }
 
 async fn env(o: Opts) -> Env {
@@ -234,7 +240,7 @@ async fn env(o: Opts) -> Env {
         ..Default::default()
     }));
     let mock_addr = start_mock(mock.clone()).await;
-    let dir = temp_dir();
+    let dir = o.dir.clone().unwrap_or_else(temp_dir);
     std::fs::create_dir_all(dir.join("board")).unwrap();
     let cfg = Config {
         port: 0,
@@ -256,7 +262,7 @@ async fn env(o: Opts) -> Env {
             poll_ms: 15,
             audio_wait_ms: 20_000,
         }),
-        tts_provider: "auto".into(),
+        tts_provider: o.tts_provider.into(),
         stt_provider: "auto".into(),
         tts_base_ms: o.tts_base_ms,
         tts_per_char_ms: o.tts_per_char_ms,
@@ -267,13 +273,15 @@ async fn env(o: Opts) -> Env {
         secrets: Default::default(),
         compact_tokens: 120_000,
         util_in_mock: false,
+        voices_path: dir.join("voices.json"),
+        voice_clips_dir: dir.join("voices"),
     };
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {
         let _ = beluga_server::start(cfg, listener).await;
     });
-    Env { addr, mock }
+    Env { addr, mock, dir }
 }
 
 fn says(f: &[Value]) -> Vec<&Value> {
@@ -606,4 +614,164 @@ async fn stt_empty_failed_and_timeout_never_reach_the_tutor() {
 
     let rest = p.drain_quiet(300).await;
     assert!(rest.iter().all(|x| x["t"] != "say" && x["t"] != "state"), "no turn was started: {rest:?}");
+}
+
+// ------------------------------------------------------------------ voice picker
+
+const CHI: &str = "5yEPTrA0uAhZsBEhHjfi";
+
+/// A catalogue of three voices in a fresh dir; only Chi and "bbb" have a preview clip.
+fn voice_dir() -> std::path::PathBuf {
+    let d = temp_dir();
+    std::fs::write(
+        d.join("voices.json"),
+        json!({"sample": "Chào cậu.", "voices": [
+            {"id": CHI, "name": "Chi", "gender": "female", "accent": "north", "desc": "Nữ miền Bắc."},
+            {"id": "bbb", "name": "Bình", "gender": "male", "accent": "south", "desc": "Nam miền Nam."},
+            {"id": "ccc", "name": "Chưa có clip", "gender": "male", "accent": "", "desc": "Không có clip."}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    std::fs::create_dir_all(d.join("voices")).unwrap();
+    std::fs::write(d.join("voices").join(format!("{CHI}.mp3")), b"ID3-chi-clip").unwrap();
+    std::fs::write(d.join("voices").join("bbb.mp3"), b"ID3-bbb-clip").unwrap();
+    d
+}
+
+async fn voices_of(p: &mut Phone) -> Value {
+    p.until(|f| f["t"] == "voices").await.pop().unwrap()
+}
+
+async fn one_turn(p: &mut Phone) {
+    p.send(json!({"t":"user_text","text":"hi"})).await;
+    p.until(is_turn_end).await;
+    p.drain_quiet(300).await;
+}
+
+#[tokio::test]
+async fn get_voices_lists_the_catalogue() {
+    let e = env(Opts { dir: Some(voice_dir()), ..Default::default() }).await;
+    let mut p = Phone::connect(e.addr).await;
+    p.hello(json!({})).await;
+    p.send(json!({"t":"get_voices"})).await;
+    let v = voices_of(&mut p).await;
+    assert_eq!(v["provider"], "genvoice");
+    assert_eq!(v["current"], CHI, "the .env voice is the default");
+    let items = v["items"].as_array().unwrap();
+    assert_eq!(items.len(), 3);
+    assert_eq!(items[0], json!({"id": CHI, "name": "Chi", "gender": "female", "accent": "north", "desc": "Nữ miền Bắc.", "preview": true}));
+    assert_eq!(items[1]["preview"], true);
+    assert_eq!(items[2]["preview"], false, "no clip file");
+    assert_eq!(items[2]["accent"], "");
+    // The `type` spelling is accepted too.
+    p.send(json!({"type":"get_voices"})).await;
+    assert_eq!(voices_of(&mut p).await["items"].as_array().unwrap().len(), 3);
+}
+
+#[tokio::test]
+async fn chosen_voice_is_used_for_the_next_sentences_and_survives_a_restart() {
+    let dir = voice_dir();
+    let e = env(Opts { dir: Some(dir.clone()), ..Default::default() }).await;
+    let mut p = Phone::connect(e.addr).await;
+    let ready = p.hello(json!({})).await;
+    let token = ready["pairToken"].as_str().unwrap().to_string();
+    one_turn(&mut p).await;
+    {
+        let g = e.mock.lock().unwrap();
+        assert!(!g.reqs.is_empty());
+        assert!(g.reqs.iter().all(|r| r.voice == CHI), "default voice before a choice");
+    }
+
+    p.send(json!({"t":"settings","lang":"vi","model":"sonnet","rigor":"medium","voice":"bbb"})).await;
+    let v = voices_of(&mut p).await;
+    assert_eq!(v["current"], "bbb");
+    let before = e.mock.lock().unwrap().reqs.len();
+    one_turn(&mut p).await;
+    {
+        let g = e.mock.lock().unwrap();
+        assert!(g.reqs.len() > before);
+        assert!(g.reqs[before..].iter().all(|r| r.voice == "bbb"), "{:?}", g.reqs);
+    }
+    let saved: Value = serde_json::from_str(&std::fs::read_to_string(e.dir.join("data").join("voice.json")).unwrap()).unwrap();
+    assert_eq!(saved["voice"], "bbb");
+
+    // Another session on the same server uses the same choice.
+    p.send(json!({"t":"new_session"})).await;
+    p.until(|f| f["t"] == "ready").await;
+    let before = e.mock.lock().unwrap().reqs.len();
+    one_turn(&mut p).await;
+    assert!(e.mock.lock().unwrap().reqs[before..].iter().all(|r| r.voice == "bbb"));
+
+    // Restart: a second server on the same data dir remembers the choice.
+    let e2 = env(Opts { dir: Some(dir), ..Default::default() }).await;
+    let mut p2 = Phone::connect(e2.addr).await;
+    p2.hello(json!({"pairToken": token})).await;
+    p2.send(json!({"t":"get_voices"})).await;
+    assert_eq!(voices_of(&mut p2).await["current"], "bbb");
+    one_turn(&mut p2).await;
+    let g = e2.mock.lock().unwrap();
+    assert!(!g.reqs.is_empty());
+    assert!(g.reqs.iter().all(|r| r.voice == "bbb"));
+}
+
+#[tokio::test]
+async fn unknown_voice_is_ignored() {
+    let e = env(Opts { dir: Some(voice_dir()), ..Default::default() }).await;
+    let mut p = Phone::connect(e.addr).await;
+    p.hello(json!({})).await;
+    p.send(json!({"t":"settings","voice":"no-such-voice"})).await;
+    let v = voices_of(&mut p).await;
+    assert_eq!(v["current"], CHI);
+    assert!(!e.dir.join("data").join("voice.json").exists());
+    one_turn(&mut p).await;
+    assert!(e.mock.lock().unwrap().reqs.iter().all(|r| r.voice == CHI));
+}
+
+#[tokio::test]
+async fn preview_route_needs_the_pair_token() {
+    let e = env(Opts { dir: Some(voice_dir()), ..Default::default() }).await;
+    let mut p = Phone::connect(e.addr).await;
+    let token = p.hello(json!({})).await["pairToken"].as_str().unwrap().to_string();
+    let c = reqwest::Client::new();
+    let url = |id: &str| format!("http://{}/voice/{id}.mp3", e.addr);
+
+    assert_eq!(c.get(url(CHI)).send().await.unwrap().status(), 401);
+    assert_eq!(c.get(url(CHI)).bearer_auth("wrong").send().await.unwrap().status(), 401);
+    let r = c.get(url(CHI)).bearer_auth(&token).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    assert_eq!(r.headers()["content-type"], "audio/mpeg");
+    assert!(r.headers()["cache-control"].to_str().unwrap().contains("max-age"));
+    assert_eq!(&r.bytes().await.unwrap()[..], b"ID3-chi-clip");
+    let r = c.get(url("bbb")).bearer_auth(&token).send().await.unwrap();
+    assert_eq!(&r.bytes().await.unwrap()[..], b"ID3-bbb-clip");
+    assert_eq!(c.get(url("ccc")).bearer_auth(&token).send().await.unwrap().status(), 404, "clip missing");
+    assert_eq!(c.get(url("zzz")).bearer_auth(&token).send().await.unwrap().status(), 404, "not in the catalogue");
+    assert_eq!(c.get(format!("http://{}/voice/{CHI}", e.addr)).bearer_auth(&token).send().await.unwrap().status(), 404);
+    assert_eq!(c.get(format!("http://{}/voice/..%2Fvoices.json.mp3", e.addr)).bearer_auth(&token).send().await.unwrap().status(), 404);
+    assert_eq!(e.mock.lock().unwrap().reqs.len(), 0, "previews never synthesize");
+}
+
+#[tokio::test]
+async fn device_voice_lists_nothing() {
+    let e = env(Opts { dir: Some(voice_dir()), tts_provider: "device", ..Default::default() }).await;
+    let mut p = Phone::connect(e.addr).await;
+    p.hello(json!({})).await;
+    p.send(json!({"t":"get_voices"})).await;
+    let v = voices_of(&mut p).await;
+    assert_eq!(v["provider"], "device");
+    assert_eq!(v["items"], json!([]));
+}
+
+#[tokio::test]
+async fn missing_catalogue_falls_back_to_chi() {
+    let e = env(Opts::default()).await;
+    let mut p = Phone::connect(e.addr).await;
+    p.hello(json!({})).await;
+    p.send(json!({"t":"get_voices"})).await;
+    let v = voices_of(&mut p).await;
+    let items = v["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["id"], CHI);
+    assert_eq!(items[0]["preview"], false);
 }

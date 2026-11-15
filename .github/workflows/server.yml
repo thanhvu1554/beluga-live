@@ -39,6 +39,7 @@ jobs:
           mkdir -p pkg/server
           cp server/target/release/beluga-server pkg/server/
           cp server/models.example.json server/.env.example pkg/server/
+          cp -r server/voices.json server/voices pkg/server/
           cp -r shared tutor pkg/
           tar -C pkg -czf beluga-linux.tar.gz .
       - uses: actions/upload-artifact@v4

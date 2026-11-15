@@ -37,8 +37,13 @@ cd C:\Users\Beluga\Desktop\Liveapp
   bằng giọng "Chi" và nghe bằng GenVoice. Mỗi ký tự đọc tốn 0,5 credit.
 - Hết credit hoặc GenVoice lỗi: iPhone tự nghe và tự đọc bằng giọng hệ thống. Nên vào Cài đặt iOS →
   Trợ năng → Nội dung được đọc → Giọng nói → Tiếng Việt, tải một giọng chất lượng cao.
-- Đổi giọng: sửa `GENVOICE_VOICE_ID` trong `server/.env`. Ép dùng giọng iOS: `TTS_PROVIDER=device`,
-  `STT_PROVIDER=device`.
+- Đổi giọng: trong app, Cài đặt → Giọng gia sư, bấm nghe thử rồi chọn (8 giọng nam/nữ, Bắc/Trung/Nam).
+  Nghe thử phát clip có sẵn, không tốn credit. Giọng đã chọn được server nhớ, dùng cho mọi phiên.
+  `GENVOICE_VOICE_ID` trong `server/.env` chỉ là giọng mặc định khi chưa chọn.
+- Thêm giọng: thêm một dòng vào `server/voices.json` (id lấy từ thư viện giọng của GenVoice), rồi chạy
+  `beluga-server gen-voice-previews` (tạo clip còn thiếu trong `server/voices/`, mỗi giọng khoảng 45 credit),
+  khởi động lại server.
+- Ép dùng giọng iOS: `TTS_PROVIDER=device`, `STT_PROVIDER=device`.
 
 ## 4b. Điều khiển iPhone từ Claude Code trên PC (tùy chọn)
 

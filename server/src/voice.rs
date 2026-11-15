@@ -61,6 +61,13 @@ pub trait Tts: Send + Sync {
     /// Returns mp3 bytes.
     fn synth<'a>(&'a self, text: &'a str, lang: &'a str) -> BoxFuture<'a, Result<Vec<u8>, VoiceError>>;
 
+    /// Like [`Tts::synth`] with another voice than the configured one (`None` = configured).
+    /// Providers without voices ignore it.
+    fn synth_voice<'a>(&'a self, text: &'a str, lang: &'a str, voice: Option<&'a str>) -> BoxFuture<'a, Result<Vec<u8>, VoiceError>> {
+        let _ = voice;
+        self.synth(text, lang)
+    }
+
     /// Startup check. Default: synthesize a short phrase. GenVoice overrides it with a free call.
     fn probe<'a>(&'a self) -> BoxFuture<'a, Result<(), VoiceError>> {
         Box::pin(async move { self.synth("Xin chào.", "vi").await.map(|_| ()) })
@@ -110,6 +117,22 @@ impl GenVoice {
     fn poll(&self) -> Duration {
         Duration::from_millis(self.cfg.poll_ms.max(10))
     }
+
+    /// `credit_balance` from `GET /v1/auth/me` (free); -1 when the field is missing.
+    pub async fn credit_balance(&self) -> Result<f64, VoiceError> {
+        let resp = self
+            .client
+            .get(self.url("/v1/auth/me"))
+            .header("xi-api-key", &self.cfg.api_key)
+            .send()
+            .await
+            .map_err(net_err)?;
+        if !resp.status().is_success() {
+            return Err(http_err(resp, "auth/me").await);
+        }
+        let v: Value = resp.json().await.map_err(net_err)?;
+        Ok(v["credit_balance"].as_f64().unwrap_or(-1.0))
+    }
 }
 
 fn id_string(v: &Value) -> Option<String> {
@@ -122,12 +145,17 @@ fn id_string(v: &Value) -> Option<String> {
 
 impl Tts for GenVoice {
     fn synth<'a>(&'a self, text: &'a str, lang: &'a str) -> BoxFuture<'a, Result<Vec<u8>, VoiceError>> {
+        self.synth_voice(text, lang, None)
+    }
+
+    fn synth_voice<'a>(&'a self, text: &'a str, lang: &'a str, voice: Option<&'a str>) -> BoxFuture<'a, Result<Vec<u8>, VoiceError>> {
         Box::pin(async move {
             let key = &self.cfg.api_key;
+            let voice = voice.unwrap_or(&self.cfg.voice_id);
             // 1. submit (202 + id)
             let resp = self
                 .client
-                .post(self.url(&format!("/v1/text-to-speech/{}", self.cfg.voice_id)))
+                .post(self.url(&format!("/v1/text-to-speech/{voice}")))
                 .header("xi-api-key", key)
                 .json(&json!({"text": text, "model_id": self.cfg.tts_model, "language_code": lang}))
                 .send()
@@ -186,18 +214,7 @@ impl Tts for GenVoice {
     /// `GET /v1/auth/me` costs no credits; logs the balance.
     fn probe<'a>(&'a self) -> BoxFuture<'a, Result<(), VoiceError>> {
         Box::pin(async move {
-            let resp = self
-                .client
-                .get(self.url("/v1/auth/me"))
-                .header("xi-api-key", &self.cfg.api_key)
-                .send()
-                .await
-                .map_err(net_err)?;
-            if !resp.status().is_success() {
-                return Err(http_err(resp, "auth/me").await);
-            }
-            let v: Value = resp.json().await.map_err(net_err)?;
-            let credits = v["credit_balance"].as_f64().unwrap_or(-1.0);
+            let credits = self.credit_balance().await?;
             if (0.0..2000.0).contains(&credits) {
                 tracing::warn!("genvoice credit_balance is low: {credits}");
             } else {
@@ -287,11 +304,13 @@ impl ElevenLabs {
 
 impl Tts for ElevenLabs {
     fn synth<'a>(&'a self, text: &'a str, lang: &'a str) -> BoxFuture<'a, Result<Vec<u8>, VoiceError>> {
+        self.synth_voice(text, lang, None)
+    }
+
+    fn synth_voice<'a>(&'a self, text: &'a str, lang: &'a str, voice: Option<&'a str>) -> BoxFuture<'a, Result<Vec<u8>, VoiceError>> {
         Box::pin(async move {
-            let url = format!(
-                "https://api.elevenlabs.io/v1/text-to-speech/{}?output_format=mp3_44100_64",
-                self.cfg.voice_id
-            );
+            let voice = voice.unwrap_or(&self.cfg.voice_id);
+            let url = format!("https://api.elevenlabs.io/v1/text-to-speech/{voice}?output_format=mp3_44100_64");
             let mut body = json!({"text": text, "model_id": self.cfg.tts_model});
             if self.cfg.tts_model.contains("v2_5") {
                 body["language_code"] = Value::String(lang.to_string());
@@ -441,6 +460,8 @@ pub struct Voice {
     pub tts_wait_ms: u64,
     pub tts_provider: &'static str,
     pub stt_provider: &'static str,
+    /// Voice id from `.env` for the active provider (default until the owner picks one).
+    pub default_voice_id: String,
     tts_base_ms: u64,
     tts_per_char_ms: u64,
     stt_base_ms: u64,
@@ -464,8 +485,9 @@ impl Voice {
             tts,
             stt,
             tts_wait_ms,
-            tts_provider: "custom",
+            tts_provider: if on { "custom" } else { "device" },
             stt_provider: "custom",
+            default_voice_id: crate::voices::DEFAULT_VOICE_ID.into(),
             tts_base_ms: DEFAULT_TTS_BASE_MS,
             tts_per_char_ms: DEFAULT_TTS_PER_CHAR_MS,
             stt_base_ms: DEFAULT_STT_BASE_MS,
@@ -499,6 +521,11 @@ impl Voice {
         };
         let mut v = Voice::build(tts, stt, wait);
         v.tts_provider = name;
+        v.default_voice_id = match tts_p {
+            Provider::Eleven => cfg.eleven.as_ref().map(|c| c.voice_id.clone()),
+            _ => cfg.genvoice.as_ref().map(|c| c.voice_id.clone()),
+        }
+        .unwrap_or_else(|| crate::voices::DEFAULT_VOICE_ID.into());
         v.stt_provider = match stt_p {
             Provider::GenVoice => "genvoice",
             Provider::Eleven => "elevenlabs",
@@ -528,6 +555,17 @@ impl Voice {
 
     pub fn tts_enabled(&self) -> bool {
         self.tts_on.load(Ordering::Relaxed)
+    }
+
+    /// Provider named in the `voices` frame: `device` once server-side speech is off.
+    pub fn active_tts_provider(&self) -> &'static str {
+        if !self.tts_enabled() {
+            "device"
+        } else if self.tts_provider == "elevenlabs" {
+            "elevenlabs"
+        } else {
+            "genvoice"
+        }
     }
 
     pub fn stt_enabled(&self) -> bool {

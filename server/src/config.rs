@@ -62,6 +62,10 @@ pub struct Config {
     pub compact_tokens: u64,
     /// Use the utility model (DeepSeek/OpenRouter) even in `--mock` (`BELUGA_UTIL_IN_MOCK=1`).
     pub util_in_mock: bool,
+    /// `server/voices.json`: the voices the owner can pick (built-in "Chi" only when missing).
+    pub voices_path: PathBuf,
+    /// `server/voices/`: one stored preview clip per voice, `<id>.mp3`.
+    pub voice_clips_dir: PathBuf,
 }
 
 /// Minimal `.env` parser. Values are never printed.
@@ -208,6 +212,8 @@ impl Config {
             secrets,
             compact_tokens: get("BELUGA_COMPACT_TOKENS").and_then(|v| v.parse().ok()).unwrap_or(120_000),
             util_in_mock: get("BELUGA_UTIL_IN_MOCK").is_some(),
+            voices_path: server_dir.join("voices.json"),
+            voice_clips_dir: server_dir.join("voices"),
         }
     }
 
@@ -242,6 +248,8 @@ impl Config {
             secrets: HashMap::new(),
             compact_tokens: 120_000,
             util_in_mock: false,
+            voices_path: dir.join("voices.json"),
+            voice_clips_dir: dir.join("voices"),
         }
     }
 
