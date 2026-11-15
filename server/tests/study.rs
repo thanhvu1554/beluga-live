@@ -485,3 +485,13 @@ async fn real_exam_only() {
     std::fs::write(out.join(format!("{id}.html")), svc.exam_html(id).unwrap()).unwrap();
     println!("usage: {}", svc.usage_summary());
 }
+
+#[test]
+fn sample_fixture_is_valid_knowledge() {
+    let k: Value = serde_json::from_str(include_str!("fixtures/knowledge.sample.json")).unwrap();
+    assert!(validate_knowledge(&k).is_empty(), "{:?}", validate_knowledge(&k));
+    let st = &k["structures"][0];
+    let (_, slots) = exam::blueprint(&k, st["id"].as_str().unwrap()).unwrap();
+    let want: u64 = st["sections"].as_array().unwrap().iter().map(|s| s["count"].as_u64().unwrap()).sum();
+    assert_eq!(slots.len() as u64, want);
+}

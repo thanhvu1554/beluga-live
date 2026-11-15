@@ -175,6 +175,7 @@ For every blueprint slot write exactly one item, with the same "slot" number, te
 - essay: may have its own sub-steps; "answer" = final result in one line; "solution" = concise marking guide with the key steps (and point split if > 0.5 points).
 - For mcq/truefalse/short "solution" = one short line of justification.
 - Never require a figure that is not described in words; describe any figure precisely in the text.
+- KaTeX-compatible LaTeX only: systems as $\begin{cases}x+y=5\\x-y=1\end{cases}$, fractions \dfrac in text, decimals with a comma ($0{,}5$).
 - Check every answer yourself before writing it.
 "title": a short Vietnamese exam title (e.g. "Đề kiểm tra giữa kỳ I – Toán 9 (đề luyện)")."#;
 
@@ -466,6 +467,7 @@ pub async fn gen_exam(
     emit(exam_event(&folder, exam_id, "checking", "Đang kiểm tra số câu, loại câu, điểm và đáp án", None));
     let mut items = first.unwrap_or(Value::Null);
     let mut errs = validate_items(&items, &slots, &banned);
+    let repairs = errs.clone();
     if !errs.is_empty() {
         tracing::warn!("exam needs repair: {}", errs.join("; "));
         emit(exam_event(&folder, exam_id, "writing", &format!("Đang sửa {} lỗi trong đề", errs.len()), None));
@@ -489,7 +491,11 @@ pub async fn gen_exam(
         }
     }
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
-    let exam = assemble(k, &st, &slots, &items, exam_id, note, &opts.model, &usage, &now);
+    let mut exam = assemble(k, &st, &slots, &items, exam_id, note, &opts.model, &usage, &now);
+    if !repairs.is_empty() {
+        // What the first draft got wrong (diagnostics for prompt tuning).
+        exam["repairs"] = json!(repairs);
+    }
     Ok((exam, usage))
 }
 
@@ -759,7 +765,7 @@ pub fn render_html_with_base(exam: &Value, katex_base: &str) -> String {
             if kind == "mcq" {
                 let ch: Vec<String> = q["choices"].as_array().map(|a| a.iter().map(s_of).collect()).unwrap_or_default();
                 let w = ch.iter().map(|c| visual_len(c)).max().unwrap_or(0);
-                let cls = if w <= 16 { "ch4" } else if w <= 38 { "ch2" } else { "ch1" };
+                let cls = if w <= 12 { "ch4" } else if w <= 34 { "ch2" } else { "ch1" };
                 h.push_str(&format!("<div class=\"choices {cls}\">"));
                 for (i, c) in ch.iter().enumerate() {
                     h.push_str(&format!("<div><b>{}.</b>{}</div>", (b'A' + i as u8) as char, rich(c)));
