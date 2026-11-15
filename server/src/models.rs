@@ -102,8 +102,6 @@ pub fn builtin() -> Vec<ModelEntry> {
         entry("haiku", "Claude Haiku", "claude", None, None, "haiku", &[], None, true, None),
         entry("deepseek", "DeepSeek Flash", ac, Some("https://api.deepseek.com/anthropic"), Some("DEEPSEEK_API_KEY"), "deepseek-flash", &[], None, true,
             Some(Price { input: 0.05, output: 0.2, cache_read: 0.01, cache_write: 0.05 })),
-        entry("deepseek-pro", "DeepSeek Pro", ac, Some("https://api.deepseek.com/anthropic"), Some("DEEPSEEK_API_KEY"), "deepseek-v4-pro", &[], None, false,
-            Some(Price { input: 0.9, output: 1.5, cache_read: 0.09, cache_write: 0.9 })),
         entry("openrouter-haiku", "Haiku · OpenRouter", ac, Some("https://openrouter.ai/api"), Some("OPENROUTER_API_KEY"), "anthropic/claude-haiku-5.5", &[], None, true,
             Some(Price { input: 0.1, output: 0.5, cache_read: 0.01, cache_write: 0.125 })),
     ]
@@ -256,7 +254,7 @@ mod tests {
     fn entries_without_keys_are_hidden_and_public_view_has_no_secrets() {
         let c = Catalog::from_entries(builtin(), keys, vec![], None);
         let ids: Vec<&str> = c.entries().iter().map(|e| e.id.as_str()).collect();
-        assert_eq!(ids, ["sonnet", "opus", "haiku", "deepseek", "deepseek-pro"]);
+        assert_eq!(ids, ["sonnet", "opus", "haiku", "deepseek"]);
         let p = c.public().to_string();
         assert!(!p.contains("sk-test") && !p.contains("api.deepseek.com"), "{p}");
         assert_eq!(c.public()[0]["tracked"], true);

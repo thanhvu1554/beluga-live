@@ -1,0 +1,48 @@
+name: Server
+
+on:
+  push:
+    paths:
+      - "server/**"
+      - "tutor/**"
+      - "shared/**"
+      - ".github/workflows/server.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: server-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Build + test (Ubuntu)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            server/target
+          key: server-${{ runner.os }}-${{ hashFiles('server/Cargo.lock') }}
+      - name: Build release
+        working-directory: server
+        run: cargo build --release --locked
+      - name: Tests
+        working-directory: server
+        run: cargo test --release --locked 2>&1 | tail -n 60; exit ${PIPESTATUS[0]}
+      - name: Package
+        if: always()
+        run: |
+          mkdir -p pkg/server
+          cp server/target/release/beluga-server pkg/server/
+          cp server/models.example.json server/.env.example pkg/server/
+          cp -r shared tutor pkg/
+          tar -C pkg -czf beluga-linux.tar.gz .
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: beluga-server-linux
+          path: beluga-linux.tar.gz

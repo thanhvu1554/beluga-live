@@ -280,7 +280,7 @@ Danh mục ở `server/models.json` (không có thì dùng mặc định dựng 
   "model":"deepseek-flash","efforts":[],"vision":true,"price":{"input":0.05,"output":0.2,"cacheRead":0.01,"cacheWrite":0.05}}]
 ```
 
-Mặc định dựng sẵn: `sonnet`, `opus`, `haiku` (gói Claude), `deepseek` (`deepseek-flash`), `deepseek-pro` (`deepseek-v4-pro`),
+Mặc định dựng sẵn: `sonnet`, `opus`, `haiku` (gói Claude), `deepseek` (`deepseek-flash`),
 `openrouter-haiku` (OpenRouter `https://openrouter.ai/api`, `anthropic/claude-haiku-5.5`). `price` (USD / triệu token, tùy chọn) dùng
 để tính `costUsd` cho nhà cung cấp ngoài gói Claude.
 
