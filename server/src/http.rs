@@ -39,22 +39,26 @@ pub struct AppState {
     greeting: GreetingCache,
     /// Every open phone connection (for job events that outlive the request: ingest, exams).
     phones: Mutex<Vec<(u64, tokio::sync::mpsc::WeakUnboundedSender<Value>)>>,
+    /// Off-VPS backup (PROTOCOL section 20).
+    pub backup: crate::backup::Backup,
 }
 
 impl AppState {
     pub fn new(deps: Deps) -> Arc<AppState> {
         Arc::new(AppState {
-            deps,
             sessions: Mutex::new(HashMap::new()),
             next_conn: AtomicU64::new(1),
             active: Mutex::new(Vec::new()),
             greeting: GreetingCache::default(),
             phones: Mutex::new(Vec::new()),
+            backup: crate::backup::Backup::from_config(&deps.cfg),
+            deps,
         })
     }
 
     /// Send a frame to every connected phone (jobs keep running when a phone goes away).
     pub fn broadcast(&self, v: &Value) {
+        self.deps.store.changed();
         let mut p = self.phones.lock().unwrap();
         p.retain(|(_, w)| w.upgrade().map(|t| t.send(v.clone()).is_ok()).unwrap_or(false));
     }
@@ -238,6 +242,8 @@ pub async fn start_full(cfg: Config, listener: TcpListener, voice: Arc<Voice>, u
         study,
     };
     let state = AppState::new(deps);
+    crate::sync::spawn(state.clone());
+    crate::backup::spawn(state.clone());
     let app = Router::new()
         .route("/health", get(health))
         .route("/upload", post(upload).layer(DefaultBodyLimit::max(MAX_UPLOAD_BYTES + 1024)))
@@ -247,6 +253,7 @@ pub async fn start_full(cfg: Config, listener: TcpListener, voice: Arc<Voice>, u
         .route("/ws", get(ws_upgrade))
         .route("/mcp", post(mcp_general_post).get(mcp_get).delete(mcp_delete))
         .route("/mcp/{sid}", post(mcp_post).get(mcp_get).delete(mcp_delete))
+        .merge(crate::sync::routes())
         .nest_service("/board", tower_http::services::ServeDir::new(board_dir))
         .with_state(state);
     axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await
@@ -341,7 +348,9 @@ async fn mcp_post(
     let Ok(req) = serde_json::from_str::<Value>(&body) else {
         return (StatusCode::BAD_REQUEST, "bad json").into_response();
     };
-    match crate::mcp::handle_body(st.existing_session(&sid), req).await {
+    let r = crate::mcp::handle_body(st.existing_session(&sid), req).await;
+    st.deps.store.changed(); // memory_note may have written memory files
+    match r {
         Some(resp) => Json(resp).into_response(),
         None => StatusCode::ACCEPTED.into_response(),
     }
@@ -503,6 +512,7 @@ async fn handle_socket(st: Arc<AppState>, socket: WebSocket) {
             }
             Message::Text(t) => {
                 let Ok(v) = serde_json::from_str::<Value>(t.as_str()) else { continue };
+                let mutation = crate::sync::is_mutation(v["t"].as_str().unwrap_or(""));
                 // `t` is the protocol's tag; `type` is accepted too for the voice messages.
                 match v["t"].as_str().or(v["type"].as_str()).unwrap_or("") {
                     "settings" => {
@@ -738,7 +748,15 @@ async fn handle_socket(st: Arc<AppState>, socket: WebSocket) {
                             init: SessionInit { v: conn_v, ..Default::default() },
                         });
                     }
+                    "get_backup" => reply(st.backup.frame()),
+                    "backup_now" => {
+                        st.backup.kick();
+                        reply(st.backup.frame());
+                    }
                     _ => {}
+                }
+                if mutation {
+                    st.deps.store.changed();
                 }
             }
             Message::Close(_) => break,
