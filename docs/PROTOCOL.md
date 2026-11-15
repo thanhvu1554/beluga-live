@@ -533,6 +533,20 @@ Luật phát (máy tự làm, chỉ ở **live và cuộc gọi**, không ở ch
 
 Bảng mục 5 đổi theo: `thinking` = quầng thở + nền êm; không còn "quá 4 giây đọc Đang suy nghĩ…".
 
+### Ghi chú triển khai server (mục 17, 18, 21)
+
+- `ready.v` = `hello.v` (tối đa 3). `folders.items[].kind` khi chưa có câu trả lời của model là đoán theo từ khóa (không phải
+  luôn `chung`); có câu trả lời thì server phát `folders` mới cho mọi điện thoại. `create_folder` có `subject` khác `chung` thì
+  lấy luôn làm `kind` (app v2), không hỏi model.
+- `[folder: …]` bỏ phần mô tả khi mô tả rỗng: `[folder: Toán 9 | kiểu dạy: toan]`. Phiên bị chuyển ra khỏi mọi folder nhận một lần
+  `[folder: không có | …]` cùng `[memory]` của phiên không folder. Chuyển folder thì lời mời ôn chưa trả lời của folder cũ bị bỏ.
+- `review_offer` trong folder thêm `folderId`, `folderName`; `subjectName` là tên folder.
+- `new_session{kickoff:"review_quiz"}` thiếu folder hợp lệ: `error{code:"no_folder"}`, không mở phiên mới.
+  `get_home{folderId}` với folder lạ: `error{code:"no_folder"}`. `get_greeting{folderId}` lạ: lời chào không có `sub`.
+- `home.quick`: folder có mục đang yếu hoặc có kiến thức (tối đa 5 khi không có `folderId`). `home` chỉ được tự phát sau khi
+  kết nối đó đã gửi `get_home` ít nhất một lần.
+- Clip câu chờ: id `short-1..3`, `long-1..2`, `vision-1`, `hello-1..2`.
+
 ## 22. Cuộc gọi: đổ chuông và nhấc máy
 
 Phía máy (không cần frame mới). Các pha của màn gọi:

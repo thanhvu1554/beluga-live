@@ -59,6 +59,33 @@ lượt học thật đọc bằng giọng mới.
 - Chỉ kiểm được trên iPhone thật: PiP tự hiện khi rời app, tiếng và mic khi ở nền, camera khi thu nhỏ, hồi âm thanh sau cuộc gọi điện
   thoại lúc đang PiP, nhận dạng giọng trên máy khi ở nền (STT server thì chạy được), WebSocket sống 10 phút trong PiP.
 
+## Server v3: folder tự đặt tên, cách ly folder, câu chờ (15/11/2026, nhánh `v3-server-folders`)
+
+PROTOCOL mục 17, 18, 21 (mục 19, 20 do nhánh khác làm). `cargo test` xanh: 100 đơn vị + 92 tích hợp (thêm `tests/v3.rs` 4,
+`tests/v3_isolation.rs` 4, 2 test câu chờ trong `genvoice.rs`), 8 test thật `--ignored`. Clippy không thêm cảnh báo mới.
+- **Folder (mục 17)**: `create_folder{name, about?, subject?, clientId?}` (trùng `clientId` trả folder cũ), `update_folder`,
+  `folders.items[].about/kind` (`subject` = `kind`). `kind` do model tiện ích gán (`folders::assign_kind`, hạn 3 s), trong lúc
+  chờ là đoán theo từ khóa, có câu trả lời thì phát `folders` mới cho mọi máy; lỗi/quá hạn thì giữ đoán, lần `folders` sau hỏi lại.
+  `folders.json` cũ đọc thành `kind = subject`, `about = ""`. Skill mới `ngoai-ngu` (ngoại ngữ trên lớp), có trong `--allowedTools`.
+  Lượt đầu phiên trong folder có `[folder: tên | mô tả | kiểu dạy: kind]`; `tutor/CLAUDE.md` dặn nạp skill theo `kind` và bám
+  phạm vi tên + mô tả, không gợi ý môn/folder khác.
+- **Cách ly (mục 18)**: tóm tắt `[memory]`, lời mời ôn, `memory_note` (luôn vào file folder, bỏ `subject` Claude truyền), sửa STT
+  (tên folder + giáo trình của folder đó), quiz ôn nhanh (bắt buộc folder), lời chào (`sub` luôn nêu tên folder, `folderId?`),
+  `get_home` + tự phát lại sau `turn_end`/`folders`/`sessions`. Phiên không folder: chỉ `profile.md` + file môn v1, không mời ôn.
+  **Bỏ hẳn việc tự xếp phiên cũ vào folder theo môn.** Chuyển phiên sang folder khác thì lượt sau đính lại `[folder]` + `[memory]`
+  mới (`memory_scope` trong `sessions.json`), lời mời ôn dở của folder cũ bị bỏ. Test khóa: hai folder có `MARKER_ALPHA`/`MARKER_BETA`
+  trong memory, kiến thức, đề, tóm tắt tuần, mục tới hạn; không gì của A lọt vào chữ gửi Claude, lời mời ôn, `review`, `knowledge`,
+  `exams`, `home`, `greeting`, prompt sửa STT, quiz của B, cũng như phiên không folder.
+- **Câu chờ (mục 21)**: `voices.json` có 8 câu (`short-1..3`, `long-1..2`, `vision-1`, `hello-1..2`), `beluga-server
+  gen-voice-fillers`, `voices.fillers` + `items[].fillers`, `GET /voice/<voiceId>/<fillerId>.mp3`. `/health` trả `v:3`, `ready.v` = 3.
+- **Chạy thật**: tạo clip bằng GenVoice thật: 64 clip (8 giọng x 8 câu, 2328 ký tự), credit 96799 -> 95615 (**1184 credit**);
+  cả 64 file là mp3 128 kbps hợp lệ, dài 1,23 đến 3,97 s, hash khác nhau, tổng 3,3 MB, đã commit ở `server/voices/<voiceId>/`
+  (workflow `cp -r server/voices` đã gói thư mục con). Gán `kind` bằng DeepSeek thật (`real_kind_assignment`): 5/5 đúng
+  ("Tiếng Anh trên lớp" -> `ngoai-ngu`, "Luyện SSAT" -> `anh-ssat`, "Ôn thi vào 10" -> `toan`, "Sinh học" -> `chung`, "Hóa 10" ->
+  `hoa`), 0,4 đến 1,1 s mỗi lần, tổng 0,00007 USD.
+- **Chưa kiểm chứng**: chưa ai nghe các clip bằng tai (chỉ kiểm định dạng và độ dài); Claude thật chưa chạy với `[folder: …]`
+  và skill `ngoai-ngu` (mới kiểm khuôn + cú pháp ví dụ); chưa chạy trên VPS; app iOS chưa dùng gì của v3.
+
 ## iOS (`ios/`, `shared/board/`)
 
 ### Bản v2 (giao thức v2, 15/11/2026)

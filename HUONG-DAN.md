@@ -42,7 +42,7 @@ cd C:\Users\Beluga\Desktop\Liveapp
   `GENVOICE_VOICE_ID` trong `server/.env` chỉ là giọng mặc định khi chưa chọn.
 - Thêm giọng: thêm một dòng vào `server/voices.json` (id lấy từ thư viện giọng của GenVoice), rồi chạy
   `beluga-server gen-voice-previews` (tạo clip còn thiếu trong `server/voices/`, mỗi giọng khoảng 45 credit),
-  khởi động lại server.
+  rồi `beluga-server gen-voice-fillers` (8 câu chờ/nhấc máy của giọng mới, khoảng 150 credit), khởi động lại server.
 - Ép dùng giọng iOS: `TTS_PROVIDER=device`, `STT_PROVIDER=device`.
 
 ## 4b. Điều khiển iPhone từ Claude Code trên PC (tùy chọn)
