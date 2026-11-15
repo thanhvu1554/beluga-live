@@ -31,6 +31,26 @@ import Testing
         return Double(f.length) / f.processingFormat.sampleRate
     }
 
+    /// The path the app's voice preview takes: the body is sniffed as MP3 (ID3 tag or not), cached as `.mp3`,
+    /// and decoded from that file with the MP3 type stated. Every real clip shape must come out as 5.6 s of audio.
+    @Test func previewPathPlaysID3TaggedClips() throws {
+        for name in ["voice-id3", "voice-bigtag", "voice-raw"] {
+            let data = try Self.fixture(name)
+            #expect(AudioSniff.isMP3(data), "\(name) is recognised as MP3")
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("preview-\(name).mp3")
+            try data.write(to: url)
+            defer { try? FileManager.default.removeItem(at: url) }
+            let player = try AVAudioPlayer(contentsOf: url, fileTypeHint: AVFileType.mp3.rawValue)
+            #expect(player.prepareToPlay())
+            #expect(abs(player.duration - 5.64) < 0.1, "\(name) decodes to the whole clip")
+        }
+        // What must never be cached or handed to the decoder.
+        #expect(!AudioSniff.isMP3(Data("<!doctype html><title>404</title>".utf8)))
+        #expect(!AudioSniff.isMP3(Data(#"{"error":"unauthorized"}"#.utf8)))
+        let tagOnly = try Self.fixture("voice-id3").prefix(45)
+        #expect(!AudioSniff.isMP3(tagOnly), "a tag with no audio after it (a cut-off download)")
+    }
+
     @Test func probeEveryVariant() throws {
         for name in ["voice-id3", "voice-raw", "voice-bigtag"] {
             let data = try Self.fixture(name)

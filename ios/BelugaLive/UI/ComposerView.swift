@@ -70,7 +70,8 @@ struct ComposerView: View {
 
     private var field: some View {
         ZStack(alignment: .leading) {
-            TextField(s("composer.placeholder"), text: $composer.text, axis: .vertical)
+            // Offline the field still takes words (they are kept); only sending waits for the server.
+            TextField(s(controller.linkDown ? "composer.offline" : "composer.placeholder"), text: $composer.text, axis: .vertical)
                 .font(TypeScale.body)
                 .lineLimit(1...6)
                 .focused($focused)
@@ -154,7 +155,7 @@ struct ComposerView: View {
         .buttonStyle(.glassProminent)
         .buttonBorderShape(.capsule)
         .tint(ink)
-        .disabled(sending && !composer.canSend)
+        .disabled(sending && (!composer.canSend || controller.linkDown))
         .accessibilityLabel(s(sending ? "composer.send" : "live.enter"))
         .frame(minHeight: Size.tap)
     }

@@ -118,9 +118,27 @@ enum MockData {
      {"id":"JxmKvRaNYFidf0N27Vng","name":"Sơn","gender":"male","accent":"central","desc":"Nam trẻ miền Trung, nói chuyện thoải mái.","preview":true}]
     """#)
 
+    /// The v3 catalogue also lists the wait and hello lines (PROTOCOL section 21); every mock voice has them all.
     static func voices(current: String) -> JSONValue {
-        ["t": "voices", "items": voiceItems, "current": .string(current), "provider": "genvoice"]
+        let ids: JSONValue = .array(fillers.compactMap { $0["id"] })
+        let items: [JSONValue] = (voiceItems.array ?? []).map { v in
+            guard case .object(var o) = v else { return v }
+            o["fillers"] = ids
+            return .object(o)
+        }
+        return ["t": "voices", "items": .array(items), "current": .string(current), "provider": "genvoice", "fillers": .array(fillers)]
     }
+
+    static let fillers: [JSONValue] = parse(#"""
+    [{"id":"short-1","text":"Ừm, để tớ xem nào","when":"short"},
+     {"id":"short-2","text":"Chờ tớ một chút nhé","when":"short"},
+     {"id":"short-3","text":"Để tớ nghĩ xíu","when":"short"},
+     {"id":"long-1","text":"Bài này hơi dài, cậu chờ tớ thêm chút nha","when":"long"},
+     {"id":"long-2","text":"Sắp xong rồi đây","when":"long"},
+     {"id":"vision-1","text":"Để tớ nhìn kỹ ảnh đã","when":"vision"},
+     {"id":"hello-1","text":"A lô, tớ nghe đây","when":"hello"},
+     {"id":"hello-2","text":"Tớ đây, mình học gì nào?","when":"hello"}]
+    """#).array ?? []
 
     static let usage: JSONValue = parse(#"""
     {"t":"usage",

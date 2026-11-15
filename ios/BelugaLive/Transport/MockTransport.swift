@@ -56,6 +56,12 @@ final class MockTransport: Transport {
     private var exams: [JSONValue] = MockData.exams
     private var hasKnowledge: Set<String> = ["f-toan"]
     private var voice = "5yEPTrA0uAhZsBEhHjfi"
+    private var backupLastAt = "2026-11-16T03:00:12Z"
+    private var backupBytes = 18_400_000
+    private var backupFrame: JSONValue {
+        ["t": "backup", "enabled": true, "provider": "r2", "lastAt": .string(backupLastAt),
+         "lastBytes": .number(Double(backupBytes)), "nextAt": "2026-11-17T03:00:00Z"]
+    }
 
     init(script: MockScript = .load()) { self.script = script }
 
@@ -69,6 +75,8 @@ final class MockTransport: Transport {
     func disconnect() { playTask?.cancel(); playTask = nil }
 
     func send(_ message: ClientMessage) {
+        // An unreachable server hears nothing.
+        guard reachable else { return }
         switch message {
         case let .hello(_, _, _, sid, _, settings, fid):
             mode = settings.mode
@@ -166,8 +174,29 @@ final class MockTransport: Transport {
             deliver(["t": "exams", "folderId": "f-toan", "items": .array(exams)])
         case .getUsage:
             deliver(MockData.usage)
-        case .getGreeting:
-            deliver(MockData.greeting)
+        case let .getGreeting(_, _, fid):
+            // A v3 server names the folder when its second line talks about review (section 18).
+            var g = MockData.greeting
+            let target = fid ?? "f-toan"
+            let name = folders.first { $0["id"]?.string == target }?["name"]?.string ?? ""
+            let count = target == "f-toan" ? 2 : (target == "f-anh" ? 1 : 0)
+            g = Self.set(g, "sub", count > 0 ? .string("Có \(count) mục tới hạn ôn trong \(name)") : .null)
+            deliver(g)
+        case .getHome(let fid):
+            deliver(home(fid))
+        case .getBackup:
+            deliver(backupFrame)
+        case .backupNow:
+            // The server answers at once with the current state, then again when the new backup is up.
+            deliver(backupFrame)
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(2.2))
+                guard let self else { return }
+                let f = ISO8601DateFormatter()
+                self.backupLastAt = f.string(from: Date())
+                self.backupBytes += 41_000
+                self.deliver(self.backupFrame)
+            }
         default:
             break
         }
@@ -185,6 +214,31 @@ final class MockTransport: Transport {
     }
 
     private var foldersFrame: JSONValue { ["t": "folders", "items": .array(folders)] }
+
+    /// `home` as the v3 server builds it (PROTOCOL section 18): scoped to `fid` when given, else the root with every
+    /// folder card carrying its folder's name.
+    private func home(_ fid: String?) -> JSONValue {
+        let due: [String: [String]] = ["f-toan": ["Rút gọn biểu thức chứa căn", "Trục căn thức ở mẫu"], "f-anh": ["Câu bị động"]]
+        func name(_ id: String) -> String { folders.first { $0["id"]?.string == id }?["name"]?.string ?? "" }
+        func kind(_ id: String) -> String { folders.first { $0["id"]?.string == id }?["kind"]?.string ?? "chung" }
+        let scoped = sessions.filter { fid == nil || $0["folderId"]?.string == fid }
+        let recent = scoped.max { ($0["updatedAt"]?.string ?? "") < ($1["updatedAt"]?.string ?? "") }
+        var o: [String: JSONValue] = ["t": "home", "quick": []]
+        if let fid { o["folderId"] = .string(fid) }
+        if let recent, let sid = recent["sessionId"]?.string {
+            var c: [String: JSONValue] = ["sessionId": .string(sid), "title": recent["title"] ?? "", "updatedAt": recent["updatedAt"] ?? ""]
+            if let f = recent["folderId"]?.string { c["folderId"] = .string(f); c["folderName"] = .string(name(f)) }
+            o["continue"] = .object(c)
+        }
+        let dueIds = due.keys.sorted { (due[$0]?.count ?? 0, $1) > (due[$1]?.count ?? 0, $0) }
+            .filter { fid == nil || $0 == fid }
+            .filter { id in folders.contains { $0["id"]?.string == id } }
+        o["due"] = .array(dueIds.map { id in
+            ["folderId": .string(id), "folderName": .string(name(id)), "kind": .string(kind(id)),
+             "count": .number(Double(due[id]?.count ?? 0)), "topics": .array((due[id] ?? []).map(JSONValue.string))]
+        })
+        return .object(o)
+    }
     private var sessionsFrame: JSONValue { ["t": "sessions", "items": .array(sessions)] }
 
     private func ready() -> JSONValue {
@@ -330,8 +384,11 @@ final class MockTransport: Transport {
         playTask?.cancel()
         playTask = Task { [weak self] in
             var map: [Int: Int] = [:]
+            // `-mockSlowThink 1`: the tutor thinks five seconds before its first frame (wait clips).
+            var slow = UserDefaults.standard.bool(forKey: "mockSlowThink") ? 5000 : 0
             for f in lesson.frames {
-                try? await Task.sleep(for: .milliseconds(f.after))
+                try? await Task.sleep(for: .milliseconds(f.after + slow))
+                slow = 0
                 guard let self, !Task.isCancelled else { return }
                 var frame = f.frame
                 if case .object(var o) = frame {
@@ -357,6 +414,14 @@ final class MockTransport: Transport {
         let item = sessions.first { $0["sessionId"]?.string == id }
         folderId = item?["folderId"]?.string
         deliver(ready())
+        let events = sessionEvents(item)
+        seq = events.count
+        turn = 1
+        deliver(["t": "snapshot", "events": .array(events)])
+    }
+
+    /// The journal of a stored session: the scripted lesson for a live one, the scripted chat otherwise.
+    private func sessionEvents(_ item: JSONValue?) -> [JSONValue] {
         var events: [JSONValue] = []
         if item?["mode"]?.string == "live" {
             events.append(["t": "user", "seq": 1, "turn": 1, "text": .string(script.turns.first?.user ?? ""), "via": "voice"])
@@ -375,9 +440,7 @@ final class MockTransport: Transport {
                       ["t": "chat", "seq": 4, "turn": 1, "md": .string(MockData.chatAnswer2)],
                       ["t": "turn_end", "seq": 5, "turn": 1]]
         }
-        seq = events.count
-        turn = 1
-        deliver(["t": "snapshot", "events": .array(events)])
+        return events
     }
 
     // MARK: Knowledge ingest and exams
@@ -430,5 +493,61 @@ final class MockTransport: Transport {
             self.deliver(frame("done", "Xong"))
             self.deliver(["t": "exams", "folderId": .string(fid), "items": .array(self.exams)])
         }
+    }
+}
+
+// MARK: - Replica sync (PROTOCOL section 19)
+
+/// The mock answers `/sync/*` from its own state, with etags that change when the data does.
+extension MockTransport: SyncSource {
+    func fetch(_ path: String, etag: String?) async -> SyncFetch {
+        try? await Task.sleep(for: .milliseconds(60))
+        guard reachable else { return .failed("mock offline") }
+        guard let body = syncBody(path) else { return .failed("HTTP 404") }
+        let text = body.jsonString
+        let tag = Self.hash(text)
+        if path != "manifest", etag == tag { return .notModified }
+        return .body(Data(text.utf8), etag: tag)
+    }
+
+    private func syncBody(_ path: String) -> JSONValue? {
+        if path == "manifest" {
+            let fs: [JSONValue] = folders.compactMap { f in
+                guard let id = f["id"]?.string, let b = syncBody("folder/" + id) else { return nil }
+                return ["id": .string(id), "etag": .string(Self.hash(b.jsonString))]
+            }
+            let ss: [JSONValue] = sessions.compactMap { s in
+                guard let id = s["sessionId"]?.string, let b = syncBody("session/" + id) else { return nil }
+                var o: [String: JSONValue] = ["sessionId": .string(id), "etag": .string(Self.hash(b.jsonString))]
+                if let f = s["folderId"]?.string { o["folderId"] = .string(f) }
+                return .object(o)
+            }
+            return ["v": 1, "serverTime": "2026-11-16T02:00:00Z", "profile": ["etag": .string(Self.hash(script.progress.jsonString))],
+                    "folders": .array(fs), "sessions": .array(ss), "voices": ["etag": "v1"]]
+        }
+        if path == "profile" { return ["md": "", "progress": script.progress] }
+        if path.hasPrefix("folder/") {
+            let id = String(path.dropFirst(7))
+            guard let f = folders.first(where: { $0["id"]?.string == id }) else { return nil }
+            let list: [JSONValue] = id == "f-toan" ? exams.map { Self.set($0, "html", .string(MockData.examHTML(title: $0["title"]?.string ?? ""))) } : []
+            return ["folder": f, "knowledge": hasKnowledge.contains(id) ? Self.knowledge(for: id) : .null,
+                    "review": MockData.review(folderId: id, weekly: false), "exams": .array(list), "memoryMd": ""]
+        }
+        if path.hasPrefix("session/") {
+            let id = String(path.dropFirst(8))
+            guard let s = sessions.first(where: { $0["sessionId"]?.string == id }) else { return nil }
+            var o = s.object ?? [:]
+            o["preview"] = nil
+            o["events"] = .array(sessionEvents(s))
+            return .object(o)
+        }
+        return nil
+    }
+
+    /// FNV-1a, enough to tell versions apart.
+    static func hash(_ s: String) -> String {
+        var h: UInt64 = 0xcbf2_9ce4_8422_2325
+        for b in s.utf8 { h = (h ^ UInt64(b)) &* 0x100_0000_01b3 }
+        return String(h, radix: 16)
     }
 }

@@ -160,9 +160,13 @@ final class AudioHub {
     private var ttsNode = AVAudioPlayerNode()
     private var fileNode = AVAudioPlayerNode()
     private var earconNode = AVAudioPlayerNode()
+    /// Wait clips (PROTOCOL section 21) play on their own node: the tutor's voice and a clip never stop each other
+    /// by accident, and a clip can fade out on its own.
+    private var fillerNode = AVAudioPlayerNode()
     private let ttsFormat = AVAudioFormat(standardFormatWithSampleRate: 22_050, channels: 1)!
     private let synth = AVSpeechSynthesizer()
     private var feeder: TTSFeeder?
+    private var fillerFade: Task<Void, Never>?
     /// Graph built for the current engine instance.
     private var configured = false
     /// The current engine has the voice-processing input (built after record permission was granted).
@@ -244,10 +248,11 @@ final class AudioHub {
             // The voice-processing input keeps running with the engine; keep it muted except while listening.
             engine.inputNode.isVoiceProcessingInputMuted = true
         }
-        for n in [ttsNode, fileNode, earconNode] { engine.attach(n) }
+        for n in [ttsNode, fileNode, earconNode, fillerNode] { engine.attach(n) }
         engine.connect(ttsNode, to: engine.mainMixerNode, format: ttsFormat)
         engine.connect(earconNode, to: engine.mainMixerNode, format: Earcon.format)
         engine.connect(fileNode, to: engine.mainMixerNode, format: nil)
+        engine.connect(fillerNode, to: engine.mainMixerNode, format: nil)
         Self.installOutputTap(engine.mainMixerNode, meter: outputLevel)
         if earcons.isEmpty { earcons = Earcon.renderAll() }
         installObservers()
@@ -274,6 +279,7 @@ final class AudioHub {
         ttsNode = AVAudioPlayerNode()
         fileNode = AVAudioPlayerNode()
         earconNode = AVAudioPlayerNode()
+        fillerNode = AVAudioPlayerNode()
         configured = false
         hasInput = false
     }
@@ -428,6 +434,41 @@ final class AudioHub {
 
     private nonisolated static func schedule(_ file: AVAudioFile, on node: AVAudioPlayerNode, done: @escaping @Sendable () -> Void) {
         node.scheduleFile(file, at: nil, completionCallbackType: .dataPlayedBack) { _ in done() }
+    }
+
+    /// Plays a wait clip; returns when it ended or was stopped (false when it could not start).
+    func playFiller(_ url: URL) async -> Bool {
+        fillerNode.stop()
+        guard ensureRunning(), let file = try? AVAudioFile(forReading: url) else { return false }
+        let format = file.processingFormat
+        guard format.sampleRate > 0, (1...2).contains(format.channelCount) else { return false }
+        engine.disconnectNodeOutput(fillerNode)
+        engine.connect(fillerNode, to: engine.mainMixerNode, format: format)
+        guard engine.isRunning else { return false }
+        fillerNode.volume = 1
+        fillerFade?.cancel()
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            Self.schedule(file, on: fillerNode) { cont.resume() }
+            fillerNode.play()
+        }
+        return true
+    }
+
+    /// Ends a wait clip. With `fade`, the voice dips out over about 100 ms instead of being cut mid-syllable.
+    func stopFiller(fade: Bool = true) {
+        fillerFade?.cancel()
+        guard fillerNode.isPlaying else { return }
+        guard fade else { fillerNode.stop(); return }
+        let node = fillerNode
+        fillerFade = Task { @MainActor in
+            for v in [0.75, 0.5, 0.28, 0.1] as [Float] {
+                node.volume = v
+                try? await Task.sleep(for: .milliseconds(25))
+                if Task.isCancelled { break }
+            }
+            node.stop()
+            node.volume = 1
+        }
     }
 
     func stopSpeaking() {

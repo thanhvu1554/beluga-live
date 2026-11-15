@@ -94,15 +94,23 @@ final class CrashHuntTests: XCTestCase {
     }
 
     func testSettingsAndVoices() {
-        launch(["-mockOffer", "1"])
+        launch(["-mockOffer", "1", "-mockAudioProbe", "1"])
         tap("Cài đặt")
         pause(2)
         alive("settings open")
         tapContaining("Giọng gia sư")
         pause(2)
+        let probe = app.descendants(matching: .any).matching(identifier: "audio.probe").firstMatch
+        if probe.waitForExistence(timeout: 3) { print("HUNT AUDIOPROBE \(probe.label)") } else { print("HUNT AUDIOPROBE missing") }
+        // The mock plays the server's real ID3-tagged clip through the same download-check-cache-play path.
         tapContaining("Nghe thử giọng")
-        pause(2)
+        pause(1.2)
         alive("voice preview")
+        XCTAssertTrue(exists("Dừng nghe thử giọng"), "the ID3-tagged clip plays (the button turned into Stop)")
+        XCTAssertFalse(exists("Không tải được đoạn nghe thử", timeout: 0.5), "no failure under the voice")
+        pause(6)
+        XCTAssertFalse(exists("Dừng nghe thử giọng", timeout: 0.5), "the clip ended by itself and the button is back")
+        alive("voice preview ended")
         app.navigationBars.buttons.firstMatch.tap()
         pause(1)
         tap("Xong")
@@ -150,7 +158,7 @@ final class CrashHuntTests: XCTestCase {
         tap("Tạo")
         pause(2.5)
         alive("new folder opened")
-        XCTAssertTrue(app.navigationBars["Tiếng Nhật N5"].waitForExistence(timeout: 4), "the new folder opens by its own name")
+        XCTAssertTrue(exists("Tiếng Nhật N5"), "the new folder opens by its own name")
         XCTAssertTrue(exists("Luyện kanji và nghe"), "the about line shows in the folder")
         tap("Thêm")
         pause(1)
@@ -171,6 +179,158 @@ final class CrashHuntTests: XCTestCase {
         pause(1.5)
         XCTAssertTrue(exists("Tiếng Nhật N5"), "the drawer lists the folder by its name")
         alive("drawer with new folder")
+    }
+
+    /// PROTOCOL section 18: the root home names each folder on its cards; inside a folder the cards only ever
+    /// speak of that folder (the old home suggested Math while the owner was in English).
+    func testHomeSuggestionsStayInTheirFolder() {
+        launch([])
+        pause(1.5)
+        XCTAssertTrue(exists("Ôn 2 mục tới hạn"), "root home offers the due review")
+        XCTAssertTrue(exists("Toán 9 · Giữa kỳ 1"), "root cards carry the folder's name")
+        alive("root home cards")
+        tap("Thư mục và phiên")
+        pause(1.5)
+        tapContaining("Tiếng Anh trên lớp")
+        pause(2)
+        tap("Đoạn chat mới")
+        pause(2.5)
+        alive("home inside English")
+        XCTAssertTrue(exists("Ôn 1 mục tới hạn"), "the folder's own due review")
+        XCTAssertTrue(exists("Tiếng Anh trên lớp"), "the folder's own name")
+        XCTAssertFalse(exists("Toán 9", timeout: 1.5), "nothing of the Math folder inside English")
+    }
+
+    /// PROTOCOL section 19: an online launch fills the replica; without the server the app shows that copy
+    /// (folders, a folder's sessions, a session's transcript), says so quietly, and queues a new folder, which
+    /// reaches the server on the next launch with the server back.
+    func testOfflineReplicaAndQueuedEdits() {
+        launch(["-mockFreshReplica", "1"])
+        pause(4)
+        alive("online, replica filled")
+        app.terminate()
+        launch(["-mockUnreachable", "1"])
+        pause(2)
+        alive("offline launch")
+        XCTAssertTrue(exists("Ngoại tuyến"), "the home title says offline")
+        tap("Thư mục và phiên")
+        pause(1.5)
+        XCTAssertTrue(exists("Đang xem bản lưu lúc"), "the drawer says the screens show the saved copy")
+        XCTAssertTrue(exists("Toán 9 · Giữa kỳ 1"), "folders come from the replica")
+        alive("offline drawer")
+        tapContaining("Toán 9 · Giữa kỳ 1")
+        pause(2)
+        XCTAssertTrue(exists("Rút gọn biểu thức chứa căn"), "the folder's sessions come from the replica")
+        tap("Ôn tập")
+        pause(1.5)
+        alive("offline review tab")
+        tap("Phiên")
+        pause(1)
+        tapContaining("Hệ thức Vi-ét")
+        pause(2.5)
+        alive("offline session from the replica")
+        tap("Thư mục và phiên")
+        pause(1.5)
+        tap("Thư mục mới")
+        pause(1.2)
+        field("folder.name").typeText("Lịch sử 9")
+        pause(0.4)
+        tap("Tạo")
+        pause(2)
+        alive("folder created offline")
+        XCTAssertTrue(exists("Lịch sử 9"), "the offline folder opens at once")
+        app.navigationBars.buttons.firstMatch.tap()
+        pause(1.5)
+        tap("Thư mục và phiên")
+        pause(1.5)
+        XCTAssertTrue(exists("Chờ đồng bộ"), "the offline folder is marked as waiting")
+        XCTAssertTrue(exists("1 thay đổi chờ gửi"), "the drawer counts the waiting edit")
+        alive("offline drawer with a queued folder")
+        app.terminate()
+        launch([])
+        pause(4)
+        tap("Thư mục và phiên")
+        pause(1.5)
+        XCTAssertTrue(exists("Lịch sử 9"), "the queued folder reached the server")
+        XCTAssertFalse(exists("Chờ đồng bộ", timeout: 1), "nothing waits any more")
+        alive("online again, edit replayed")
+    }
+
+    /// PROTOCOL section 22: the call rings ("Đang gọi Beluga…"), connects ("Đã kết nối", then the timer),
+    /// Beluga picks up with a hello line in its own voice, and the red button shows "Đã kết thúc" before closing.
+    func testCallRingsConnectsAndEnds() {
+        launch([])
+        tapContaining("Gọi gia sư")
+        pause(0.5)
+        XCTAssertTrue(exists("Đang gọi Beluga", timeout: 1.5), "the call starts by ringing")
+        alive("call dialing")
+        XCTAssertTrue(exists("Đã kết nối", timeout: 4), "then it connects")
+        alive("call connected")
+        XCTAssertTrue(anyExists(["A lô, tớ nghe đây", "Tớ đây, mình học gì nào?"], timeout: 3), "Beluga picks up with a hello line")
+        pause(2.5)
+        XCTAssertFalse(exists("Đang gọi Beluga", timeout: 0.5), "no ringing once connected")
+        alive("call running")
+        tap("Kết thúc")
+        XCTAssertTrue(exists("Đã kết thúc", timeout: 1.5), "the ended beat")
+        alive("call ended beat")
+        pause(2)
+        XCTAssertTrue(exists("Hỏi Beluga", timeout: 3), "back in the chat")
+        alive("back from the call")
+    }
+
+    /// Without the server the dial gives up after 8 s with "Không gọi được" and "Gọi lại"; hanging up still works.
+    func testCallFailsWithoutServer() {
+        launch(["-mockUnreachable", "1"])
+        tapContaining("Gọi gia sư")
+        pause(1)
+        XCTAssertTrue(exists("Đang gọi Beluga", timeout: 1.5), "it rings first")
+        XCTAssertTrue(exists("Không gọi được", timeout: 10), "then says it could not connect")
+        XCTAssertTrue(app.buttons["Gọi lại"].exists, "and offers to call again")
+        alive("call failed")
+        tap("Gọi lại")
+        pause(1)
+        XCTAssertTrue(exists("Đang gọi Beluga", timeout: 1.5), "calling again rings again")
+        tap("Kết thúc")
+        pause(2.5)
+        alive("hung up while dialing")
+    }
+
+    /// PROTOCOL section 21: in a call, when the tutor thinks for more than 3 s a short line in its voice fills the
+    /// wait, and it is gone the moment the tutor's real answer starts.
+    func testWaitClipWhileThinking() {
+        launch(["-mockCall", "1", "-mockSlowThink", "1"])
+        let shorts = ["Ừm, để tớ xem nào", "Chờ tớ một chút nhé", "Để tớ nghĩ xíu"]
+        pause(11)
+        XCTAssertTrue(anyExists(shorts, timeout: 6), "a wait line plays while the tutor thinks")
+        alive("wait clip")
+        pause(7)
+        XCTAssertFalse(anyExists(shorts, timeout: 0.5), "the wait line is gone once the tutor speaks")
+        alive("tutor speaking after the wait")
+    }
+
+    /// Settings > Dữ liệu: the phone's copy (synced, when) and the server's R2 backup (last, next, "Sao lưu ngay").
+    func testDataSettings() {
+        launch([])
+        pause(2)
+        tap("Cài đặt")
+        pause(1.5)
+        tapContaining("Dữ liệu")
+        pause(1.5)
+        alive("data settings")
+        XCTAssertTrue(exists("Đã đồng bộ"), "the copy on the phone is in sync")
+        XCTAssertTrue(exists("Lần sao lưu cuối"), "the last backup is shown")
+        tap("Sao lưu ngay")
+        pause(0.6)
+        XCTAssertTrue(exists("Đang sao lưu"), "the button shows the backup running")
+        alive("backup running")
+        pause(3)
+        XCTAssertTrue(app.buttons["Sao lưu ngay"].waitForExistence(timeout: 3), "back to idle once the server reports it")
+        alive("backup done")
+        app.navigationBars.buttons.firstMatch.tap()
+        pause(1)
+        tap("Xong")
+        pause(1.5)
+        alive("settings closed")
     }
 
     func testLiveAndCall() {
@@ -265,6 +425,12 @@ final class CrashHuntTests: XCTestCase {
         if !el.hasKeyboardFocusSafe { el.tap() }
         pause(0.3)
         return el
+    }
+
+    private func anyExists(_ texts: [String], timeout: TimeInterval) -> Bool {
+        let format = texts.map { _ in "label CONTAINS[c] %@" }.joined(separator: " OR ")
+        let predicate = NSPredicate(format: format, argumentArray: texts)
+        return app.descendants(matching: .any).matching(predicate).firstMatch.waitForExistence(timeout: timeout)
     }
 
     private func exists(_ text: String, timeout: TimeInterval = 4) -> Bool {

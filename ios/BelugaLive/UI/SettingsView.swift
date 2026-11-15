@@ -82,6 +82,13 @@ struct SettingsView: View {
                             }
                         } icon: { Image(systemName: "desktopcomputer") }
                     }
+                    NavigationLink(value: SettingsRoute.data) {
+                        Label {
+                            LabeledContent(s("data.title")) {
+                                Text(verbatim: dataSummary).foregroundStyle(Ink.secondary).lineLimit(1)
+                            }
+                        } icon: { Image(systemName: "externaldrive") }
+                    }
                     NavigationLink(value: SettingsRoute.diagnostics) {
                         Label(s("diag.title"), systemImage: "stethoscope")
                     }
@@ -98,6 +105,7 @@ struct SettingsView: View {
                 case .diagnostics: DiagnosticsView()
                 case .connection: ConnectionView(controller: controller, settings: settings)
                 case .usage: UsageView(controller: controller)
+                case .data: DataSettingsView(controller: controller)
                 }
             }
             .navigationTitle(s("settings.title"))
@@ -133,6 +141,16 @@ struct SettingsView: View {
     private var modelSummary: String {
         let name = controller.currentModel?.label ?? settings.model
         return settings.effort.isEmpty ? name : name + " · " + s("effort.\(settings.effort)")
+    }
+
+    /// "Dữ liệu" row: the one thing worth a glance (offline, edits waiting, syncing, or when it last synced).
+    private var dataSummary: String {
+        let sync = controller.sync
+        if controller.linkDown { return s("sync.offline.title") }
+        if sync.pendingOps > 0 { return s("sync.pending", sync.pendingOps) }
+        if case .syncing = sync.phase { return s("data.syncing") }
+        if let at = sync.lastSyncAt { return SyncTime.text(at, lang: s.lang) }
+        return ""
     }
 
     private var voiceSummary: String {

@@ -30,13 +30,44 @@ extension LiveController {
         // Older servers ignore it; the Settings row shows the current voice.
         transport?.send(.getVoices)
         requestGreeting()
+        requestHome()
     }
 
+    /// The greeting for where the owner is: a v3 server scopes its second line to the folder (section 18).
     func requestGreeting() {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "yyyy-MM-dd'T'HH:mm"
-        transport?.send(.getGreeting(localTime: f.string(from: Date()), name: nil))
+        let scoped = serverV3 ? folderId : nil
+        greetingRequestedFor = scoped
+        transport?.send(.getGreeting(localTime: f.string(from: Date()), name: nil, folderId: scoped))
+    }
+
+    /// Suggestions for the current context (a folder, or the root). The server pushes fresh ones by itself after
+    /// turns and list changes; this asks when the context changes.
+    func requestHome() {
+        guard serverV3 || isMock else { return }
+        transport?.send(.getHome(folderId: folderId))
+    }
+
+    /// The greeting's second line may name review work, which belongs to one folder: only shown where it was asked.
+    var greetingSubVisible: Bool {
+        GreetingScope.showsSub(greetingContext: library.greetingFolder, context: folderId, serverVersion: ready?.v ?? 2)
+    }
+
+    /// A home card was tapped.
+    func act(on card: HomeCard) {
+        switch card.kind {
+        case .continueSession:
+            guard let sid = card.sessionId else { return }
+            let item = library.session(sid)
+                ?? SessionItem(sessionId: sid, title: card.title, updatedAt: "", folderId: card.folderId, mode: .chat)
+            open(item)
+        case .due, .quick:
+            guard let fid = card.folderId else { return }
+            quickReview(fid)
+        }
+        Haptics.tap()
     }
 
     // MARK: Chat transcript
@@ -123,6 +154,7 @@ extension LiveController {
         guard new != mode else { return }
         Diagnostics.log("mode → \(new.rawValue)")
         if new == .chat {
+            waitClip(.interrupted)
             if timeline.isSpeaking { interrupt() }
             stopLiveListening()
             camera?.stop()
@@ -371,6 +403,15 @@ extension LiveController {
         guard !n.isEmpty else { return }
         let a = String(about.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Folder.aboutLimit))
         let clientId = OpQueue.newClientId()
+        if !connected {
+            // Offline: the folder exists on the phone at once (marked as waiting) and goes out on reconnect.
+            enqueue(.createFolder(clientId: clientId, name: n, about: a))
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(0.45))
+                self?.openFolder(clientId)
+            }
+            return
+        }
         createdFolderClientId = clientId
         openCreatedFolderAfter = Date().addingTimeInterval(0.45)
         openCreatedFolder = true
@@ -395,7 +436,9 @@ extension LiveController {
             if let newName { library.folders[i].name = newName }
             if let newAbout { library.folders[i].about = newAbout }
         }
-        if serverV3 || isMock {
+        if !connected {
+            enqueue(.updateFolder(id: id, name: newName, about: newAbout))
+        } else if serverV3 || isMock {
             transport?.send(.updateFolder(id: id, name: newName, about: newAbout))
         } else if let newName {
             transport?.send(.renameFolder(id: id, name: newName))
@@ -416,26 +459,34 @@ extension LiveController {
     }
 
     func deleteFolder(_ id: String) {
+        guard connected else { showNotice(strings("offline.needsConnection")); return }
         path.removeAll { $0 == .folder(id) }
         transport?.send(.deleteFolder(id: id))
     }
 
     func moveSession(_ s: SessionItem, to folder: String?) {
-        transport?.send(.moveSession(sessionId: s.sessionId, folderId: folder))
-        if s.sessionId == sessionId { folderId = folder }
+        if connected { transport?.send(.moveSession(sessionId: s.sessionId, folderId: folder)) }
+        else { enqueue(.moveSession(sessionId: s.sessionId, folderId: folder)) }
+        if s.sessionId == sessionId, folderId != folder {
+            folderId = folder
+            requestHome()
+            requestGreeting()
+        }
     }
 
     func renameSession(_ s: SessionItem, title newTitle: String) {
         let t = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return }
-        transport?.send(.renameSession(sessionId: s.sessionId, title: t))
+        if connected { transport?.send(.renameSession(sessionId: s.sessionId, title: t)) }
+        else { enqueue(.renameSession(sessionId: s.sessionId, title: t)) }
         if s.sessionId == sessionId { title = t }
     }
 
     func deleteSession(_ s: SessionItem) {
         // The open session cannot be deleted (`busy_session`): leave it for a new chat first.
         if s.sessionId == sessionId { newChat(in: folderId) }
-        transport?.send(.deleteSession(sessionId: s.sessionId))
+        if connected { transport?.send(.deleteSession(sessionId: s.sessionId)) }
+        else { enqueue(.deleteSession(sessionId: s.sessionId)) }
     }
 
     // MARK: Library frames
@@ -443,10 +494,13 @@ extension LiveController {
     func handleLibrary(_ m: ServerMessage) {
         switch m {
         case .folders(let items):
-            library.folders = items
+            applyServerFolders(items)
             for f in items { if let i = f.ingest { library.ingest[f.id] = i } }
         case let .folderCreated(id, clientId):
+            if resolveFolderWaiter(id: id, clientId: clientId) { break }
             folderCreated(id: id, clientId: clientId)
+        case .sync(let hint):
+            syncHint(hint)
         case .ingest(let s):
             library.ingest[s.folderId] = s
             if knowledgeFolder == s.folderId { knowledgePage.invoke("progress", s.json); renderedIngest = s.json }
@@ -477,9 +531,24 @@ extension LiveController {
         case .usage(let u):
             library.usage = u
         case .greeting(let g):
-            if !g.text.isEmpty { library.greeting = g }
+            if !g.text.isEmpty {
+                library.greeting = g
+                library.greetingFolder = greetingRequestedFor
+            }
+        case .backup(let b):
+            let old = library.backup
+            library.backup = b
+            if backupRunning, b.lastAt != old?.lastAt || (b.lastError != nil && b.lastError != old?.lastError) {
+                backupTimeout?.cancel()
+                backupRunning = false
+                if b.lastError == nil { Haptics.success() } else { Haptics.warning() }
+            }
+        case .home(let h):
+            // Kept per context: going back to the root shows its own cards at once, not the folder's.
+            library.homes[h.folderId ?? ""] = h
         case .voices(let catalog):
             library.voices = catalog
+            prepareWaitClips(catalog)
         default:
             break
         }
@@ -636,6 +705,27 @@ extension LiveController {
         transport?.send(.getUsage)
     }
 
+    // MARK: Backup (PROTOCOL section 20)
+
+    func requestBackup() {
+        guard connected, serverV3 || isMock else { return }
+        transport?.send(.getBackup)
+    }
+
+    /// Pushes a backup now; the button shows it running until the server reports the new one (or 90 s pass).
+    func backupNow() {
+        guard connected, !backupRunning else { return }
+        Haptics.tap()
+        backupRunning = true
+        transport?.send(.backupNow)
+        backupTimeout?.cancel()
+        backupTimeout = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(90))
+            guard let self, !Task.isCancelled else { return }
+            self.backupRunning = false
+        }
+    }
+
     // MARK: Voices
 
     func requestVoices() {
@@ -661,10 +751,14 @@ extension LiveController {
         if composer.dictating { Task { await stopDictation() } }
     }
 
-    /// `GET /voice/<id>.mp3` request with the pairing token (PROTOCOL section 16).
+    /// `GET /voice/<id>.mp3` request with the pairing token (PROTOCOL section 16), in the query as well as the
+    /// header (URLSession may drop an `Authorization` header it manages itself).
     func voicePreviewRequest(_ id: String) -> URLRequest? {
-        guard let base = settings.httpBase else { return nil }
-        let url = base.appendingPathComponent("voice").appendingPathComponent("\(id).mp3")
+        guard let base = settings.httpBase,
+              var c = URLComponents(url: base.appendingPathComponent("voice").appendingPathComponent("\(id).mp3"),
+                                    resolvingAgainstBaseURL: false) else { return nil }
+        c.queryItems = [URLQueryItem(name: "token", value: settings.pairToken ?? "")]
+        guard let url = c.url else { return nil }
         var req = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
         req.setValue("Bearer \(settings.pairToken ?? "")", forHTTPHeaderField: "Authorization")
         return req
@@ -811,6 +905,27 @@ extension LiveController {
         case .connection:
             settingsPath = [.connection]
             showSettings = true
+        case .newfolder:
+            drawerOpen = true
+            showNewFolder = true
+        case .datasettings:
+            settingsPath = [.data]
+            showSettings = true
+            sync.lastSyncAt = Date().addingTimeInterval(-240)
+        case .offlinedrawer:
+            // Offline, with a folder made on the phone still waiting (not written to the replica: later scenes
+            // must not replay it).
+            drawerOpen = true
+            linkDown = true
+            sceneBusy += 1
+            Task { [weak self] in
+                // After the replica is read (it would replace the queue).
+                while let self, !self.replicaLoaded { try? await Task.sleep(for: .milliseconds(50)) }
+                guard let self else { return }
+                self.ops.enqueue(.createFolder(clientId: OpQueue.newClientId(), name: "Lịch sử 9", about: "Ôn cuối kỳ"))
+                self.refreshOverlay()
+                self.sceneBusy -= 1
+            }
         case .typing:
             composer.text = "Cho tớ hỏi bài này: giải phương trình x² − 5x + 6 = 0, rồi kiểm tra lại bằng Vi-ét giúp tớ. Tớ hay nhầm dấu ở bước cuối."
         case .replay:

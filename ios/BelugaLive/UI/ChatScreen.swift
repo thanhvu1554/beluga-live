@@ -241,11 +241,13 @@ private struct ChatTitle: View {
         .accessibilityHint(Text(verbatim: s("models.title")))
         .animation(Motion.snappy, value: controller.title)
         .animation(Motion.snappy, value: home)
+        .animation(Motion.snappy, value: controller.linkDown)
     }
 
-    /// Home: the model. In a session: its folder (nothing when the session is in no folder).
+    /// Home: the model (or, quietly, that the server is out of reach). In a session: its folder (nothing when the
+    /// session is in no folder).
     private var subtitle: String {
-        if home { return modelLabel }
+        if home { return controller.linkDown ? s("sync.offline.title") : modelLabel }
         return controller.library.folder(controller.folderId)?.name ?? ""
     }
 
@@ -280,7 +282,7 @@ struct HomeGreeting: View {
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                         .contentTransition(.opacity)
-                    if let sub = g.sub {
+                    if let sub = g.sub, controller.greetingSubVisible {
                         Text(verbatim: sub)
                             .font(TypeScale.callout)
                             .foregroundStyle(Ink.secondary)
@@ -315,8 +317,10 @@ struct HomeGreeting: View {
     }
 }
 
-/// A few things the owner is likely to do next, built from what the app already knows: go on with the last
-/// chat, a quick review in a folder, a photo of a problem, Live. Shown above the composer on the home screen.
+/// A few things the owner is likely to do next: go on with the last session, review what is due, a quick review,
+/// a photo of a problem, Live, a call. The first ones come from `HomePlanner` (the server's `home` for this very
+/// context, else local data, scoped): inside a folder they only ever name that folder; at the root every folder
+/// card carries the folder's own name. Shown above the composer on the home screen.
 struct HomeSuggestions: View {
     let controller: LiveController
     @Environment(\.strings) private var s
@@ -341,9 +345,12 @@ struct HomeSuggestions: View {
                         .opacity(shown ? 1 : 0)
                         .offset(y: shown || reduceMotion ? 0 : 12)
                         .animation(Motion.gentle.delay(reduceMotion ? 0 : 0.28 + Double(i) * 0.05), value: shown)
+                        // A card the server adds later (its `home` arrives after the local guess) grows in place.
+                        .transition(.opacity.combined(with: .scale(0.94, anchor: .leading)))
                 }
             }
             .padding(.horizontal, Space.m)
+            .animation(Motion.snappy, value: items.map(\.id))
         }
         .scrollIndicators(.hidden)
         .scrollClipDisabled()
@@ -376,25 +383,25 @@ struct HomeSuggestions: View {
     }
 
     private var suggestions: [Item] {
-        var out: [Item] = []
-        let lib = controller.library
-        let recent = lib.sessions
-            .filter { controller.folderId == nil || $0.folderId == controller.folderId }
-            .max { $0.updatedAt < $1.updatedAt }
-        if let recent {
-            let parts = recent.title.components(separatedBy: " · ")
-            let name = parts.count > 1 ? parts.dropFirst().joined(separator: " · ") : recent.title
-            out.append(Item(id: "continue", symbol: recent.mode == .live ? "waveform" : "arrow.uturn.backward",
-                            title: s("home.continue"), detail: name.isEmpty ? s("board.untitled") : name) {
-                controller.open(recent)
-            })
-        }
-        let folder = controller.library.folder(controller.folderId)
-            ?? lib.folders.filter(\.hasKnowledge).max { $0.updatedAt < $1.updatedAt }
-        if let folder {
-            out.append(Item(id: "review", symbol: "bolt", title: s("review.quick"), detail: folder.name) {
-                controller.quickReview(folder.id)
-            })
+        let context = controller.folderId
+        let atRoot = context == nil
+        var out: [Item] = controller.library.homeCards(context: context).map { card in
+            switch card.kind {
+            case .continueSession:
+                let mode = controller.library.session(card.sessionId)?.mode
+                let title = Self.shortTitle(card.title)
+                // At the root a session of a folder says which one; inside the folder that goes without saying.
+                let detail = atRoot ? [card.folderName, title.isEmpty ? s("board.untitled") : title].compactMap { $0 }.joined(separator: " · ")
+                                    : (title.isEmpty ? s("board.untitled") : title)
+                return Item(id: card.id, symbol: mode == .live ? "waveform" : "arrow.uturn.backward",
+                            title: s("home.continue"), detail: detail) { controller.act(on: card) }
+            case .due:
+                return Item(id: card.id, symbol: "clock.arrow.circlepath", title: s("home.due", card.count),
+                            detail: card.folderName ?? "") { controller.act(on: card) }
+            case .quick:
+                return Item(id: card.id, symbol: "bolt", title: s("review.quick"),
+                            detail: card.folderName ?? "") { controller.act(on: card) }
+            }
         }
         out.append(Item(id: "photo", symbol: "camera", title: s("home.photo"), detail: s("home.photo.detail")) {
             controller.composer.cameraTick += 1
@@ -406,5 +413,11 @@ struct HomeSuggestions: View {
             controller.startCall()
         })
         return out
+    }
+
+    /// "Toán · Hệ thức Vi-ét" → "Hệ thức Vi-ét" (the folder already says the subject).
+    static func shortTitle(_ title: String) -> String {
+        let parts = title.components(separatedBy: " · ")
+        return parts.count > 1 ? parts.dropFirst().joined(separator: " · ") : title
     }
 }

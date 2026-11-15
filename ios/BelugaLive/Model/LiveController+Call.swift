@@ -78,7 +78,8 @@ extension LiveController {
         if composer.dictating { Task { await stopDictation() } }
         callMuted = false
         callCameraOn = true
-        callStartedAt = Date()
+        // The timer starts when the call connects (section 22).
+        callStartedAt = nil
         callRoute = isMock ? .speaker : CallRoute.current()
         if isMock { cameraMultitasking = true }
         let wasLive = mode == .live
@@ -97,14 +98,27 @@ extension LiveController {
         pip.setAutomatic(true)
         handsFreeActive = true
         if !timeline.isSpeaking, !pill.micOpen { _ = openMicForCall() }
+        if !connected, !isMock { reconnectNow() }
+        runCall(callPhase.handle(.start, now: Date()))
     }
 
-    /// The red button: back to the chat (Live's own exit path does the rest: mic, camera, engine).
+    /// The red button. Works in every phase: while dialing it just stops; once connected the screen shows
+    /// "Đã kết thúc · mm:ss" for a beat, then closes (a second tap closes at once).
     func endCall() {
         guard inCall else { return }
         Diagnostics.log("call: end after \(Int(Date().timeIntervalSince(callStartedAt ?? Date()))) s")
         Haptics.light()
-        setMode(.chat)
+        if callPhase.isActive { runCall(callPhase.handle(.hangUp, now: Date())) } else { setMode(.chat) }
+    }
+
+    /// "Gọi lại" after a failed dial.
+    func retryCall() {
+        guard inCall else { return }
+        Haptics.tap()
+        if !connected { reconnectNow() }
+        handsFreeActive = !callMuted
+        if handsFreeActive, !pill.micOpen { _ = openMicForCall() }
+        runCall(callPhase.handle(.retry, now: Date()))
     }
 
     /// Called whenever live mode ends (red button, new chat, a session change).
@@ -113,7 +127,101 @@ extension LiveController {
         pip.stop()
         callStartedAt = nil
         callMuted = false
+        ringTask?.cancel(); ringTask = nil
+        helloTask?.cancel(); helloTask = nil
+        if callPhase.isActive { callPhase = CallPhaseMachine() }
         withAnimation(Motion.snappy) { callStage.caption = "" }
+    }
+
+    // MARK: Phases (PROTOCOL section 22)
+
+    /// The live session under the call can take the call: connected, in live mode, audio running.
+    private var callSessionReady: Bool {
+        connected && mode == .live && (isMock || audio?.isRunning == true)
+    }
+
+    /// Ticks the phase machine; the observed value is only replaced when something changed.
+    func tickCall(_ now: Date) {
+        var m = callPhase
+        var effects = m.sessionReady != callSessionReady ? m.handle(.sessionReady(callSessionReady), now: now) : []
+        effects += m.handle(.tick, now: now)
+        if m.phase != callPhase.phase || m.sessionReady != callPhase.sessionReady {
+            withAnimation(Motion.smooth) { callPhase = m }
+        }
+        runCall(effects)
+    }
+
+    func runCall(_ effects: [CallPhaseEffect]) {
+        for effect in effects {
+            switch effect {
+            case .startRinging: startRinging()
+            case .stopRinging: ringTask?.cancel(); ringTask = nil
+            case .connected: callConnected()
+            case .failed: callFailed()
+            case .hangUp: callHangUp()
+            case .close: setMode(.chat)
+            }
+        }
+    }
+
+    /// Ring-back while dialing: two soft pulses every 2.6 s (synthesized, quiet).
+    private func startRinging() {
+        ringTask?.cancel()
+        ringTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            while let self, !Task.isCancelled, self.callPhase.phase.isDialing {
+                self.cue(.ring)
+                try? await Task.sleep(for: .seconds(2.6))
+            }
+        }
+    }
+
+    /// Connected: a short rising tone and a tap, "Đã kết nối", the timer starts, Beluga picks up with a hello line
+    /// in its own voice (if the phone has one), then listens.
+    private func callConnected() {
+        Diagnostics.log("call: connected")
+        cue(.connect)
+        Haptics.success()
+        callStartedAt = Date()
+        guard let id = waitClips.helloClip(), let line = waitClips.availableClips.first(where: { $0.id == id }) else { return }
+        helloTask?.cancel()
+        helloTask = Task { [weak self] in
+            guard let self else { return }
+            // The microphone waits while Beluga says hello, so the line is never heard back as the student.
+            let reopen = self.handsFreeActive && !self.callMuted
+            self.handsFreeActive = false
+            await self.closeMic(send: false)
+            self.fillerCaption = line.text
+            self.setStageCaption(line.text)
+            if self.isMock {
+                try? await Task.sleep(for: .seconds(max(1.2, Double(line.text.count) * 0.07)))
+            } else if let url = self.fillerFiles[id], let audio = self.audio {
+                _ = await audio.playFiller(url)
+            }
+            guard !Task.isCancelled, self.callPhase.phase.isConnected else { return }
+            self.clearWaitCaption()
+            if reopen, !self.callMuted {
+                self.handsFreeActive = true
+                if !self.timeline.isSpeaking, !self.pill.micOpen { _ = self.openMicForCall() }
+            }
+        }
+    }
+
+    private func callFailed() {
+        Diagnostics.log("call: dial failed (connected \(connected), engine \(audio?.isRunning ?? false))")
+        Haptics.warning()
+        handsFreeActive = false
+        Task { await closeMic(send: false) }
+    }
+
+    /// The tutor and the microphone stop now; the screen stays for the "ended" beat.
+    private func callHangUp() {
+        helloTask?.cancel(); helloTask = nil
+        ringTask?.cancel(); ringTask = nil
+        audio?.stopFiller(fade: false)
+        if timeline.isSpeaking || pill.state == .thinking || pill.state == .tool { interrupt() }
+        handsFreeActive = false
+        Task { await closeMic(send: false) }
     }
 
     // MARK: Controls
@@ -305,6 +413,12 @@ extension LiveController {
             boardVisible = true
             pill.handle(.sayStarted)
             mockScriptedLevel = .speaking
+        case .calldial:
+            callStartedAt = nil
+            _ = callPhase.handle(.start, now: Date())
+        case .callfailed:
+            callStartedAt = nil
+            callPhase = CallPhaseMachine(phase: .failed(at: Date()))
         default:
             break
         }
@@ -318,6 +432,8 @@ extension LiveController {
             await pause(2.5)
             guard let self else { return }
             self.startCall()
+            // Dialing, connected, the hello line: then the scripted student talks.
+            await pause(4.5)
             // The scripted student speaks at the asks; hands-free reopening would hold the mic instead.
             self.handsFreeActive = false
             await self.closeMic(send: false)
@@ -328,6 +444,7 @@ extension LiveController {
             self.toggleCallBoard()
             await pause(2.5)
             self.endCall()
+            await pause(1.4)
         }
     }
 }

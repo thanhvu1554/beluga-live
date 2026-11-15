@@ -55,6 +55,7 @@ struct FolderEditorSheet: View {
                         .font(.body)
                         .lineLimit(3...8)
                         .focused($focus, equals: .about)
+                        .submitLabel(.done)
                         .textInputAutocapitalization(.sentences)
                         .accessibilityIdentifier("folder.about")
                         .onChange(of: about) { _, new in

@@ -13,6 +13,9 @@ enum MockScene: String, CaseIterable {
     // Call mode: speaking with a step on the stage, listening while a question waits, camera without multitasking
     // access, the board raised in a call; and the PiP window's content on its own at PiP sizes.
     case call, calllisten, callnocam, callboard, pip
+    // v3: the new-folder sheet, Settings > Dữ liệu, a call ringing and a call that failed, the drawer offline with
+    // an edit waiting.
+    case newfolder, datasettings, calldial, callfailed, offlinedrawer
 
     var isLive: Bool {
         switch self {
@@ -23,7 +26,7 @@ enum MockScene: String, CaseIterable {
 
     var isCall: Bool {
         switch self {
-        case .call, .calllisten, .callnocam, .callboard: return true
+        case .call, .calllisten, .callnocam, .callboard, .calldial, .callfailed: return true
         default: return false
         }
     }
@@ -140,6 +143,8 @@ final class LiveController {
     var path: [Route] = []
     var folderTab: FolderTab = .sessions
     var showUsage = false
+    /// The new-folder sheet (drawer).
+    var showNewFolder = false
     var showModels = false
     var showReplay = false
     var showIngest: String?
@@ -197,6 +202,45 @@ final class LiveController {
     /// `clientId` of that folder (v3 echoes it in `folder_created`), and when the create sheet is down.
     @ObservationIgnored var createdFolderClientId: String?
     @ObservationIgnored var openCreatedFolderAfter = Date.distantPast
+    /// Folder the last `get_greeting` was scoped to.
+    @ObservationIgnored var greetingRequestedFor: String?
+
+    // Replica and sync (`LiveController+Sync.swift`, PROTOCOL section 19).
+    let replica: ReplicaStore
+    var sync = SyncStatus()
+    /// The server has been unreachable for a moment (the quiet offline state of the screens).
+    var linkDown = false
+    @ObservationIgnored var book = EtagBook()
+    @ObservationIgnored var ops = OpQueue()
+    @ObservationIgnored var syncQueue = SyncQueue()
+    @ObservationIgnored var manifestEtags: [SyncItem: String] = [:]
+    /// The lists as the server (or the replica) gave them, before offline edits are laid over.
+    @ObservationIgnored var serverFolders: [Folder] = []
+    @ObservationIgnored var serverSessions: [SessionItem] = []
+    @ObservationIgnored var gotServerFolders = false
+    @ObservationIgnored var gotServerSessions = false
+    @ObservationIgnored var syncRunning = false
+    @ObservationIgnored var replaying = false
+    @ObservationIgnored var folderWaiters: [String: CheckedContinuation<String?, Never>] = [:]
+    @ObservationIgnored var linkDownTask: Task<Void, Never>?
+    @ObservationIgnored var replicaLoaded = false
+
+    // Wait clips (`LiveController+WaitClips.swift`, PROTOCOL section 21).
+    @ObservationIgnored var waitClips = WaitClips()
+    @ObservationIgnored var fillerFiles: [String: URL] = [:]
+    @ObservationIgnored var fillerVoice: String?
+    @ObservationIgnored var fillerTask: Task<Void, Never>?
+    @ObservationIgnored var fillerCaption: String?
+    @ObservationIgnored var photoSentAt: Date?
+
+    // Call phases (PROTOCOL section 22): dialing, connected, ended.
+    var callPhase = CallPhaseMachine()
+    @ObservationIgnored var ringTask: Task<Void, Never>?
+    @ObservationIgnored var helloTask: Task<Void, Never>?
+
+    /// "Sao lưu ngay" was pressed and the server has not reported the new backup yet.
+    var backupRunning = false
+    @ObservationIgnored var backupTimeout: Task<Void, Never>?
     /// Folder for the session the next `hello` starts (new chat while offline).
     @ObservationIgnored var pendingFolderId: String?
     /// Scene work still running (screenshot marker waits for it).
@@ -207,6 +251,7 @@ final class LiveController {
         self.settings = settings
         self.options = options
         library = Library(lang: settings.lang)
+        replica = ReplicaStore(mock: options.mock)
         if let start = options.startMode { mode = start }
         else if let scene = options.scene { mode = scene.isLive ? .live : .chat }
         else { mode = settings.defaultMode }
@@ -238,10 +283,13 @@ final class LiveController {
 
     func start() {
         startTicker()
+        loadReplica()
         if isMock {
             signalCaptureReady()
             let mock = MockTransport()
-            if options.scene == .offline { mock.reachable = false }
+            if options.scene == .offline || options.scene == .offlinedrawer || UserDefaults.standard.bool(forKey: "mockUnreachable") {
+                mock.reachable = false
+            }
             attach(mock)
             if let scene = options.scene { applyScene(scene, mock: mock) } else { connect() }
             if options.tour { runMockTour() }
@@ -304,6 +352,8 @@ final class LiveController {
         if !connected, !fatalStop, hasHost {
             backoff.reset()
             connect()
+        } else if connected, wasAway {
+            syncNow()
         }
     }
 
@@ -383,6 +433,8 @@ final class LiveController {
             Diagnostics.log("ws: closed \(reason ?? "")")
             let wasConnected = connected
             connected = false
+            linkChanged(up: false)
+            pauseSync()
             stopAudioForDisconnect()
             pill.handle(.disconnected)
             if wasConnected { cue(.offline) }
@@ -413,7 +465,9 @@ final class LiveController {
             if !isMock { settings.lastSessionId = r.sessionId }
             if !r.title.isEmpty { title = r.title }
             folderId = r.folderId
+            linkChanged(up: true)
             readyV2(r)
+            catchUp()
             if r.boardVersion > BoardBridge.bundledVersion, let url = settings.boardURL { board.loadRemote(url) }
             if reconnect {
                 showNotice(strings("notice.reconnected"))
@@ -425,6 +479,7 @@ final class LiveController {
             }
         case let .state(state, tool):
             pill.handle(.server(state: state, tool: tool))
+            if tool == "capture" { waitClip(.photo) }
             toChat(["t": "state", "state": .string(state)])
         case let .heard(text, _, draft):
             if draft { dictationTimeout?.cancel(); composer.insertDictation(text) }
@@ -454,7 +509,7 @@ final class LiveController {
             process(timeline.applySnapshot(events, rebuildBoard: needsRebuild))
             needsRebuild = false
         case .sessions(let items):
-            library.sessions = items
+            applyServerSessions(items)
         case .progress(let report):
             progress = report
         case let .notice(code, text):
@@ -573,6 +628,7 @@ final class LiveController {
             }
         case .turnEnd:
             if live {
+                waitClip(.turnEnded)
                 pill.handle(.turnEnded)
                 if mode == .live, handsFreeOn && handsFreeActive && askPrompt == nil { reopenHandsFree() }
             }
@@ -589,6 +645,9 @@ final class LiveController {
             // Chat mode is text only: a stray spoken line is shown in the transcript, never played.
             if self.mode == .live {
                 let source = await self.waitForAudio(seq: e.seq, serverAudio: hasAudio)
+                guard !Task.isCancelled, self.timeline.current?.seq == e.seq else { return }
+                // A wait clip still talking finishes its sentence (briefly) or fades out first.
+                await self.holdForWaitClip()
                 guard !Task.isCancelled, self.timeline.current?.seq == e.seq else { return }
                 self.pill.handle(.sayStarted)
                 if self.captionsOn { self.caption = text }
@@ -636,6 +695,7 @@ final class LiveController {
     }
 
     private func stopAudioForDisconnect() {
+        waitClip(.interrupted)
         speakTask?.cancel()
         audio?.stopSpeaking()
         if timeline.isSpeaking { pill.handle(.sayFinished) }
@@ -669,6 +729,7 @@ final class LiveController {
         guard timeline.isSpeaking || pill.state == .thinking || pill.state == .tool else { return }
         speakTask?.cancel()
         audio?.stopSpeaking()
+        waitClip(.interrupted)
         transport?.send(.interrupt)
         process(timeline.interrupt())
         transport?.send(.played(seq: timeline.lastPlayed))
@@ -688,6 +749,7 @@ final class LiveController {
             }
         }
         vad.reset()
+        waitClip(.userSpoke)
         pill.handle(.micOpened)
         cue(.listen)
         Haptics.tap()
@@ -739,6 +801,7 @@ final class LiveController {
         if callStage.prompt != nil { withAnimation(Motion.snappy) { callStage.prompt = nil } }
         pill.handle(.micClosed(sent: true))
         cue(.send)
+        waitClip(.thinkingStarted)
     }
 
     private func reopenHandsFree() {
@@ -789,6 +852,8 @@ final class LiveController {
             return
         }
         transport?.send(.photo(requestId: requestId, jpeg: encoded.0, w: encoded.1, h: encoded.2))
+        photoSentAt = Date()
+        if requestId != nil { waitClip(.photo) }
     }
 
     // MARK: Sessions
@@ -805,6 +870,8 @@ final class LiveController {
         needsRebuild = true
         openingSession = true
         transport?.send(.openSession(sessionId: item.sessionId))
+        // Without the server the transcript comes from the replica (the snapshot replaces it on reconnect).
+        if !connected { showReplicaSession(item.sessionId) }
     }
 
     /// Asks the server for the progress report (the page shows what arrived last until the new one lands).
@@ -872,6 +939,9 @@ final class LiveController {
 
     private func tick() {
         let now = Date()
+        if mode == .live { run(waitClips.handle(.tick, now: now)) }
+        // Scenes hold their call phase still for the screenshot.
+        if callPhase.isActive, options.scene == nil { tickCall(now) }
         if timeline.hasGap {
             if gapSince == nil { gapSince = now }
             if let g = gapSince, now.timeIntervalSince(g) > 1.2 { gapSince = nil; process(timeline.skipGap()) }

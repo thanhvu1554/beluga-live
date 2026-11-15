@@ -152,14 +152,27 @@ private struct KnowledgeTab: View {
     let folderId: String
     @Environment(\.strings) private var s
 
+    /// One web page serves every folder: it shows only once it was drawn for this folder with this folder's data
+    /// (section 18), never the previous folder's page or an empty state that is about to fill.
+    private var pageVisible: Bool {
+        controller.knowledgePage.ready
+            && KnowledgeScope.pageVisible(renderedFolder: controller.knowledgeFolder, wanted: folderId,
+                                          dataKnown: controller.library.knowledgeLoaded.contains(folderId))
+    }
+
     var body: some View {
         ZStack {
             WebPageView(page: controller.knowledgePage)
-                .opacity(controller.knowledgePage.ready ? 1 : 0)
-            if !controller.knowledgePage.ready {
+                .opacity(pageVisible ? 1 : 0)
+            if !controller.knowledgePage.ready || (!pageVisible && !controller.connected) {
                 NativeKnowledge(controller: controller, folderId: folderId)
+            } else if !pageVisible {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .transition(.opacity)
             }
         }
+        .animation(Motion.snappy, value: pageVisible)
         // Rendering is skipped when the page already shows this folder's data (no rebuild on tab switches).
         .onAppear { controller.renderKnowledge(folderId) }
         .onChange(of: controller.knowledgePage.ready) { _, _ in controller.renderKnowledge(folderId, force: true) }

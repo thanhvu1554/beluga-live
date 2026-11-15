@@ -2,7 +2,7 @@ import SwiftUI
 import BelugaCore
 
 /// Screens pushed inside the Settings sheet.
-enum SettingsRoute: Hashable { case voices, diagnostics, connection, usage }
+enum SettingsRoute: Hashable { case voices, diagnostics, connection, usage, data }
 
 /// "Giọng nói": the tutor voices the server offers, a preview clip per voice, a tick on the one in use.
 struct VoiceSettingsView: View {
@@ -15,6 +15,16 @@ struct VoiceSettingsView: View {
         }
         .navigationTitle(s("voices.title"))
         .navigationBarTitleDisplayMode(.inline)
+        .overlay(alignment: .bottom) {
+            if controller.isMock, UserDefaults.standard.bool(forKey: "mockAudioProbe") {
+                // Test hook only: the decoder probe, readable by the UI test, invisible to the eye.
+                Text(verbatim: VoicePreviewPlayer.probe())
+                    .font(.caption2)
+                    .opacity(0.02)
+                    .accessibilityIdentifier("audio.probe")
+                    .allowsHitTesting(false)
+            }
+        }
         .onAppear { controller.requestVoices() }
         .onDisappear { controller.voicePreview.stop() }
     }

@@ -9,6 +9,8 @@ enum Earcon: CaseIterable {
     case done        // lesson finished: low resolved dyad
     case offline     // connection lost
     case shutter     // photo taken
+    case ring        // a call is dialing: soft ring-back, repeated
+    case connect     // the call connected: a short rising pair
 
     static let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!
 
@@ -21,6 +23,8 @@ enum Earcon: CaseIterable {
         case .done: return [(196, 0, 0.5, 0.08), (294, 0.05, 0.5, 0.06), (392, 0.10, 0.5, 0.04)]
         case .offline: return [(165, 0, 0.30, 0.08)]
         case .shutter: return [(1200, 0, 0.025, 0.05), (800, 0.03, 0.03, 0.04)]
+        case .ring: return [(425, 0, 0.42, 0.05), (425, 0.5, 0.42, 0.05)]
+        case .connect: return [(330, 0, 0.16, 0.08), (494, 0.09, 0.3, 0.07)]
         }
     }
 

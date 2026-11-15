@@ -78,8 +78,8 @@ struct CallView: View {
                     .font(.system(size: 30, weight: .regular, design: .serif))
                     .foregroundStyle(CallInk.primary)
                 HStack(spacing: Space.s) {
-                    CallTimer(start: controller.callStartedAt, size: 15)
-                    if !controller.title.isEmpty {
+                    CallStatusText(controller: controller, size: 15)
+                    if !controller.title.isEmpty, controller.callPhase.phase.isConnected || !controller.callPhase.isActive {
                         Text(verbatim: "·")
                         Text(verbatim: controller.title)
                             .lineLimit(1)
@@ -111,14 +111,24 @@ private struct CallStageCard: View {
     @Environment(\.strings) private var s
 
     private var stage: CallStage { controller.callStage }
+    private var phase: CallPhase { controller.callPhase.phase }
     private let shape = RoundedRectangle(cornerRadius: Radius.panel, style: .continuous)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            PresenceLabel(presence: controller.callPresence, size: 15)
-                .padding(.bottom, Space.xl)
+            if phase.isDialing || phase.isFailed {
+                // Before the lesson picks up the stage is the call itself: who is being called, or why it failed.
+                CallDialingStage(controller: controller, failed: phase.isFailed)
+                    .transition(.opacity)
+            } else {
+                PresenceLabel(presence: controller.callPresence, size: 15)
+                    .padding(.bottom, Space.xl)
+                    .transition(.opacity)
+            }
 
-            if stage.isEmpty {
+            if phase.isDialing || phase.isFailed {
+                EmptyView()
+            } else if stage.isEmpty {
                 VStack(alignment: .leading, spacing: Space.m) {
                     Text(verbatim: s("call.empty.title"))
                         .font(.system(size: 30, weight: .regular, design: .serif))
@@ -164,6 +174,7 @@ private struct CallStageCard: View {
         .background {
             ZStack {
                 shape.fill(CallInk.wash)
+                if phase.isDialing { RingPulse().transition(.opacity) }
                 CallGlow(controller: controller, role: .tutor)
                 // PiP animates out of this card and back into it.
                 PiPSourceView(pip: controller.pip) { CallPiPContent(controller: controller) }
@@ -172,8 +183,11 @@ private struct CallStageCard: View {
         .clipShape(shape)
         .overlay(shape.strokeBorder(CallInk.hairline, lineWidth: Stroke.hairline))
         .contentShape(shape)
+        // The call is over: the stage steps back while "Đã kết thúc" holds for a beat.
+        .opacity(phase.isEnded ? 0.5 : 1)
         .onTapGesture { controller.callTapStage() }
         .animation(Motion.smooth, value: stage)
+        .animation(Motion.smooth, value: phase)
         .accessibilityElement(children: .combine)
         .accessibilityHint(Text(verbatim: s("call.stage.hint")))
     }
@@ -468,5 +482,116 @@ private struct CallEndButton: View {
         }
         .buttonStyle(PressScaleStyle(scale: 0.92))
         .accessibilityLabel(Text(verbatim: label))
+    }
+}
+
+/// What the call header says under "Beluga": calling, connected, the running timer, ended with its length, or
+/// that the call failed. Each change cross-fades with a small lift; the timer ticks in tabular digits.
+struct CallStatusText: View {
+    let controller: LiveController
+    let size: CGFloat
+    @Environment(\.strings) private var s
+
+    var body: some View {
+        if controller.callPhase.isActive {
+            TimelineView(.periodic(from: .now, by: 0.25)) { ctx in
+                let label = controller.callPhase.label(now: ctx.date)
+                ZStack(alignment: .leading) {
+                    Text(verbatim: text(label, now: ctx.date))
+                        .font(.system(size: size, weight: .medium).monospacedDigit())
+                        .id(Self.kind(label))
+                        .transition(.opacity.combined(with: .offset(y: 4)))
+                }
+                .animation(Motion.snappy, value: Self.kind(label))
+                .accessibilityIdentifier("call.status")
+            }
+        } else {
+            // Scenes and older paths: the plain timer.
+            CallTimer(start: controller.callStartedAt, size: size)
+        }
+    }
+
+    private func text(_ label: CallLabel, now: Date) -> String {
+        switch label {
+        case .none: return ""
+        case .dialing: return s("call.phase.dialing")
+        case .connected: return s("call.phase.connected")
+        case .timer(let since): return CallTimer.format(now.timeIntervalSince(since))
+        case .ended(let d): return d.map { s("call.phase.ended", CallTimer.format($0)) } ?? s("call.phase.endedShort")
+        case .failed: return s("call.phase.failed")
+        }
+    }
+
+    static func kind(_ label: CallLabel) -> String {
+        switch label {
+        case .none: return "none"
+        case .dialing: return "dialing"
+        case .connected: return "connected"
+        case .timer: return "timer"
+        case .ended: return "ended"
+        case .failed: return "failed"
+        }
+    }
+}
+
+/// The stage while the call rings or after it failed: a serif line like the empty stage, a quiet explanation, and
+/// "Gọi lại" when it failed.
+private struct CallDialingStage: View {
+    let controller: LiveController
+    let failed: Bool
+    @Environment(\.strings) private var s
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.m) {
+            Text(verbatim: s(failed ? "call.phase.failed" : "call.phase.dialing"))
+                .font(.system(size: 30, weight: .regular, design: .serif))
+                .foregroundStyle(CallInk.primary)
+                .contentTransition(.opacity)
+            Text(verbatim: s(failed ? "call.failed.body" : "call.dialing.body"))
+                .font(.system(size: 17))
+                .foregroundStyle(CallInk.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .contentTransition(.opacity)
+            if failed {
+                Button { controller.retryCall() } label: {
+                    Label(s("call.retry"), systemImage: "phone.fill")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Palette.scrim)
+                        .padding(.horizontal, Space.l)
+                        .frame(minHeight: Size.tap)
+                        .background(Capsule().fill(Palette.glow))
+                        .contentShape(.capsule)
+                }
+                .buttonStyle(PressScaleStyle(scale: 0.95))
+                .padding(.top, Space.s)
+                .transition(.opacity.combined(with: .scale(0.92, anchor: .leading)))
+            }
+        }
+        .animation(Motion.snappy, value: failed)
+    }
+}
+
+/// Calling: soft rings spread from the middle of the stage, in the ring-back's rhythm. Still with Reduce Motion.
+private struct RingPulse: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private let period: Double = 2.6
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 60, paused: reduceMotion)) { ctx in
+            Canvas { gc, size in
+                let center = CGPoint(x: size.width / 2, y: size.height * 0.58)
+                let base = min(size.width, size.height) * 0.16
+                let t = ctx.date.timeIntervalSinceReferenceDate
+                for i in 0..<3 {
+                    let u = reduceMotion ? 0.35 + Double(i) * 0.2 : ((t / period) + Double(i) / 3).truncatingRemainder(dividingBy: 1)
+                    let r = base * (1 + 2.2 * u)
+                    let alpha = (1 - u) * 0.22
+                    let rect = CGRect(x: center.x - r, y: center.y - r, width: r * 2, height: r * 2)
+                    gc.stroke(Path(ellipseIn: rect), with: .color(Palette.glow.opacity(alpha)), lineWidth: 1.5)
+                }
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }

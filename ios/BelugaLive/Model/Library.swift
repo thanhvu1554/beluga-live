@@ -21,6 +21,30 @@ final class Library {
     var models: [ModelInfo] = ModelInfo.fallback
     /// Tutor voices (nil until the server answered `get_voices`).
     var voices: VoiceCatalog?
+    /// The server's `home` suggestions per context ("" = the root home, else a folder id; PROTOCOL section 18).
+    var homes: [String: HomeFrame] = [:]
+    /// Folder the shown greeting was asked for (nil: the root, or a v2 server that does not scope it).
+    var greetingFolder: String?
+    /// The server's R2 backup (PROTOCOL section 20; nil until `get_backup` is answered).
+    var backup: BackupStatus?
+
+    /// Suggestion cards for one context, scoped by `HomePlanner`: the server's frame for that very context, else
+    /// what this phone knows, and never anything of another folder inside a folder.
+    func homeCards(context: String?) -> [HomeCard] {
+        let local = folders.map { f in
+            HomePlanner.LocalFolder(id: f.id, name: f.name, kind: f.kind,
+                                    dueTopics: review[f.id]?.due.map(\.topic) ?? [], hasKnowledge: f.hasKnowledge)
+        }
+        let recent = sessions.map {
+            HomePlanner.LocalSession(sessionId: $0.sessionId, title: $0.title, folderId: $0.folderId, updatedAt: $0.updatedAt)
+        }
+        return HomePlanner.cards(context: context, home: homes[context ?? ""], folders: local, sessions: recent)
+    }
+
+    func session(_ id: String?) -> SessionItem? {
+        guard let id else { return nil }
+        return sessions.first { $0.sessionId == id }
+    }
 
     func voice(_ id: String?) -> VoiceInfo? {
         guard let id else { return nil }
