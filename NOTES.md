@@ -327,3 +327,23 @@ ngoài gói nhận `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_DEFA
 - mp3: 9 file lưu lại, đều có header mp3 hợp lệ (`ID3` hoặc khung đồng bộ) và khung MPEG-1 layer III 128 kbps, thời lượng 1,2 đến 5,4 giây; 3 file của lần 1 đã đưa qua nhận dạng của GenVoice, mỗi file nói đúng câu của `seq` đó ("Từ thấy đẻ rồi, cầu à nhé" cho "Tớ thấy đề rồi, câu a nhé", ...). Vẫn chưa nghe bằng tai.
 - Văn bản các lượt được Claude trả ra theo mảnh nhỏ (token) khi đang nói tiếp, nhưng sau một vòng tool thì nhiều lần cả khối chữ tới một lúc (dưới 10 ms), nên câu đầu tới ngay sau vòng tool chứ không dần dần.
 - Chưa kiểm chứng: mọi thứ cần iPhone thật; môn khác ngoài Toán (skill `ly`, `hoa`, `van`, `anh-ssat`, `duc`, `tin-cpp`, `chung` mới chỉ được kiểm tra khuôn và cú pháp ví dụ, chưa chạy với Claude thật); `memory_note` `mastered` và việc hai lần ôn đúng chuyển "Đã vững" mới chỉ có test, chưa thấy Claude thật làm; đọc tiếng Anh/Đức: giọng TTS và nhận dạng giọng nói đều theo `settings.lang` (vi hoặc en), nên giọng Việt đọc câu tiếng Đức và nhận dạng tiếng Việt cho lời nói tiếng Đức sẽ cho chữ lệch (skill `duc` đã dặn Claude nói thật giới hạn này, nhưng cần cân nhắc cho phép `lang` theo từng câu).
+
+## Server v3: đồng bộ bản sao ở máy và sao lưu R2 (15/11/2026, nhánh `v3-server-sync`)
+
+**Đồng bộ (PROTOCOL mục 19), `server/src/sync.rs`**
+- `GET /sync/manifest|folder/<id>|session/<id>|profile`, token như `/file` (Bearer hoặc `?token=`), `ETag` + `If-None-Match` → 304, 404 khi folder/phiên không còn (app hiểu là đã xóa).
+- Etag rẻ: SHA-256 (16 hex đầu) của một chuỗi mô tả gồm kích thước + mtime của tệp và vài trường chỉ mục; không đọc nhật ký hay knowledge. Folder: mục `folders` (bỏ tiến độ `ingest` đang chạy), mọi tệp trong `data/folders/<id>/`, `memory/folders/<id>.md`, các phiên trong folder (tên, mốc, kích thước nhật ký) và ngày hôm nay (lịch ôn đổi theo ngày). Phiên: tên, mode, folder, `updatedAt`, kích thước + mtime nhật ký (không đếm số sự kiện). Profile: các tệp `.md` ở `memory/` + ngày. JSON chứa etag trần, header `ETag` có ngoặc kép.
+- Khung `sync`: mọi chỗ có thể đổi dữ liệu chỉ gọi `store.changed()` (store tự gọi khi ghi `sessions.json` và ở `turn_end`; `http.rs` gọi trong `broadcast`, sau các yêu cầu WS sửa dữ liệu, sau mỗi lời gọi MCP của gia sư). Một task đợi 200 ms, tính lại toàn bộ etag, so với lần trước và phát `sync` đúng những id đổi/thêm/mất; quét lại mỗi phút (bắt sửa tay và sang ngày mới). Yêu cầu không đổi gì thì không có `sync`.
+- Đề trong gói folder: đúng trang `/exam/<id>`, thay `"/board/` bằng `"{{BOARD}}/`.
+
+**Sao lưu (mục 20), `server/src/backup.rs`**
+- Không SDK: SigV4 tự viết trên `reqwest`, crypto dùng `ring` (đã có sẵn qua rustls). Thêm crate `tar`, `zstd` (zstd-sys biên dịch C, như ring).
+- tar → zstd mức 3 → (mã hóa) → tệp tạm `data/.backup-tmp/`, trong task blocking; băm SHA-256 phần tar chưa nén để so "không đổi" (nên bản mã hóa cũng bỏ qua được). Tải: ≤ 16 MiB một PUT, lớn hơn thì multipart phần 8 MiB đều nhau; `daily/<ngày>` là bản copy phía server của `latest`; rồi `manifest.json` (`{v,at,bytes,sha256,files,encrypted,key,daily}`), xóa `latest` kiểu kia nếu bật/tắt mã hóa, giữ `BACKUP_KEEP_DAYS` bản daily mới nhất.
+- Mã hóa: PBKDF2-HMAC-SHA256 600000 vòng, AES-256-GCM theo khối 1 MiB kiểu STREAM (định dạng ghi ở đầu `backup.rs`). Sai passphrase báo lỗi ngay khối đầu.
+- Lịch: 03:00 giờ máy; 2 phút sau lần đổi cuối (mọi `sync`, kể cả hết lượt), tối đa 10 phút một lần; lỗi thì lùi dần (tối đa 6 giờ). `backup_now` chạy ngay. Trạng thái ở `data/backup.json` (không nằm trong bản sao lưu).
+- Khôi phục: tải về và giải nén vào thư mục anh em `.beluga-restore-*`, xong mới đổi chỗ; dữ liệu cũ giữ lại thành `<tên>.before-restore-<giờ>`. Server đang chạy (thử `/health`) và `data/` không rỗng thì từ chối trừ khi `--force`.
+
+**Đã chạy thật / chỉ với đồ giả**
+- `cargo test`: 104 unit + 4 test `v3_sync` + 9 test `v3_backup`, cùng mọi test cũ, đều xanh. S3 giả (axum cục bộ) tự kiểm lại chữ ký SigV4 bằng code riêng, giữ object trong RAM: khứ hồi giống từng byte, mã hóa, sai passphrase không đụng dữ liệu, multipart, bỏ qua khi không đổi, xóa daily cũ, sai secret bị 403, thiếu env thì tắt.
+- CLI chỉ thử nhánh tắt và nhánh endpoint không tới được (báo lỗi, dữ liệu giữ nguyên).
+- Chưa kiểm chứng: R2 thật (chưa có key; chưa chắc R2 chấp nhận đúng từng header, nhất là copy `x-amz-copy-source` và multipart); thời gian/RAM khi dữ liệu lớn trên VPS 1 CPU; app iOS chưa dùng các endpoint này.
