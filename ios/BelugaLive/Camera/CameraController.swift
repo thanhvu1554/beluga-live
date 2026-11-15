@@ -10,6 +10,13 @@ final class CameraController: NSObject, @unchecked Sendable, AVCapturePhotoCaptu
     private var configured = false
     private let lock = NSLock()
     private var pending: [Int64: CheckedContinuation<UIImage?, Never>] = [:]
+    private var multitasking = false
+
+    /// The camera keeps working while the app is in the background (PiP). False until the session is configured.
+    var multitaskingEnabled: Bool { lock.lock(); defer { lock.unlock() }; return multitasking }
+
+    /// The session is interrupted (app in the background without multitasking access, camera taken by another app).
+    var isInterrupted: Bool { session.isInterrupted }
 
     func start() {
         queue.async { [self] in
@@ -38,6 +45,12 @@ final class CameraController: NSObject, @unchecked Sendable, AVCapturePhotoCaptu
         if session.canAddInput(input) { session.addInput(input) }
         if session.canAddOutput(photoOutput) { session.addOutput(photoOutput) }
         photoOutput.maxPhotoQualityPrioritization = .quality
+        // Keep the camera while the app is in Picture in Picture (a call): supported on iOS 18+ for apps with the
+        // `voip` background mode, or with the multitasking-camera-access entitlement. Must be set before running.
+        let supported = session.isMultitaskingCameraAccessSupported
+        if supported { session.isMultitaskingCameraAccessEnabled = true }
+        lock.lock(); multitasking = supported && session.isMultitaskingCameraAccessEnabled; lock.unlock()
+        Diagnostics.log("camera: multitasking supported \(supported) enabled \(session.isMultitaskingCameraAccessEnabled)")
         session.commitConfiguration()
         // The app is portrait-only: ask for upright photos (the output defaults to the sensor's landscape).
         if let connection = photoOutput.connection(with: .video), connection.isVideoRotationAngleSupported(90) {

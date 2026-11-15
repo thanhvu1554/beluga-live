@@ -98,6 +98,11 @@ jobs:
           DEMO_NAME=tour-light DEMO_ARGS="-mock 1 -mockTour 1" VIDEO_SECONDS=44 bash ios/scripts/record-demo.sh "$APP" video
           DEMO_NAME=tour-dark DEMO_APPEARANCE=dark DEMO_ARGS="-mock 1 -mockTour 1" VIDEO_SECONDS=44 bash ios/scripts/record-demo.sh "$APP" video
 
+      - name: Call video (call rises from the chat, lesson in the call, board up and down, hang up)
+        run: |
+          APP="$DERIVED/Build/Products/Debug-iphonesimulator/BelugaLive.app"
+          DEMO_NAME=call DEMO_ARGS="-mock 1 -mockCall 1" VIDEO_SECONDS=40 bash ios/scripts/record-demo.sh "$APP" video
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:

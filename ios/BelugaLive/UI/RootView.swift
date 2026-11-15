@@ -14,19 +14,32 @@ struct RootView: View {
         ZStack {
             ChatShell(controller: controller)
             if controller.mode == .live {
-                // Live rises over the chat like a sheet and sinks back on exit (a cross-fade with Reduce Motion).
-                LiveView(controller: controller)
-                    .transition(reduceMotion ? .opacity : .move(edge: .bottom))
-                    .zIndex(1)
+                if controller.inCall {
+                    // The call rises the same way, as its own screen over the same session.
+                    CallView(controller: controller)
+                        .transition(reduceMotion ? .opacity : .move(edge: .bottom))
+                        .zIndex(2)
+                } else {
+                    // Live rises over the chat like a sheet and sinks back on exit (a cross-fade with Reduce Motion).
+                    LiveView(controller: controller)
+                        .transition(reduceMotion ? .opacity : .move(edge: .bottom))
+                        .zIndex(1)
+                }
+            }
+            if controller.options.scene == .pip {
+                PiPGallery(controller: controller)
+                    .zIndex(3)
             }
         }
         .animation(Motion.respecting(reduceMotion, Motion.smooth), value: controller.mode)
+        .animation(Motion.respecting(reduceMotion, Motion.smooth), value: controller.inCall)
         .onAppear { applyTheme(scheme) }
         .onChange(of: scheme) { _, new in applyTheme(new) }
         .onChange(of: phase) { _, new in
             // "phase active/background" lines also tell the next launch whether the app died in the foreground.
             Diagnostics.log("phase \(Self.name(new))")
             if new == .active { controller.appBecameActive() }
+            if new == .background { controller.appEnteredBackground() }
         }
         .onAppear { Diagnostics.log("phase \(Self.name(phase))") }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
@@ -161,7 +174,7 @@ private struct CameraLayer: View {
 }
 
 /// Brief white flash when a photo is taken (no colour, no bounce).
-private struct ShutterFlash: View {
+struct ShutterFlash: View {
     let tick: Int
     @State private var opacity = 0.0
 
@@ -258,7 +271,7 @@ private struct LiveRoundButton: View {
 }
 
 /// Calm, persistent hint when a permission was refused, with a way to the system Settings.
-private struct PermissionBanner: View {
+struct PermissionBanner: View {
     let issue: PermissionIssue
     @Environment(\.strings) private var s
 

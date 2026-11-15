@@ -132,7 +132,12 @@ extension LiveController {
             startCamera()
             if board.hasContent { boardVisible = true }
         }
-        withAnimation(Motion.panel) { mode = new }
+        withAnimation(Motion.panel) {
+            mode = new
+            // Leaving live also hangs up a call (the call is a face of live mode).
+            if new == .chat, inCall { inCall = false }
+        }
+        if new == .chat { callDidEnd() }
         Haptics.tap()
         if connected { transport?.send(.settings(settings.tutor(mode: new))) }
     }
@@ -682,6 +687,10 @@ extension LiveController {
     private func feed(_ v: JSONValue) { handle(ServerMessage.decode(v)) }
 
     func applyScene(_ scene: MockScene, mock: MockTransport) {
+        if scene.isCall {
+            applyCallScene(scene, mock: mock)
+            return
+        }
         if scene.isLive {
             applyLiveScene(scene, mock: mock)
             return

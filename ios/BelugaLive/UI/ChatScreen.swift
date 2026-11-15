@@ -404,6 +404,9 @@ struct HomeSuggestions: View {
         out.append(Item(id: "live", symbol: "waveform", title: "Live", detail: s("home.live.detail")) {
             controller.setMode(.live)
         })
+        out.append(Item(id: "call", symbol: "phone", title: s("call.home.title"), detail: s("call.home.detail")) {
+            controller.startCall()
+        })
         return out
     }
 }

@@ -120,6 +120,19 @@ struct ComposerView: View {
     private var modeButtons: some View {
         GlassEffectContainer(spacing: Space.s) {
             HStack(spacing: Space.xs) {
+                // Call: the lesson as a video call that keeps going in Picture in Picture. Steps aside for Send.
+                if !sending {
+                    Button { controller.startCall() } label: {
+                        Image(systemName: "phone.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(ink)
+                            .frame(width: 30, height: 30)
+                    }
+                    .buttonStyle(.glass)
+                    .buttonBorderShape(.circle)
+                    .transition(.opacity.combined(with: .scale(0.5, anchor: .trailing)))
+                    .accessibilityLabel(s("call.start"))
+                }
                 Button {
                     if sending { controller.sendChat() } else { controller.setMode(.live) }
                 } label: {
