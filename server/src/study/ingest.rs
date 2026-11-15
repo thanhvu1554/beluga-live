@@ -91,7 +91,8 @@ impl Default for IngestOptions {
             escalate_model: Some(HAIKU.into()),
             escalate_effort: None,
             pdf_model: None,
-            merge_model: HAIKU.into(),
+            // Haiku with the strict tree schema mostly returns an empty skeleton (bench, NOTES.md).
+            merge_model: FLASH.into(),
             merge_effort: None,
             concurrency: 8,
             retries: 1,

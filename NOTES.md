@@ -263,6 +263,41 @@ HTML 21 KB; tóm tắt `[memory]` sinh ra đúng ba dòng trên trường. Tổn
 lần chạy hỏng do test chờ quá ngắn). Chưa kiểm chứng: PDF qua WebSocket, nạp lần hai gộp vào kiến thức cũ qua WebSocket, mở
 trang đề trong app.
 
+**Chọn model nạp đề bằng bench (16/11/2026, nhánh `v3-ingest-harness`)**: `examples/ingest_bench.rs`, bộ `all` (8 trang ảnh,
+71 câu, 125 đoạn công thức, 96 cụm tiếng Việt trong `tests/fixtures/study/ground_truth.json`), mỗi cấu hình 3 lần, thư mục mới
+mỗi lần (không dùng cache trang). Chạy sau khi sửa `parse_json_loose` (LaTeX không nhân đôi `\`) và sửa bộ chấm (`x²`, `√(…)`).
+Số là trung bình 3 lần (min–max trong ngoặc).
+
+| Cấu hình | Đọc / leo thang / gộp | Câu khớp | Thừa | Loại câu | Công thức | Tiếng Việt | Leo thang | Gộp lỗi | Thời gian | Tiền |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `flash` | Flash / không / Flash | 71/71 | 1 | 100% | 124/125 | 95/96 | (tắt) | 0/3 | 29,8 s (28,0–30,7) | 0,0036 USD |
+| `haiku` | Haiku / không / Haiku | 71/71 | 0 | 100% | 120/125 (118–125) | 96/96 | (tắt) | 2/3 | 16,8 s (14,7–18,7) | 0,0122 USD |
+| `hybrid` | Flash / Haiku / Haiku | 71/71 | 1 | 100% | 124/125 | 95/96 | 0/24 trang | 2/3 | 15,0 s (12,3–19,8) | 0,0044 USD |
+| **`default` mới** | Flash / Haiku / Flash | 71/71 | 1 | 100% | 124/125 | 95/96 | 0/24 trang | 0/3 | 46,3 s (30,1–54,5) | 0,0044 USD |
+
+Đọc trang chiếm 7,7–8,4 s với Flash, 8,6–10,9 s với Haiku; phần còn lại là gộp. Lỗi duy nhất của Flash lặp lại ở cả 9 lần:
+`de1` câu I.6 ("Căn bậc ba của $-27$ là", các phương án tách thành một câu thừa không có phần, nên thiếu `\pm 3` và
+"không tồn tại"). Haiku không suy luận viết công thức kiểu chữ thường ở trang `hard_2col` trong 2/3 lần (`7/2` thay vì
+`\frac{7}{2}`, `Â` thay vì `\widehat{A}`): mất 7 công thức. Đợt trước (agent cũ, trước khi sửa parser, chấm lại bằng bộ chấm mới):
+`haiku-high` 124/125, 54 s, 0,0269 USD, gộp lỗi 1/3; `flash-think` 124–125/125, 56 s, 0,0086 USD.
+
+"Gộp lỗi" = model gộp trả cây không dùng nổi một nửa nhóm câu, job rơi về xếp theo tên chương/chủ đề đã đọc (vẫn ra kiến thức,
+nhưng không gom dạng bài, không có `method`). Nguyên nhân với Haiku: qua OpenRouter với `json_schema` strict, Haiku trả đúng cái
+khung rỗng (`{"chapters":[{"title":"Căn bậc hai…","topics":[{"forms":[],…}]}]}`), cả hai lần thử, nên lỗi nhanh (4–5 s) và
+trông như rẻ/nhanh. Thử bỏ schema cho Haiku (`hybrid`, 3 lần): gộp thật nhưng 31–113 s, 0,0075–0,0117 USD, vẫn lỗi 1/3 (JSON
+hỏng/cắt). Flash gộp (không có `json_schema`, chỉ `json_object`): 0 lỗi trong 6 lần (`flash` và `default`), trong đó 2 lần
+lần đầu trả JSON hỏng và lần thử lại qua.
+
+**Mặc định chọn**: đọc bằng `deepseek-flash`, leo thang và PDF bằng Haiku (giữ nguyên), **gộp bằng `deepseek-flash`** (trước là
+Haiku). Lý do: độ chính xác đọc của Flash bằng các cấu hình đắt hơn (124/125, 95/96) và ổn định, rẻ hơn Haiku khoảng 3 lần;
+leo thang không tốn gì khi không có trang bị cờ (0/24 trang ở bench này) nhưng là lưới an toàn cho trang khó và là đường đọc
+PDF duy nhất (DeepSeek không nhận PDF); gộp bằng Haiku hỏng 2/3 lần nên số thời gian đẹp của `hybrid` là giả. Cái giá: gộp Flash
+chậm hơn (20–46 s), thời gian cả job 30–55 s. Ghi đè bằng `BELUGA_MERGE_MODEL`.
+
+Chưa làm/chưa chắc: leo thang chưa từng bật trong bench (không trang nào bị cờ), nên chất lượng nhánh leo thang chỉ có test giả;
+bộ `pdf` (`de2.pdf`, đường Haiku đọc PDF) không chạy lần này; Flash gộp đôi khi trả JSON hỏng ở lần đầu (chưa xem toàn văn, chỉ
+400 ký tự đầu trong log); lỗi I.6 của Flash chưa sửa. Tiền API đợt này khoảng 0,10 USD (OpenRouter + DeepSeek).
+
 **Đã xong và đã kiểm chứng**
 - Parser dòng bài giảng streaming (`src/parser.rs`): đủ quy tắc PROTOCOL mục 2, 19 test (mảnh cắt giữa dòng/JSON/UTF-8, CRLF, LaTeX có dấu gạch chéo ngược kép, `@show` trước `@step`, dòng `@` hỏng, bỏ sau `@ask`, cắt câu >220).
 - Server axum: `/health`, `/board/*`, `/ws`, ghép đôi (mã 6 số lưu `server/data/pair.json`, đổi lấy `pairToken`), phiên + nhật ký sự kiện (`server/data/sessions/<id>.jsonl`), `snapshot` khi nối lại bằng `lastSeq`, `open_session`/`list_sessions`, `interrupt`, `played`, `capture_request`/`photo`, TTS/STT sau interface (có bản giả).

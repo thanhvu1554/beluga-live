@@ -34,7 +34,7 @@
 //! `DEEPSEEK_BASE_URL`, `OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL`, `BELUGA_INGEST_MODEL`
 //! (`deepseek-flash`), `BELUGA_INGEST_EFFORT` (`none`), `BELUGA_ESCALATE_MODEL`
 //! (`anthropic/claude-haiku-5.5`, `none` = never), `BELUGA_ESCALATE_EFFORT` (`none`), `BELUGA_PDF_MODEL`
-//! (escalation model), `BELUGA_MERGE_MODEL` (`anthropic/claude-haiku-5.5`), `BELUGA_MERGE_EFFORT` (`none`),
+//! (escalation model), `BELUGA_MERGE_MODEL` (`deepseek-flash`), `BELUGA_MERGE_EFFORT` (`none`),
 //! `BELUGA_EXAM_MODEL` (`anthropic/claude-haiku-5.5`), `BELUGA_EXAM_EFFORT` (`high`),
 //! `BELUGA_INGEST_CONCURRENCY` (8), `BELUGA_DEEPSEEK_PRICE` (`in,cached,out` USD per million).
 
