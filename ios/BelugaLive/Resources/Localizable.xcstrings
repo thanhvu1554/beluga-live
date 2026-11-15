@@ -1588,13 +1588,13 @@
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nhắn cho Beluga…"
+            "value": "Hỏi Beluga…"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Message Beluga…"
+            "value": "Ask Beluga…"
           }
         }
       }

@@ -21,6 +21,15 @@ private func show(_ seq: Int, step: Int, _ block: JSONValue) -> LessonEvent {
         #expect(PlainMath.text(fromTeX: "\\text{với } x \\in \\mathbb{R}") == "với x ∈ ℝ")
     }
 
+    @Test func quadSeparatesEquationsAndScriptsSplitIntoRuns() {
+        let t = PlainMath.text(fromTeX: "x_1 = \\frac{5-1}{2} = 2, \\qquad x_2 = \\frac{5+1}{2} = 3")
+        #expect(t.split(separator: "\n").map(String.init) == ["x₁ = (5−1)/2 = 2", "x₂ = (5+1)/2 = 3"])
+        #expect(PlainMath.inline("$a \\quad b$") == "a b")
+        let runs = PlainMath.scriptRuns("x₁² − x").map { "\($0.position):\($0.text)" }
+        #expect(runs == ["base:x", "sub:1", "sup:2", "base: − x"])
+        #expect(PlainMath.scriptRuns("x⁻¹").map(\.text) == ["x", "−1"])
+    }
+
     @Test func lineBreaksAndEnvironments() {
         let t = PlainMath.text(fromTeX: "\\begin{cases} x > 1 \\\\ x < 3 \\end{cases}")
         #expect(t.split(separator: "\n").map(String.init) == ["x > 1", "x < 3"])

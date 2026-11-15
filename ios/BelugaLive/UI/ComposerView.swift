@@ -32,6 +32,7 @@ struct ComposerView: View {
                 plusMenu
                 field
                 MicButton(controller: controller, composer: composer)
+                if !sending { callButton }
                 modeButtons
             }
         }
@@ -120,19 +121,6 @@ struct ComposerView: View {
     private var modeButtons: some View {
         GlassEffectContainer(spacing: Space.s) {
             HStack(spacing: Space.xs) {
-                // Call: the lesson as a video call that keeps going in Picture in Picture. Steps aside for Send.
-                if !sending {
-                    Button { controller.startCall() } label: {
-                        Image(systemName: "phone.fill")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(ink)
-                            .frame(width: 30, height: 30)
-                    }
-                    .buttonStyle(.glass)
-                    .buttonBorderShape(.circle)
-                    .transition(.opacity.combined(with: .scale(0.5, anchor: .trailing)))
-                    .accessibilityLabel(s("call.start"))
-                }
                 Button {
                     if sending { controller.sendChat() } else { controller.setMode(.live) }
                 } label: {
@@ -158,6 +146,21 @@ struct ComposerView: View {
             }
         }
         .frame(minHeight: Size.tap)
+    }
+
+    /// Call: the lesson as a video call that keeps going in Picture in Picture. A plain glyph like the mic (no
+    /// glass, outside the Live/Send container, so it never melts into the Live capsule); steps aside for Send.
+    private var callButton: some View {
+        Button { controller.startCall() } label: {
+            Image(systemName: "phone")
+                .font(.system(size: Size.icon, weight: .medium))
+                .foregroundStyle(Ink.primary)
+                .frame(width: 34, height: Size.tap)
+                .contentShape(.rect)
+        }
+        .buttonStyle(PressScaleStyle(scale: 0.9))
+        .transition(.opacity.combined(with: .scale(0.6)))
+        .accessibilityLabel(s("call.start"))
     }
 
     /// Solid ink for the primary buttons (black in light, white in dark) and the text on it.

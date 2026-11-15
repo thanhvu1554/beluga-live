@@ -166,9 +166,45 @@ public enum PlainMath {
         var p = TeXParser(Array(tex))
         let raw = p.parse(untilBrace: false)
         return raw.split(separator: "\n", omittingEmptySubsequences: false)
-            .map { tidy(String($0)) }
+            .map { line -> String in
+                var t = tidy(String(line))
+                // "x₁ = 2," before a `\quad`: the separator comma has no job once the next equation is on its own line.
+                if t.hasSuffix(",") || t.hasSuffix(";") { t.removeLast(); t = tidy(t) }
+                return t
+            }
             .filter { !$0.isEmpty }
             .joined(separator: "\n")
+    }
+
+    public enum ScriptPosition: Sendable, Equatable { case base, sup, sub }
+
+    /// Splits text into runs of base characters, superscripts and subscripts (the Unicode script characters mapped
+    /// back to plain ones), so a view can draw scripts in the same typeface with a baseline shift: most fonts lack
+    /// glyphs for ₁ or ⁿ and fall back to another face.
+    public static func scriptRuns(_ s: String) -> [(text: String, position: ScriptPosition)] {
+        var out: [(text: String, position: ScriptPosition)] = []
+        for ch in s {
+            let pos: ScriptPosition
+            let base: Character
+            if let b = reverseSup[ch] { pos = .sup; base = b }
+            else if let b = reverseSub[ch] { pos = .sub; base = b }
+            else { pos = .base; base = ch }
+            if let last = out.last, last.position == pos {
+                out[out.count - 1].text.append(base)
+            } else {
+                out.append((String(base), pos))
+            }
+        }
+        return out
+    }
+
+    static let reverseSup: [Character: Character] = reverse(superscripts)
+    static let reverseSub: [Character: Character] = reverse(subscripts)
+
+    static func reverse(_ map: [Character: Character]) -> [Character: Character] {
+        var r: [Character: Character] = [:]
+        for (k, v) in map where k != v && k != "-" { r[v] = k }
+        return r
     }
 
     /// Inline markdown with `$…$` / `$$…$$` math: one line of plain text.
@@ -243,7 +279,8 @@ public enum PlainMath {
         "Rightarrow": "⇒", "Leftarrow": "⇐", "Leftrightarrow": "⇔", "iff": "⇔", "implies": "⇒", "rightarrow": "→", "to": "→",
         "leftarrow": "←", "leftrightarrow": "↔", "mapsto": "↦", "forall": "∀", "exists": "∃", "sum": "Σ", "prod": "Π",
         "int": "∫", "partial": "∂", "nabla": "∇", "circ": "°", "degree": "°", "angle": "∠", "perp": "⊥", "parallel": "∥",
-        "ldots": "…", "dots": "…", "cdots": "⋯", "quad": "\u{2003}", "qquad": "\u{2003}\u{2003}",
+        // `\quad` separates equations ("x₁ = 2, \quad x₂ = 3"): one per line, so none is split by wrapping.
+        "ldots": "…", "dots": "…", "cdots": "⋯", "quad": "\n", "qquad": "\n",
         "lt": "<", "gt": ">", "neg": "¬", "land": "∧", "lor": "∨", "triangle": "△", "star": "⋆", "%": "%",
         "ell": "ℓ", "hbar": "ℏ", "prime": "′",
     ]

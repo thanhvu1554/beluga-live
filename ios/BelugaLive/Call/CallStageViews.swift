@@ -26,6 +26,29 @@ enum CallInk {
     static let ground = Color(white: 0.055)
 }
 
+/// A line of math in the serif, with sub- and superscripts drawn in the same face (smaller, baseline-shifted)
+/// rather than as Unicode script characters, which the serif lacks and would take from a sans fallback.
+enum MathText {
+    static func make(_ line: String, size: CGFloat, weight: Font.Weight = .regular) -> Text {
+        var out = AttributedString()
+        for run in PlainMath.scriptRuns(line) {
+            var a = AttributedString(run.text)
+            switch run.position {
+            case .base:
+                a.swiftUI.font = Font.system(size: size, weight: weight, design: .serif)
+            case .sup:
+                a.swiftUI.font = Font.system(size: size * 0.66, weight: weight, design: .serif)
+                a.swiftUI.baselineOffset = size * 0.38
+            case .sub:
+                a.swiftUI.font = Font.system(size: size * 0.66, weight: weight, design: .serif)
+                a.swiftUI.baselineOffset = -size * 0.16
+            }
+            out += a
+        }
+        return Text(out)
+    }
+}
+
 /// One stage block, natively: formulas in a serif, prose, a compact table, the answer with emphasis.
 struct StageBlockView: View {
     let block: StageBlock
@@ -44,10 +67,10 @@ struct StageBlockView: View {
         case .formula:
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(Array(block.lines.prefix(4).enumerated()), id: \.offset) { _, line in
-                    Text(verbatim: line)
-                        .font(.system(size: dimmed ? metrics.formula * 0.7 : metrics.formula, weight: .regular, design: .serif))
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.45)
+                    // One equation per line, never wrapped mid-way: it shrinks to fit instead.
+                    MathText.make(line, size: dimmed ? metrics.formula * 0.7 : metrics.formula)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.4)
                 }
                 note
             }
@@ -58,8 +81,7 @@ struct StageBlockView: View {
                     .tracking(1.2)
                     .foregroundStyle(CallInk.tertiary)
                 ForEach(Array(block.lines.prefix(3).enumerated()), id: \.offset) { _, line in
-                    Text(verbatim: line)
-                        .font(.system(size: metrics.formula * 0.9, weight: .semibold, design: .serif))
+                    MathText.make(line, size: metrics.formula * 0.9, weight: .semibold)
                         .lineLimit(3)
                         .minimumScaleFactor(0.45)
                 }
@@ -115,8 +137,7 @@ private struct StageTable: View {
             ForEach(Array(shown.enumerated()), id: \.offset) { i, row in
                 GridRow {
                     ForEach(Array(row.prefix(6).enumerated()), id: \.offset) { _, cell in
-                        Text(verbatim: cell)
-                            .font(.system(size: size, weight: hasHeader && i == 0 ? .semibold : .regular, design: .serif))
+                        MathText.make(cell, size: size, weight: hasHeader && i == 0 ? .semibold : .regular)
                             .lineLimit(1)
                             .minimumScaleFactor(0.5)
                     }
