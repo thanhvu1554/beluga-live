@@ -145,6 +145,8 @@ struct ChatScreen: View {
                     .transition(.opacity)
             }
         }
+        // Home and transcript cross-fade here, on the content only (never on the navigation bar's items).
+        .animation(Motion.smooth, value: isEmpty)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: Space.s) {
                 if let notice = controller.notice, controller.mode == .chat {
@@ -184,20 +186,20 @@ struct ChatScreen: View {
             ToolbarItem(placement: .principal) {
                 ChatTitle(controller: controller)
             }
+            // The bar always holds the same items: bar buttons that come and go with the transcript made UIKit
+            // rebuild the bar mid-update (the app died there on a real phone). "New chat" is just disabled on home.
             ToolbarItemGroup(placement: .topBarTrailing) {
-                if !isEmpty {
-                    Button { controller.newChat(in: controller.folderId) } label: {
-                        Image(systemName: "square.and.pencil")
-                    }
-                    .accessibilityLabel(s("chat.new"))
+                Button { controller.newChat(in: controller.folderId) } label: {
+                    Image(systemName: "square.and.pencil")
                 }
+                .disabled(isEmpty)
+                .accessibilityLabel(s("chat.new"))
                 Button { controller.showSettings = true } label: {
                     Image(systemName: "gearshape")
                 }
                 .accessibilityLabel(s("settings.title"))
             }
         }
-        .animation(Motion.smooth, value: isEmpty)
     }
 }
 
@@ -207,48 +209,44 @@ private struct ChatTitle: View {
     let controller: LiveController
     @Environment(\.strings) private var s
 
+    private var home: Bool { controller.transcript.isEmpty && controller.title.isEmpty }
+
     var body: some View {
-        Group {
-            if controller.transcript.isEmpty && controller.title.isEmpty {
-                Button { controller.showModels = true } label: {
-                    VStack(spacing: 1) {
-                        Text(verbatim: "Beluga")
-                            .font(.system(size: 17, weight: .semibold, design: .serif))
-                            .foregroundStyle(Ink.primary)
-                        HStack(spacing: 3) {
-                            Text(verbatim: modelLabel)
-                                .font(TypeScale.micro)
-                                .lineLimit(1)
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 7, weight: .bold))
-                        }
-                        .foregroundStyle(Ink.secondary)
-                    }
-                    .frame(minWidth: 120, minHeight: Size.tap)
-                    .contentShape(.rect)
-                }
-                .buttonStyle(PressScaleStyle())
-                .accessibilityLabel(Text(verbatim: "Beluga, " + modelLabel))
-                .accessibilityHint(Text(verbatim: s("models.title")))
-                .transition(.opacity)
-            } else {
-                VStack(spacing: 0) {
-                    Text(verbatim: controller.title.isEmpty ? s("board.untitled") : controller.title)
-                        .font(TypeScale.callout.weight(.semibold))
+        // One button with the same shape in both states (only its texts change): the bar item is never
+        // replaced by another kind of view while the bar updates.
+        Button { controller.showModels = true } label: {
+            VStack(spacing: 1) {
+                Text(verbatim: home ? "Beluga" : (controller.title.isEmpty ? s("board.untitled") : controller.title))
+                    .font(home ? .system(size: 17, weight: .semibold, design: .serif) : TypeScale.callout.weight(.semibold))
+                    .foregroundStyle(Ink.primary)
+                    .lineLimit(1)
+                    .contentTransition(.opacity)
+                HStack(spacing: 3) {
+                    Text(verbatim: subtitle)
+                        .font(TypeScale.micro)
                         .lineLimit(1)
                         .contentTransition(.opacity)
-                    if let folder = controller.library.folder(controller.folderId) {
-                        Text(verbatim: folder.name)
-                            .font(TypeScale.micro)
-                            .foregroundStyle(Ink.secondary)
-                            .lineLimit(1)
-                    }
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 7, weight: .bold))
+                        .opacity(home ? 1 : 0)
                 }
-                .frame(maxWidth: 240)
-                .transition(.opacity)
+                .foregroundStyle(Ink.secondary)
+                .opacity(subtitle.isEmpty ? 0 : 1)
             }
+            .frame(minWidth: 120, maxWidth: 240, minHeight: Size.tap)
+            .contentShape(.rect)
         }
+        .buttonStyle(PressScaleStyle())
+        .accessibilityLabel(Text(verbatim: home ? "Beluga, " + modelLabel : (controller.title.isEmpty ? s("board.untitled") : controller.title)))
+        .accessibilityHint(Text(verbatim: s("models.title")))
         .animation(Motion.snappy, value: controller.title)
+        .animation(Motion.snappy, value: home)
+    }
+
+    /// Home: the model. In a session: its folder (nothing when the session is in no folder).
+    private var subtitle: String {
+        if home { return modelLabel }
+        return controller.library.folder(controller.folderId)?.name ?? ""
     }
 
     private var modelLabel: String {

@@ -42,6 +42,14 @@ struct RootView: View {
             if new == .background { controller.appEnteredBackground() }
         }
         .onAppear { Diagnostics.log("phase \(Self.name(phase))") }
+        // Breadcrumbs of where the interface is: a crash report without app frames still says what was on screen.
+        .onChange(of: trail) { _, new in Diagnostics.log(new) }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            Diagnostics.log("ui: keyboard up")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            Diagnostics.log("ui: keyboard down")
+        }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
             Diagnostics.log("memory warning")
         }
@@ -80,6 +88,20 @@ struct RootView: View {
             QuickLookView(url: file.url)
                 .ignoresSafeArea()
         }
+    }
+
+    /// One line describing what is on screen (logged whenever it changes).
+    private var trail: String {
+        var sheets: [String] = []
+        if controller.showSettings { sheets.append("settings") }
+        if controller.showModels { sheets.append("models") }
+        if controller.showUsage { sheets.append("usage") }
+        if controller.showProgress { sheets.append("progress") }
+        if controller.showReplay { sheets.append("replay") }
+        if controller.preview != nil { sheets.append("preview") }
+        return "ui: mode=\(controller.mode.rawValue) call=\(controller.inCall) drawer=\(controller.drawerOpen)"
+            + " path=\(controller.path.count) empty=\(controller.transcript.isEmpty) typing=\(controller.composer.hasContent)"
+            + " files=\(controller.composer.attachments.count) sheets=[\(sheets.joined(separator: ","))]"
     }
 
     private static func name(_ p: ScenePhase) -> String {

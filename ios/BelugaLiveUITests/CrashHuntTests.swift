@@ -191,7 +191,15 @@ final class CrashHuntTests: XCTestCase {
             print("HUNT keyboard shown: \(app.keyboards.count > 0)")
             return
         }
+        let byLabel = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] %@ OR placeholderValue CONTAINS[c] %@", "Hỏi Beluga", "Hỏi Beluga")).firstMatch
+        if byLabel.waitForExistence(timeout: 3) {
+            byLabel.tap()
+            pause(1)
+            print("HUNT keyboard shown (by label): \(app.keyboards.count > 0)")
+            return
+        }
         print("HUNT MISSING composer field")
+        print(app.debugDescription.prefix(6000))
         XCTFail("composer field not found")
     }
 

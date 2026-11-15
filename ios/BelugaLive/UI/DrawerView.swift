@@ -58,8 +58,8 @@ struct DrawerView: View {
                 }
             }
             .listStyle(.insetGrouped)
-            .animation(Motion.smooth, value: controller.library.sessions)
-            .animation(Motion.smooth, value: controller.library.folders)
+            // No implicit animation on server data: this list sits hidden under the chat most of the time, and an
+            // animated batch update of a collection view that is not on screen is a known way to die inside UIKit.
             .navigationTitle(Text(verbatim: "Beluga"))
             .navigationBarTitleDisplayMode(.inline)
         }

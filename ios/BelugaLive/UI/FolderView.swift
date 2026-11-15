@@ -51,16 +51,16 @@ struct FolderView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
-                if controller.folderTab == .knowledge, !controller.knowledgeSections.isEmpty {
-                    Menu {
-                        ForEach(controller.knowledgeSections, id: \.id) { sec in
-                            Button(sec.title) { controller.showKnowledgeSection(sec.id) }
-                        }
-                    } label: {
-                        Image(systemName: "list.bullet")
+                // Always in the bar (disabled outside the knowledge tab): bar items never appear or vanish.
+                Menu {
+                    ForEach(controller.knowledgeSections, id: \.id) { sec in
+                        Button(sec.title) { controller.showKnowledgeSection(sec.id) }
                     }
-                    .accessibilityLabel(s("knowledge.sections"))
+                } label: {
+                    Image(systemName: "list.bullet")
                 }
+                .disabled(controller.folderTab != .knowledge || controller.knowledgeSections.isEmpty)
+                .accessibilityLabel(s("knowledge.sections"))
                 Menu {
                     Button { draftName = folder?.name ?? ""; renaming = true } label: { Label(s("folders.rename"), systemImage: "pencil") }
                     Button { controller.showIngest = folderId } label: { Label(s("ingest.add"), systemImage: "doc.badge.plus") }
@@ -132,7 +132,6 @@ private struct FolderSessions: View {
                 }
             }
         }
-        .animation(Motion.smooth, value: items)
         .alert(s("sessions.rename"), isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField(s("sessions.rename"), text: $draft)
             Button(s("common.cancel"), role: .cancel) { renaming = nil }
@@ -385,7 +384,6 @@ private struct ReviewTab: View {
                 ProgressView().frame(maxWidth: .infinity, minHeight: Size.row)
             }
         }
-        .animation(Motion.smooth, value: controller.library.review[folderId])
     }
 }
 
@@ -502,6 +500,5 @@ private struct ExamsTab: View {
                 }
             } header: { Text(verbatim: s("exams.list")) } footer: { Text(verbatim: s("exams.footer")) }
         }
-        .animation(Motion.smooth, value: controller.library.exams[folderId]?.map(\.examId))
     }
 }

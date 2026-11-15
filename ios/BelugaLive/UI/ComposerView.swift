@@ -32,7 +32,14 @@ struct ComposerView: View {
                 plusMenu
                 field
                 MicButton(controller: controller, composer: composer)
-                if !sending { callButton }
+                // Always in the row; it folds to nothing while Send is showing (no view comes or goes).
+                callButton
+                    .frame(width: sending ? 0 : 34)
+                    .opacity(sending ? 0 : 1)
+                    .scaleEffect(sending ? 0.6 : 1)
+                    .clipped()
+                    .allowsHitTesting(!sending)
+                    .accessibilityHidden(sending)
                 modeButtons
             }
         }
@@ -119,32 +126,36 @@ struct ComposerView: View {
     /// Live (and later other mode entries) or Send. Send is the same button as Live: the waveform turns into an
     /// arrow and the word folds away, so the eye never loses the primary action.
     private var modeButtons: some View {
-        GlassEffectContainer(spacing: Space.s) {
-            HStack(spacing: Space.xs) {
-                Button {
-                    if sending { controller.sendChat() } else { controller.setMode(.live) }
-                } label: {
-                    HStack(spacing: Space.xs) {
-                        Image(systemName: sending ? "arrow.up" : "waveform")
-                            .font(.system(size: sending ? Size.icon : 15, weight: .semibold))
-                            .contentTransition(.symbolEffect(.replace.downUp))
-                        if !sending {
-                            Text(verbatim: "Live")
-                                .font(TypeScale.callout.weight(.semibold))
-                                .fixedSize()
-                                .transition(.opacity.combined(with: .scale(0.5, anchor: .leading)))
-                        }
-                    }
-                    .foregroundStyle(inverse)
-                    .frame(minWidth: 30, minHeight: 30)
-                }
-                .buttonStyle(.glassProminent)
-                .buttonBorderShape(.capsule)
-                .tint(ink)
-                .disabled(sending && !composer.canSend)
-                .accessibilityLabel(s(sending ? "composer.send" : "live.enter"))
+        // One glass button, always the same view: the word folds to zero width for Send instead of leaving the
+        // tree, and there is no glass container around it (a single shape has nothing to merge with).
+        Button {
+            if sending {
+                // Let the keyboard finish what it is composing (autocorrection, Telex) before the text is cleared.
+                focused = false
+                controller.sendChat()
+            } else {
+                controller.setMode(.live)
             }
+        } label: {
+            HStack(spacing: sending ? 0 : Space.xs) {
+                Image(systemName: sending ? "arrow.up" : "waveform")
+                    .font(.system(size: sending ? Size.icon : 15, weight: .semibold))
+                    .contentTransition(.symbolEffect(.replace.downUp))
+                Text(verbatim: "Live")
+                    .font(TypeScale.callout.weight(.semibold))
+                    .fixedSize()
+                    .frame(width: sending ? 0 : nil, alignment: .leading)
+                    .opacity(sending ? 0 : 1)
+                    .clipped()
+            }
+            .foregroundStyle(inverse)
+            .frame(minWidth: 30, minHeight: 30)
         }
+        .buttonStyle(.glassProminent)
+        .buttonBorderShape(.capsule)
+        .tint(ink)
+        .disabled(sending && !composer.canSend)
+        .accessibilityLabel(s(sending ? "composer.send" : "live.enter"))
         .frame(minHeight: Size.tap)
     }
 
@@ -159,7 +170,6 @@ struct ComposerView: View {
                 .contentShape(.rect)
         }
         .buttonStyle(PressScaleStyle(scale: 0.9))
-        .transition(.opacity.combined(with: .scale(0.6)))
         .accessibilityLabel(s("call.start"))
     }
 

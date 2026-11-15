@@ -2,6 +2,7 @@ import Foundation
 import Darwin
 import MetricKit
 import os
+import ObjectiveC
 
 // Crash diagnostics for a phone we cannot attach a debugger to.
 //
@@ -113,6 +114,9 @@ final class Diagnostics: @unchecked Sendable {
     private func record(exception: NSException) {
         let stack = exception.callStackSymbols.prefix(40).joined(separator: "\n")
         log("!!! CRASH: uncaught exception \(exception.name.rawValue): \(exception.reason ?? "")\n\(stack)")
+        // Written as a second entry, after the raw stack is safely on disk.
+        let named = FrameNamer.names(for: exception.callStackReturnAddresses.prefix(40).map { $0.uintValue })
+        log("--- frames named by the Objective-C runtime ---\n" + named.joined(separator: "\n"))
     }
 
     // MARK: Previous session
@@ -205,5 +209,83 @@ private final class MetricsSubscriber: NSObject, MXMetricManagerSubscriber, @unc
         let old = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
         let combined = String((text + old).prefix(400_000))
         try? combined.write(to: url, atomically: true, encoding: .utf8)
+    }
+}
+
+/// Names the Objective-C method each return address falls in. On a phone the system frameworks carry no symbols,
+/// so a crash inside UIKit is only "UIKitCore + 6169152"; the runtime, however, still knows where every method
+/// starts. For each address this finds the method with the closest entry point at or below it in the same image.
+/// A large offset (several kilobytes) means the address is probably in a C function or a block after that method.
+enum FrameNamer {
+    /// Pointer-authentication bits sit above the address on arm64e.
+    private static func strip(_ a: UInt) -> UInt { a & 0x0000_000F_FFFF_FFFF }
+
+    static func names(for addresses: [UInt]) -> [String] {
+        var out = [String](repeating: "?", count: addresses.count)
+        var pending: [String: [(index: Int, address: UInt)]] = [:]
+        for (i, raw) in addresses.enumerated() {
+            let a = strip(raw)
+            var info = Dl_info()
+            guard dladdr(UnsafeRawPointer(bitPattern: a), &info) != 0, let fname = info.dli_fname else {
+                out[i] = String(format: "%2d  0x%lx", i, a)
+                continue
+            }
+            let path = String(cString: fname)
+            let image = (path as NSString).lastPathComponent
+            if let sname = info.dli_sname, let saddr = info.dli_saddr {
+                let symbol = String(cString: sname)
+                if !symbol.isEmpty, symbol != "<redacted>" {
+                    out[i] = String(format: "%2d  %@  %@ + %lu", i, image, symbol, a &- UInt(bitPattern: saddr))
+                    continue
+                }
+            }
+            out[i] = String(format: "%2d  %@  0x%lx", i, image, a)
+            pending[path, default: []].append((i, a))
+        }
+        for (path, frames) in pending {
+            let entries = methodEntries(inImage: path)
+            guard !entries.isEmpty else { continue }
+            let image = (path as NSString).lastPathComponent
+            for f in frames {
+                // Greatest entry point that is not above the address.
+                var lo = 0, hi = entries.count
+                while lo < hi {
+                    let mid = (lo + hi) / 2
+                    if entries[mid].address <= f.address { lo = mid + 1 } else { hi = mid }
+                }
+                guard lo > 0 else { continue }
+                let e = entries[lo - 1]
+                out[f.index] = String(format: "%2d  %@  %@ + %lu", f.index, image, e.name, f.address &- e.address)
+            }
+        }
+        return out
+    }
+
+    /// Every Objective-C method of the classes defined in one image, sorted by entry address.
+    private static func methodEntries(inImage path: String) -> [(address: UInt, name: String)] {
+        var count: UInt32 = 0
+        guard let classNames = objc_copyClassNamesForImage(path, &count) else { return [] }
+        defer { free(UnsafeMutableRawPointer(mutating: classNames)) }
+        var entries: [(address: UInt, name: String)] = []
+        entries.reserveCapacity(Int(count) * 12)
+        for k in 0..<Int(count) {
+            guard let cls: AnyClass = objc_lookUpClass(classNames[k]) else { continue }
+            let className = String(cString: classNames[k])
+            let targets: [(AnyClass?, String)] = [(cls, "-"), (object_getClass(cls), "+")]
+            for (target, sign) in targets {
+                guard let target else { continue }
+                var n: UInt32 = 0
+                guard let methods = class_copyMethodList(target, &n) else { continue }
+                for m in 0..<Int(n) {
+                    let imp = method_getImplementation(methods[m])
+                    let address = strip(unsafeBitCast(imp, to: UInt.self))
+                    let selector = NSStringFromSelector(method_getName(methods[m]))
+                    entries.append((address, sign + "[" + className + " " + selector + "]"))
+                }
+                free(methods)
+            }
+        }
+        entries.sort { $0.address < $1.address }
+        return entries
     }
 }
