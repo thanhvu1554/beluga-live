@@ -417,3 +417,130 @@ Chọn giọng đọc của gia sư trong Cài đặt và nghe thử từng gi�
 - `exam`: có thể lặp `writing -> checking` một lần (sửa đề khi kiểm tra thấy sai cấu trúc) trước `done`/`error`. Sau đó server
   phát `exams` của folder. `delete_exam` trả `exams` mới, đề lạ thì `error{code:"no_exam"}`.
 - `GET /exam/<examId>?token=<pairToken>` (hoặc header `Authorization: Bearer`) → `text/html`; sai token 401, đề lạ 404.
+
+---
+
+# Giao thức v3 (mở rộng, tương thích ngược với v2)
+
+App mới gửi `hello.v = 3`. Mọi trường mới đều tùy chọn với client cũ. `GET /health` trả `v:3`.
+
+## 17. Folder tự đặt tên
+
+Folder không còn buộc vào một trong tám môn. Người dùng gõ **tên tự do** và một dòng **mô tả** tùy chọn
+(`about`, <= 300 ký tự, ví dụ "Anh 9 theo sách Global Success, cô hay cho ngữ pháp và viết lại câu").
+
+- `create_folder{name, about?, subject?, clientId?}` → `folder_created{id, clientId?}` rồi `folders`. `subject` (v2) vẫn nhận.
+  `clientId`: id do máy đặt khi tạo lúc offline; gửi lại cùng `clientId` thì trả folder đã có (không tạo đôi).
+- `update_folder{id, name?, about?}` → `folders`. `rename_folder` (v2) vẫn chạy.
+- `folders.items[]` thêm `about` (chuỗi, có thể rỗng) và `kind`: kiểu dạy nền mà server tự gán từ tên + mô tả bằng model tiện ích,
+  một trong các id skill (`toan`, `ly`, `hoa`, `van`, `anh-ssat`, `duc`, `tin-cpp`, `chung`) hoặc `ngoai-ngu` (ngoại ngữ nói chung,
+  skill mới). Gán lại khi tên/mô tả đổi. Không gán được (model lỗi, quá 3 giây): `chung`, thử lại ở lần `folders` sau.
+  `subject` vẫn có trong `folders.items[]` và bằng `kind` (cho app v2).
+- App chỉ dùng `kind` để chọn biểu tượng; **mọi chữ hiển thị là `name`**, không bao giờ hiện tên môn thay tên folder.
+- Lượt đầu của phiên trong folder được đính `[folder: <name> | <about> | kiểu dạy: <kind>]`. Gia sư nạp skill `kind`, và dạy theo
+  đúng phạm vi mà tên + mô tả nói (ví dụ "Tiếng Anh trên lớp" thì bám chương trình trên lớp, không tự chuyển sang SSAT).
+
+## 18. Cách ly folder (bất biến, có test khóa)
+
+Mỗi folder là một luồng kiến thức riêng. **Không dữ liệu nào của folder A được xuất hiện trong ngữ cảnh, gợi ý, lời mời ôn,
+lời chào hay màn hình của folder B.**
+
+| Dữ liệu | Phạm vi |
+|---|---|
+| `knowledge.json`, đề, `review`, lịch ôn, chỗ yếu, `memory/folders/<id>.md`, từ khóa sửa STT, tệp đã nạp | chỉ folder đó |
+| `profile.md` (tên người học, cách giảng hợp, thói quen) | dùng chung mọi nơi |
+| file môn v1 `memory/<môn>.md` | chỉ phiên **không folder**; phiên trong folder không bao giờ đọc hay ghi |
+
+- Phiên trong folder F: tóm tắt `[memory]` = `profile.md` + dữ liệu của F, không gì khác. `memory_note` luôn ghi vào file của F
+  (bỏ qua `subject` Claude truyền). Lời mời ôn đầu phiên chỉ lấy mục tới hạn của F.
+- Phiên không folder: chỉ `profile.md` + file môn v1; không đọc kiến thức của folder nào; **không có lời mời ôn tự phát**.
+- `kickoff:"review_quiz"` bắt buộc có `folderId`.
+- Chuyển phiên sang folder khác (`move_session`): memory đã ghi ở folder cũ ở lại folder cũ; từ lượt sau phiên dùng dữ liệu folder mới
+  và server đính lại `[folder: …]` + `[memory]` của folder mới.
+- Lời chào (mục 15): `greeting.sub` nếu nhắc việc ôn thì **phải nêu tên folder** ("Có 2 mục tới hạn ôn trong Tiếng Anh trên lớp").
+  `get_greeting` thêm `folderId?`: có thì `sub` chỉ nói về folder đó.
+
+**Gợi ý ở màn chính** (thay cho việc app tự đoán):
+
+`get_home{folderId?}` → `home{folderId?, continue?:{sessionId,title,folderId?,folderName?,updatedAt}, due:[{folderId,folderName,kind,count,topics:[string]}], quick:[{folderId,folderName,kind}]}`
+
+- Có `folderId` (màn chat mới mở trong folder, màn folder): `continue` là phiên gần nhất **của folder đó**, `due`/`quick` chỉ có folder đó
+  (rỗng nếu không có gì). Không bao giờ chứa folder khác.
+- Không `folderId` (màn chính ngoài folder): `continue` là phiên gần nhất bất kỳ; `due` là các folder có mục tới hạn (nhiều nhất 3,
+  sắp theo số mục); `quick` là các folder có thể "Ôn nhanh". Mỗi mục mang `folderName` và app **luôn hiện tên folder trên thẻ gợi ý**.
+- Server tự phát `home` mới (theo `folderId` của lần hỏi gần nhất trên kết nối đó) sau `turn_end`, `folders`, `sessions`.
+
+## 19. Bản sao ở máy và đồng bộ
+
+iPhone giữ bản sao đầy đủ để xem khi mất mạng hoặc VPS không chạy: folder, kiến thức, review, đề (HTML), memory, danh sách phiên
+và nhật ký phiên. Server là nguồn chuẩn; máy kéo về theo etag.
+
+HTTP, header `Authorization: Bearer <pairToken>` (hoặc `?token=`):
+
+- `GET /sync/manifest` → `{v:1, serverTime, profile:{etag}, folders:[{id, etag}], sessions:[{sessionId, etag, folderId?}], voices:{etag}}`.
+  `etag` của folder đổi khi bất cứ thứ gì của folder đổi (tên, mô tả, kiến thức, review, đề, memory).
+  `etag` của phiên = số sự kiện + mốc sửa cuối.
+- `GET /sync/folder/<id>` → `{folder:<mục folders.items>, knowledge:<json>|null, review:<frame review>, exams:[{…mục exams.items, html}], memoryMd}`.
+  `html` là trang đề tự chứa, mở được offline (tài nguyên KaTeX trỏ tới `{{BOARD}}/vendor/…`, app thay `{{BOARD}}` bằng gói bảng trong bundle).
+- `GET /sync/session/<sessionId>` → `{sessionId, title, folderId?, mode, updatedAt, events:[…như snapshot đầy đủ]}`.
+- `GET /sync/profile` → `{md, progress:<frame progress>}`.
+- Header `ETag` + `If-None-Match` → 304.
+
+WebSocket: server phát `sync{folders?:[id], sessions?:[sessionId], profile?:boolean}` mỗi khi dữ liệu tương ứng đổi (xong nạp đề,
+`memory_note`, xong đề, hết lượt, đổi tên…). App kéo lại đúng phần đó; ngoài ra kéo `manifest` mỗi lần `ready` và khi vào foreground.
+
+**Chiều máy → server (hàng đợi offline):** khi mất kết nối, app vẫn cho tạo/đổi tên/sửa mô tả folder, đổi tên/chuyển/xóa phiên; các
+thao tác xếp hàng ở máy (có `clientId`), gửi lại theo thứ tự khi nối được, rồi kéo `manifest`. Chat và Live cần kết nối: ô soạn
+hiện trạng thái offline, chữ đang gõ được giữ lại.
+
+Máy lưu ở `Application Support/replica/` (theo iCloud/Finder backup của máy). Màn hình đọc từ bản sao trước, cập nhật khi server trả lời.
+
+## 20. Sao lưu lên Cloudflare R2
+
+Server tự đẩy bản nén của `server/data/` (trừ `mcp/`), `tutor/memory/`, `server/voices.json`, `server/models.json` lên R2 (S3 API).
+
+- `.env`: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `BACKUP_PASSPHRASE?` (có thì mã hóa AES-256-GCM,
+  khóa suy từ passphrase), `BACKUP_KEEP_DAYS` (mặc định 14). Thiếu key: tắt, không lỗi.
+- Lịch: mỗi đêm 03:00 giờ máy chủ; và 2 phút sau lần đổi dữ liệu cuối (xong nạp đề, xong đề, `memory_note`, đổi folder), gộp lại
+  nên không đẩy dồn dập (tối đa một lần mỗi 10 phút). Bản không đổi so với bản trước (cùng sha256) thì bỏ qua.
+- Khóa: `beluga/latest.tar.zst[.enc]`, `beluga/daily/YYYY-MM-DD.tar.zst[.enc]` (giữ `BACKUP_KEEP_DAYS` bản), `beluga/manifest.json`
+  (`{at, bytes, sha256, files, encrypted}`).
+- Lệnh: `beluga-server backup-now`, `beluga-server restore [--key <khóa>] [--to <thư mục>]` (mặc định khôi phục vào chỗ; từ chối nếu
+  server đang chạy trừ khi `--force`), `beluga-server backup-status`.
+- `get_backup` → `backup{enabled, provider:"r2", lastAt?, lastBytes?, lastError?, nextAt?}`; server tự phát `backup` sau mỗi lần đẩy.
+  `backup_now` (máy → server) đẩy ngay. App hiện ở Cài đặt → Dữ liệu.
+
+## 21. Câu chờ và câu nhấc máy (giọng thật, tạo một lần)
+
+Khi gia sư nghĩ lâu, máy phát một **clip tạo sẵn bằng đúng giọng đang chọn**. Không bao giờ dùng giọng hệ thống (Siri) để đọc
+"Đang suy nghĩ…" nữa.
+
+- `server/voices.json` thêm `fillers:[{id, text, when}]`, `when` ∈ `short` (3 câu), `long` (2), `vision` (1), `hello` (2).
+- Clip: `server/voices/<voiceId>/<fillerId>.mp3`, tạo một lần bằng `beluga-server gen-voice-fillers` (chỉ tạo clip còn thiếu).
+- `voices` thêm `fillers:[{id,text,when}]` và mỗi giọng thêm `fillers:[<fillerId có clip>]`.
+- `GET /voice/<voiceId>/<fillerId>.mp3` (xác thực như `/voice/<id>.mp3`).
+- App tải sẵn mọi clip của giọng đang chọn khi nhận `voices` và khi đổi giọng (cache ở máy, theo `voiceId/fillerId`).
+
+Luật phát (máy tự làm, chỉ ở **live và cuộc gọi**, không ở chat):
+
+| Mốc | Việc |
+|---|---|
+| vào `thinking` | tiếng "ting" mở + lớp nền êm thở theo quầng sáng (tổng hợp trong app) |
+| nghĩ > 3 s, chưa có `say` nào sẵn tiếng | phát một clip `short` ngẫu nhiên (khác clip vừa dùng); nếu lượt có ảnh (`tool:"capture"` hoặc vừa gửi ảnh) thì `vision` |
+| nghĩ > 12 s | phát một clip `long` (một lần mỗi lượt) |
+| `say` đầu tiên sẵn tiếng | nền tan trong 250 ms; clip chờ đang đọc thì cho đọc hết câu (tối đa 2,5 s nữa) rồi mới phát `say` |
+| không có clip (giọng thiết bị, chưa tải xong) | chỉ nền + quầng sáng, không đọc gì |
+
+Bảng mục 5 đổi theo: `thinking` = quầng thở + nền êm; không còn "quá 4 giây đọc Đang suy nghĩ…".
+
+## 22. Cuộc gọi: đổ chuông và nhấc máy
+
+Phía máy (không cần frame mới). Các pha của màn gọi:
+
+1. `dialing`: "Đang gọi Beluga…" + chuông chờ. Kéo dài tới khi phiên live sẵn sàng (`ready` + mode live + mic đã mở), **ít nhất 1,6 s,
+   nhiều nhất 8 s** (quá thì `failed`: "Không gọi được", nút Gọi lại).
+2. `connected`: tiếng báo nối máy + rung, chữ "Đã kết nối" 1,2 s rồi thành đồng hồ `00:00`. Beluga nói câu nhấc máy bằng clip `hello`
+   (mục 21) nếu có, rồi nghe.
+3. `ended`: "Đã kết thúc · mm:ss" 0,9 s rồi đóng.
+
+`dialing` không chặn: bấm kết thúc lúc nào cũng được.
