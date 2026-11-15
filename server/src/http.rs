@@ -20,7 +20,7 @@ use axum::{Json, Router};
 use base64::Engine;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -39,6 +39,8 @@ pub struct AppState {
     greeting: GreetingCache,
     /// Every open phone connection (for job events that outlive the request: ingest, exams).
     phones: Mutex<Vec<(u64, tokio::sync::mpsc::WeakUnboundedSender<Value>)>>,
+    /// Folders whose kind the utility model is being asked for right now.
+    kind_jobs: Mutex<HashSet<String>>,
 }
 
 impl AppState {
@@ -50,7 +52,45 @@ impl AppState {
             active: Mutex::new(Vec::new()),
             greeting: GreetingCache::default(),
             phones: Mutex::new(Vec::new()),
+            kind_jobs: Mutex::new(HashSet::new()),
         })
+    }
+
+    /// The `folders` frame; folders whose kind is still a guess are (re)assigned in the background
+    /// and a fresh `folders` goes to every phone when the utility model answers (PROTOCOL section 17).
+    pub fn folders_frame(self: &Arc<Self>) -> Value {
+        let f = self.deps.folders_frame();
+        self.assign_pending_kinds();
+        f
+    }
+
+    fn assign_pending_kinds(self: &Arc<Self>) {
+        if !self.deps.util.available() {
+            return;
+        }
+        for f in self.deps.folders.pending_kinds() {
+            if !self.kind_jobs.lock().unwrap().insert(f.id.clone()) {
+                continue; // already asking
+            }
+            let st = self.clone();
+            tokio::spawn(async move {
+                let source = f.kind_source();
+                let r = crate::folders::assign_kind(&st.deps.util, &st.deps.usage, &f.name, &f.about).await;
+                st.kind_jobs.lock().unwrap().remove(&f.id);
+                match r {
+                    Ok(kind) => {
+                        if st.deps.folders.set_kind(&f.id, &source, &kind) {
+                            tracing::info!("folder {} kind: {kind}", f.id);
+                            st.broadcast(&st.deps.folders_frame());
+                        } else if st.deps.folders.get(&f.id).map(|x| x.kind_pending).unwrap_or(false) {
+                            st.assign_pending_kinds(); // renamed meanwhile: ask for the new text
+                        }
+                    }
+                    // Stays pending: the next `folders` tries again.
+                    Err(e) => tracing::info!("folder kind not assigned yet: {e}"),
+                }
+            });
+        }
     }
 
     /// Send a frame to every connected phone (jobs keep running when a phone goes away).
@@ -85,7 +125,7 @@ impl AppState {
         }
         let req = crate::study::IngestRequest {
             folder_id: folder_id.clone(),
-            subject: folder.subject,
+            subject: folder.kind,
             goal: v["goal"].as_str().map(String::from).filter(|g| !g.trim().is_empty()),
             files,
         };
@@ -100,7 +140,7 @@ impl AppState {
                 st.deps.folders.touch(&folder_id);
             }
             st.broadcast(&st.knowledge_frame(&folder_id));
-            st.broadcast(&st.deps.folders_frame());
+            st.broadcast(&st.folders_frame());
         });
         Ok(())
     }
@@ -244,6 +284,7 @@ pub async fn start_full(cfg: Config, listener: TcpListener, voice: Arc<Voice>, u
         .route("/file/{id}", get(file_get))
         .route("/exam/{id}", get(exam_get))
         .route("/voice/{file}", get(voice_preview_get))
+        .route("/voice/{voice}/{file}", get(voice_filler_get))
         .route("/ws", get(ws_upgrade))
         .route("/mcp", post(mcp_general_post).get(mcp_get).delete(mcp_delete))
         .route("/mcp/{sid}", post(mcp_post).get(mcp_get).delete(mcp_delete))
@@ -253,7 +294,7 @@ pub async fn start_full(cfg: Config, listener: TcpListener, voice: Arc<Voice>, u
 }
 
 async fn health(State(st): State<Arc<AppState>>) -> Json<Value> {
-    Json(json!({"ok": true, "v": 2, "boardVersion": st.deps.cfg.board_version()}))
+    Json(json!({"ok": true, "v": 3, "boardVersion": st.deps.cfg.board_version()}))
 }
 
 // ----- uploads -----
@@ -313,6 +354,21 @@ async fn voice_preview_get(State(st): State<Arc<AppState>>, Path(file): Path<Str
         return StatusCode::UNAUTHORIZED.into_response();
     }
     let Some(path) = file.strip_suffix(".mp3").and_then(|id| st.deps.voices.clip_path(id)) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    match tokio::fs::read(&path).await {
+        Ok(data) => ([(header::CONTENT_TYPE, "audio/mpeg"), (header::CACHE_CONTROL, "private, max-age=86400")], data).into_response(),
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// `GET /voice/<voiceId>/<fillerId>.mp3`: a stored wait/hello clip (PROTOCOL section 21).
+async fn voice_filler_get(State(st): State<Arc<AppState>>, Path((voice, file)): Path<(String, String)>, Query(q): Query<UploadQuery>, headers: HeaderMap) -> Response {
+    let token = q.token.unwrap_or_else(|| bearer(&headers));
+    if !st.deps.store.check_token(&token) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let Some(path) = file.strip_suffix(".mp3").and_then(|id| st.deps.voices.filler_path(&voice, id)) else {
         return StatusCode::NOT_FOUND.into_response();
     };
     match tokio::fs::read(&path).await {
@@ -414,6 +470,10 @@ fn sessions_frame(st: &AppState, folder: Option<&str>) -> Value {
 async fn handle_socket(st: Arc<AppState>, socket: WebSocket) {
     let (mut sink, mut stream) = socket.split();
     let (otx, mut orx) = unbounded_channel::<Value>();
+    // `get_home` scope of this connection: `None` until the phone asks; then `Some(folderId?)`, and a
+    // fresh `home` follows every `turn_end`, `folders` and `sessions` (PROTOCOL section 18).
+    let home_scope: Arc<Mutex<Option<Option<String>>>> = Arc::new(Mutex::new(None));
+    let (st_w, scope_w) = (st.clone(), home_scope.clone());
     // Writer ends (and closes the socket) when every sender is gone: that is how a replaced
     // or detached connection gets closed.
     tokio::spawn(async move {
@@ -421,7 +481,16 @@ async fn handle_socket(st: Arc<AppState>, socket: WebSocket) {
         loop {
             tokio::select! {
                 v = orx.recv() => match v {
-                    Some(v) => { if sink.send(Message::Text(v.to_string().into())).await.is_err() { return; } }
+                    Some(v) => {
+                        if sink.send(Message::Text(v.to_string().into())).await.is_err() { return; }
+                        if matches!(v["t"].as_str(), Some("turn_end" | "folders" | "sessions")) {
+                            let scope = scope_w.lock().unwrap().clone();
+                            if let Some(folder) = scope {
+                                let h = crate::home::home_frame(&st_w.deps, folder.as_deref());
+                                if h["t"] == "home" && sink.send(Message::Text(h.to_string().into())).await.is_err() { return; }
+                            }
+                        }
+                    }
                     None => { let _ = sink.close().await; return; }
                 },
                 _ = ping.tick() => { if sink.send(Message::Ping(Vec::new().into())).await.is_err() { return; } }
@@ -595,20 +664,27 @@ async fn handle_socket(st: Arc<AppState>, socket: WebSocket) {
                     "list_sessions" => {
                         reply(sessions_frame(&st, v["folderId"].as_str()));
                     }
-                    "list_folders" => reply(st.deps.folders_frame()),
-                    "create_folder" => match st.deps.folders.create(v["name"].as_str().unwrap_or(""), v["subject"].as_str().unwrap_or("chung")) {
-                        Ok(f) => {
-                            reply(json!({"t": "folder_created", "id": f.id}));
-                            reply(st.deps.folders_frame());
+                    "list_folders" => reply(st.folders_frame()),
+                    "create_folder" => {
+                        let client_id = v["clientId"].as_str();
+                        match st.deps.folders.create_v3(v["name"].as_str().unwrap_or(""), v["about"].as_str().unwrap_or(""), v["subject"].as_str(), client_id) {
+                            Ok((f, _)) => {
+                                let mut created = json!({"t": "folder_created", "id": f.id});
+                                if let Some(c) = client_id {
+                                    created["clientId"] = json!(c);
+                                }
+                                reply(created);
+                                reply(st.folders_frame());
+                            }
+                            Err(e) => reply(err_frame("bad_folder", &e, false)),
                         }
-                        Err(e) => reply(err_frame("bad_folder", &e, false)),
-                    },
-                    "rename_folder" => {
+                    }
+                    "rename_folder" | "update_folder" => {
                         let id = v["id"].as_str().unwrap_or("");
-                        if !st.deps.folders.rename(id, v["name"].as_str().unwrap_or("")) {
-                            reply(err_frame("no_folder", "Không đổi được tên folder.", false));
+                        if !st.deps.folders.update(id, v["name"].as_str(), v["about"].as_str()) {
+                            reply(err_frame("no_folder", "Không sửa được folder.", false));
                         }
-                        reply(st.deps.folders_frame());
+                        reply(st.folders_frame());
                     }
                     "delete_folder" => {
                         let id = v["id"].as_str().unwrap_or("").to_string();
@@ -621,7 +697,7 @@ async fn handle_socket(st: Arc<AppState>, socket: WebSocket) {
                         } else {
                             reply(err_frame("no_folder", "Không tìm thấy folder.", false));
                         }
-                        reply(st.deps.folders_frame());
+                        reply(st.folders_frame());
                     }
                     "move_session" => {
                         let target = v["folderId"].as_str().map(String::from);
@@ -630,7 +706,7 @@ async fn handle_socket(st: Arc<AppState>, socket: WebSocket) {
                             continue;
                         }
                         let id = v["sessionId"].as_str().unwrap_or("").to_string();
-                        if !st.edit_session(&id, move |m| m.folder_id = target).await {
+                        if !st.edit_session(&id, move |m| m.set_folder(target)).await {
                             reply(err_frame("no_session", "Không tìm thấy phiên đó.", false));
                         }
                         reply(sessions_frame(&st, None));
@@ -657,6 +733,13 @@ async fn handle_socket(st: Arc<AppState>, socket: WebSocket) {
                         reply(sessions_frame(&st, None));
                     }
                     "new_session" => {
+                        let kickoff = v["kickoff"].as_str().filter(|k| *k == "review_quiz").map(String::from);
+                        let folder_ok = v["folderId"].as_str().map(|f| st.deps.folders.get(f).is_some()).unwrap_or(false);
+                        if kickoff.is_some() && !folder_ok {
+                            // The review quiz always belongs to one folder (PROTOCOL section 18).
+                            reply(err_frame("no_folder", "Ôn nhanh cần chọn một folder.", false));
+                            continue;
+                        }
                         let _ = session.send(Cmd::Detach { conn });
                         sid = uuid::Uuid::new_v4().to_string();
                         session = st.session(&sid);
@@ -667,7 +750,7 @@ async fn handle_socket(st: Arc<AppState>, socket: WebSocket) {
                             v: conn_v,
                             folder_id: v["folderId"].as_str().map(String::from),
                             mode,
-                            kickoff: v["kickoff"].as_str().filter(|k| *k == "review_quiz").map(String::from),
+                            kickoff,
                         };
                         let _ = session.send(Cmd::Attach { conn, tx, last_seq: None, settings: None, pair_token: None, init });
                     }
@@ -681,7 +764,16 @@ async fn handle_socket(st: Arc<AppState>, socket: WebSocket) {
                         let (st2, r) = (st.clone(), reply.clone());
                         let local = v["localTime"].as_str().unwrap_or("").to_string();
                         let name = v["name"].as_str().map(String::from).filter(|n| !n.trim().is_empty());
-                        tokio::spawn(async move { r(crate::greeting::greeting(&st2.deps, &st2.greeting, &local, name.as_deref()).await) });
+                        let folder = v["folderId"].as_str().map(String::from);
+                        tokio::spawn(async move { r(crate::greeting::greeting(&st2.deps, &st2.greeting, &local, name.as_deref(), folder.as_deref()).await) });
+                    }
+                    "get_home" => {
+                        let folder = v["folderId"].as_str().filter(|f| !f.is_empty()).map(String::from);
+                        let h = crate::home::home_frame(&st.deps, folder.as_deref());
+                        if h["t"] == "home" {
+                            *home_scope.lock().unwrap() = Some(folder);
+                        }
+                        reply(h);
                     }
                     "ingest_start" => {
                         if let Err(e) = st.start_ingest(&v) {

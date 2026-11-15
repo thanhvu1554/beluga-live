@@ -629,6 +629,9 @@ fn voice_dir() -> std::path::PathBuf {
             {"id": CHI, "name": "Chi", "gender": "female", "accent": "north", "desc": "Nữ miền Bắc."},
             {"id": "bbb", "name": "Bình", "gender": "male", "accent": "south", "desc": "Nam miền Nam."},
             {"id": "ccc", "name": "Chưa có clip", "gender": "male", "accent": "", "desc": "Không có clip."}
+        ], "fillers": [
+            {"id": "short-1", "when": "short", "text": "Đợi tớ một chút nha."},
+            {"id": "hello-1", "when": "hello", "text": "A lô, tớ nghe nè."}
         ]})
         .to_string(),
     )
@@ -636,6 +639,9 @@ fn voice_dir() -> std::path::PathBuf {
     std::fs::create_dir_all(d.join("voices")).unwrap();
     std::fs::write(d.join("voices").join(format!("{CHI}.mp3")), b"ID3-chi-clip").unwrap();
     std::fs::write(d.join("voices").join("bbb.mp3"), b"ID3-bbb-clip").unwrap();
+    std::fs::create_dir_all(d.join("voices").join(CHI)).unwrap();
+    std::fs::write(d.join("voices").join(CHI).join("short-1.mp3"), b"ID3-chi-short").unwrap();
+    std::fs::write(d.join("voices").join(CHI).join("hello-1.mp3"), b"ID3-chi-hello").unwrap();
     d
 }
 
@@ -660,8 +666,12 @@ async fn get_voices_lists_the_catalogue() {
     assert_eq!(v["current"], CHI, "the .env voice is the default");
     let items = v["items"].as_array().unwrap();
     assert_eq!(items.len(), 3);
-    assert_eq!(items[0], json!({"id": CHI, "name": "Chi", "gender": "female", "accent": "north", "desc": "Nữ miền Bắc.", "preview": true}));
+    // (v3: each voice lists the wait/pick-up clips it has, PROTOCOL section 21)
+    assert_eq!(items[0], json!({"id": CHI, "name": "Chi", "gender": "female", "accent": "north", "desc": "Nữ miền Bắc.", "preview": true,
+        "fillers": ["short-1", "hello-1"]}));
     assert_eq!(items[1]["preview"], true);
+    assert_eq!(items[1]["fillers"], json!([]));
+    assert_eq!(v["fillers"], json!([{"id": "short-1", "text": "Đợi tớ một chút nha.", "when": "short"}, {"id": "hello-1", "text": "A lô, tớ nghe nè.", "when": "hello"}]));
     assert_eq!(items[2]["preview"], false, "no clip file");
     assert_eq!(items[2]["accent"], "");
     // The `type` spelling is accepted too.
@@ -750,6 +760,68 @@ async fn preview_route_needs_the_pair_token() {
     assert_eq!(c.get(format!("http://{}/voice/{CHI}", e.addr)).bearer_auth(&token).send().await.unwrap().status(), 404);
     assert_eq!(c.get(format!("http://{}/voice/..%2Fvoices.json.mp3", e.addr)).bearer_auth(&token).send().await.unwrap().status(), 404);
     assert_eq!(e.mock.lock().unwrap().reqs.len(), 0, "previews never synthesize");
+}
+
+#[tokio::test]
+async fn filler_route_needs_the_pair_token_and_only_serves_catalogue_clips() {
+    let e = env(Opts { dir: Some(voice_dir()), ..Default::default() }).await;
+    let mut p = Phone::connect(e.addr).await;
+    let token = p.hello(json!({})).await["pairToken"].as_str().unwrap().to_string();
+    let c = reqwest::Client::new();
+    let url = |v: &str, f: &str| format!("http://{}/voice/{v}/{f}.mp3", e.addr);
+    assert_eq!(c.get(url(CHI, "short-1")).send().await.unwrap().status(), 401);
+    assert_eq!(c.get(url(CHI, "short-1")).bearer_auth("wrong").send().await.unwrap().status(), 401);
+    let r = c.get(url(CHI, "short-1")).bearer_auth(&token).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    assert_eq!(r.headers()["content-type"], "audio/mpeg");
+    assert!(r.headers()["cache-control"].to_str().unwrap().contains("max-age"));
+    assert_eq!(&r.bytes().await.unwrap()[..], b"ID3-chi-short");
+    let r = c.get(format!("{}?token={token}", url(CHI, "hello-1"))).send().await.unwrap();
+    assert_eq!(&r.bytes().await.unwrap()[..], b"ID3-chi-hello", "?token= works too");
+    assert_eq!(c.get(url("bbb", "short-1")).bearer_auth(&token).send().await.unwrap().status(), 404, "clip missing");
+    assert_eq!(c.get(url(CHI, "long-9")).bearer_auth(&token).send().await.unwrap().status(), 404, "not a filler");
+    assert_eq!(c.get(url("zzz", "short-1")).bearer_auth(&token).send().await.unwrap().status(), 404, "not a voice");
+    assert_eq!(c.get(format!("http://{}/voice/{CHI}/short-1", e.addr)).bearer_auth(&token).send().await.unwrap().status(), 404);
+    assert_eq!(c.get(format!("http://{}/voice/{CHI}/..%2F..%2Fvoices.json.mp3", e.addr)).bearer_auth(&token).send().await.unwrap().status(), 404);
+    assert_eq!(e.mock.lock().unwrap().reqs.len(), 0, "clips never synthesize");
+}
+
+#[tokio::test]
+async fn missing_fillers_are_generated_once_per_voice_with_that_voice() {
+    use beluga_server::voice::{FakeVoice, Tts, VoiceError};
+    use futures_util::future::BoxFuture;
+    struct Rec(Mutex<Vec<(String, String)>>);
+    impl Tts for Rec {
+        fn synth<'a>(&'a self, text: &'a str, _lang: &'a str) -> BoxFuture<'a, Result<Vec<u8>, VoiceError>> {
+            Box::pin(async move { Ok(format!("ID3{text}").into_bytes()) })
+        }
+        fn synth_voice<'a>(&'a self, text: &'a str, lang: &'a str, voice: Option<&'a str>) -> BoxFuture<'a, Result<Vec<u8>, VoiceError>> {
+            self.0.lock().unwrap().push((voice.unwrap_or("").to_string(), text.to_string()));
+            self.synth(text, lang)
+        }
+    }
+    let d = voice_dir();
+    let cat = beluga_server::voices::VoiceCatalog::load(&d.join("voices.json"), &d.join("voices"), &d, CHI);
+    assert_eq!(cat.missing_fillers().len(), 4, "Chi has both, bbb and ccc have none");
+    let tts = Rec(Mutex::new(Vec::new()));
+    let (made, failed) = cat.generate_missing_fillers(&tts, "vi").await;
+    assert!(failed.is_empty(), "{failed:?}");
+    assert_eq!(made, ["bbb/short-1", "bbb/hello-1", "ccc/short-1", "ccc/hello-1"]);
+    let calls = tts.0.lock().unwrap().clone();
+    assert_eq!(calls[0], ("bbb".to_string(), "Đợi tớ một chút nha.".to_string()));
+    assert_eq!(std::fs::read(d.join("voices").join("ccc").join("hello-1.mp3")).unwrap(), "ID3A lô, tớ nghe nè.".as_bytes());
+    assert_eq!(std::fs::read(d.join("voices").join(CHI).join("short-1.mp3")).unwrap(), b"ID3-chi-short", "existing clips are kept");
+    assert!(cat.missing_fillers().is_empty());
+    let (made, _) = cat.generate_missing_fillers(&tts, "vi").await;
+    assert!(made.is_empty(), "nothing left to make");
+    // a failing provider: nothing is written, every clip is reported
+    let d2 = voice_dir();
+    let cat2 = beluga_server::voices::VoiceCatalog::load(&d2.join("voices.json"), &d2.join("voices"), &d2, CHI);
+    let bad = FakeVoice { fail_status: Some(402), transcript: String::new() };
+    let (made, failed) = cat2.generate_missing_fillers(&bad, "vi").await;
+    assert!(made.is_empty());
+    assert_eq!(failed.len(), 4);
+    assert!(!d2.join("voices").join("bbb").join("short-1.mp3").exists());
 }
 
 #[tokio::test]

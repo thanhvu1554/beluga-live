@@ -32,8 +32,19 @@ impl Env {
 
     fn write_memory(&self, name: &str, text: &str) {
         let d = self.tutor().join("memory");
-        std::fs::create_dir_all(&d).unwrap();
+        std::fs::create_dir_all(d.join("folders")).unwrap();
         std::fs::write(d.join(format!("{name}.md")), text).unwrap();
+    }
+
+    /// A folder written straight into `folders.json` (kind given), with its memory file.
+    fn folder_with_memory(&self, id: &str, name: &str, kind: &str, memory: &str) {
+        let data = self.dir.join("data");
+        std::fs::create_dir_all(&data).unwrap();
+        let path = data.join("folders.json");
+        let mut all: Vec<Value> = std::fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+        all.push(json!({"id": id, "name": name, "kind": kind, "createdAt": "2026-11-01T00:00:00+07:00", "updatedAt": "2026-11-01T00:00:00+07:00"}));
+        std::fs::write(path, serde_json::to_string(&all).unwrap()).unwrap();
+        self.write_memory(&format!("folders/{id}"), memory);
     }
 }
 
@@ -203,6 +214,8 @@ async fn nothing_known_means_no_memory_block() {
 }
 
 // ------------------------------------------------------------------ review offer
+// (v3, PROTOCOL section 18: the server only offers a review inside a folder, from that folder's
+// file; these tests used to run in sessions without a folder, which now never get an offer.)
 
 fn due_memory() -> String {
     format!(
@@ -218,11 +231,11 @@ async fn new_session_with_a_due_item_starts_with_a_review_offer_from_the_server(
     let voice = Arc::new(Voice::build(Some(Arc::new(FakeVoice { fail_status: None, transcript: String::new() })), None, 3000));
     let addr = serve(&dir, voice).await;
     let e = Env { dir, addr };
-    e.write_memory("toan", &due_memory());
+    e.folder_with_memory("f-toan", "Toán 10", "toan", &due_memory());
     e.write_memory("hoa", &format!("# Hóa\n\n## Đang yếu\n{}", weak_line("Cân bằng phương trình", 1, "2026-01-03", "")));
 
     let mut p = Phone::connect(e.addr).await;
-    let ready = p.hello(json!({})).await;
+    let ready = p.hello(json!({"folderId": "f-toan"})).await;
     let sid = ready["sessionId"].as_str().unwrap().to_string();
     let frames = p.until(is_turn_end).await;
     let kinds: Vec<&str> = frames.iter().map(|f| f["t"].as_str().unwrap()).filter(|t| *t != "state" && *t != "audio").collect();
@@ -237,6 +250,7 @@ async fn new_session_with_a_due_item_starts_with_a_review_offer_from_the_server(
     assert_eq!(block["type"], "review_offer");
     assert_eq!((block["topic"].as_str(), block["subject"].as_str(), block["lastSeen"].as_str()), (Some("Điều kiện của căn thức"), Some("toan"), Some(PAST)));
     assert!(block["fallback"].as_str().unwrap().contains("Điều kiện của căn thức"));
+    assert_eq!((block["subjectName"].as_str(), block["folderName"].as_str(), block["folderId"].as_str()), (Some("Toán 10"), Some("Toán 10"), Some("f-toan")), "the folder's name, never a subject's");
     assert!(block["id"].as_str().is_some());
     // seq numbers are contiguous and the audio for the say arrives
     let seqs: Vec<u64> = frames.iter().filter_map(|f| f["seq"].as_u64()).collect();
@@ -262,37 +276,41 @@ async fn new_session_with_a_due_item_starts_with_a_review_offer_from_the_server(
     assert_eq!(again.iter().filter(|f| f["t"] == "snapshot").flat_map(|f| f["events"].as_array().unwrap()).filter(|x| x["t"] == "show" && x["block"]["type"] == "review_offer").count(), 1);
     assert!(again.iter().filter(|f| f["t"] == "show").count() == 0, "no new live offer: {again:#?}");
 
-    // a brand-new session offers again
+    // a brand-new session in the folder offers again; one without a folder never does, even
+    // with a due item in the legacy subject file
     let mut p3 = Phone::connect(e.addr).await;
-    p3.hello(json!({})).await;
+    p3.hello(json!({"folderId": "f-toan"})).await;
     let f3 = p3.until(is_turn_end).await;
     assert_eq!(says(&f3).len(), 1);
+    e.write_memory("toan", &due_memory());
+    let mut p4 = Phone::connect(e.addr).await;
+    p4.hello(json!({})).await;
+    assert!(p4.drain_quiet(300).await.iter().all(|f| f["t"] != "say" && f["t"] != "show"), "no offer outside folders");
 }
 
 #[tokio::test]
 async fn offer_follows_the_language_setting_and_nothing_due_means_no_offer() {
     let e = env().await;
-    e.write_memory("anh-ssat", &format!("# Anh\n\n## Đang yếu\n{}", weak_line("C++ pointer", 2, "2026-01-02", "")));
+    e.folder_with_memory("f-anh", "SSAT", "anh-ssat", &format!("# Anh\n\n## Đang yếu\n{}", weak_line("C++ pointer", 2, "2026-01-02", "")));
     let mut p = Phone::connect(e.addr).await;
-    p.hello(json!({"settings":{"lang":"en","model":"sonnet","rigor":"medium"}})).await;
+    p.hello(json!({"folderId": "f-anh", "settings":{"lang":"en","model":"sonnet","rigor":"medium"}})).await;
     let f = p.until(is_turn_end).await;
     assert_eq!(says(&f), ["Last time you kept mixing up C++ pointer. Want a quick review question?"], "acronyms keep their case");
     assert_eq!(f.iter().find(|x| x["t"] == "step").unwrap()["title"], "Review");
 
     let e2 = env().await;
-    e2.write_memory("toan", &format!("# Toán\n\n## Đang yếu\n{}", weak_line("Chưa tới hạn", 1, FUTURE, "")));
-    e2.write_memory("ly", "# Lý\n\n## Đã vững\n- [vững] Đã vững rồi | ngày 2026-01-01\n");
+    e2.folder_with_memory("f-toan", "Toán", "toan", &format!("# Toán\n\n## Đang yếu\n{}\n## Đã vững\n- [vững] Đã vững rồi | ngày 2026-01-01\n", weak_line("Chưa tới hạn", 1, FUTURE, "")));
     let mut q = Phone::connect(e2.addr).await;
-    q.hello(json!({})).await;
+    q.hello(json!({"folderId": "f-toan"})).await;
     assert!(q.drain_quiet(300).await.iter().all(|f| f["t"] != "say"), "no offer for items that are not due");
 }
 
 #[tokio::test]
 async fn an_unanswered_offer_survives_a_restart() {
     let e = env().await;
-    e.write_memory("toan", &due_memory());
+    e.folder_with_memory("f-toan", "Toán", "toan", &due_memory());
     let mut p = Phone::connect(e.addr).await;
-    let sid = p.hello(json!({})).await["sessionId"].as_str().unwrap().to_string();
+    let sid = p.hello(json!({"folderId": "f-toan"})).await["sessionId"].as_str().unwrap().to_string();
     p.until(is_turn_end).await;
     drop(p);
     let e2 = restart(&e).await;
@@ -306,9 +324,9 @@ async fn an_unanswered_offer_survives_a_restart() {
 #[tokio::test]
 async fn offer_note_includes_the_item_note_and_the_session_gets_the_summary_too() {
     let e = env().await;
-    e.write_memory("toan", &format!("# Toán\n\n## Đang yếu\n{}", weak_line("Xét dấu tam thức khi a âm", 3, "2026-01-05", "hay quên đổi chiều")));
+    e.folder_with_memory("f-toan", "Toán", "toan", &format!("# Toán\n\n## Đang yếu\n{}", weak_line("Xét dấu tam thức khi a âm", 3, "2026-01-05", "hay quên đổi chiều")));
     let mut p = Phone::connect(e.addr).await;
-    p.hello(json!({})).await;
+    p.hello(json!({"folderId": "f-toan"})).await;
     p.until(is_turn_end).await;
     let t = says(&say_turn(&mut p, "ừ").await);
     assert!(t.iter().any(|s| s == "Mock ôn lại: toan · Xét dấu tam thức khi a âm · hay quên đổi chiều"), "{t:?}");

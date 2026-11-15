@@ -32,7 +32,7 @@ pub struct ClaudeCfg {
 
 /// Settings for the tutor process: with `CLAUDE_CODE_DISABLE_BUNDLED_SKILLS=1` three built-in
 /// skills remain (design, doctor, plugin-authoring); these overrides turn them off too, so `init`
-/// lists only the eight subject skills (verified with claude 2.1.325).
+/// lists only the subject skills (verified with claude 2.1.325, then eight; `ngoai-ngu` makes nine).
 pub fn tutor_settings() -> serde_json::Value {
     json!({"skillOverrides": {"design": "off", "doctor": "off", "plugin-authoring": "off"}})
 }
@@ -652,10 +652,10 @@ mod tests {
         let to = a.iter().skip(from).position(|x| x.starts_with("--")).map(|p| from + p).unwrap_or(a.len());
         let allowed = &a[from..to];
         assert!(!allowed.iter().any(|x| x == "Skill"), "{allowed:?}");
-        for id in ["toan", "ly", "hoa", "van", "anh-ssat", "duc", "tin-cpp", "chung"] {
+        for id in ["toan", "ly", "hoa", "van", "anh-ssat", "duc", "tin-cpp", "ngoai-ngu", "chung"] {
             assert!(allowed.contains(&format!("Skill({id})")), "{id}: {allowed:?}");
         }
-        assert_eq!(allowed.len(), 1 + 8 + 2);
+        assert_eq!(allowed.len(), 1 + 9 + 2);
         for banned in ["Bash", "Write", "Edit", "WebFetch", "--dangerously-skip-permissions"] {
             assert!(!a.iter().any(|x| x == banned), "{banned}");
         }

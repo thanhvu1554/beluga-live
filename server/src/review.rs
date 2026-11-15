@@ -59,7 +59,7 @@ pub fn review_frame(deps: &Deps, folder_id: &str) -> Value {
             topics.push(json!({"topicId": id, "title": m[0].topic, "chapter": "", "state": state, "wrong": wrong, "right": right, "lastSeen": last.map(fmt)}));
         }
     }
-    let mut weak_items = Memory::new(&deps.cfg.tutor_dir).folder_weak(folder_id, &folder.subject);
+    let mut weak_items = Memory::new(&deps.cfg.tutor_dir).folder_weak(folder_id, &folder.kind);
     weak_items.sort_by(|a, b| a.due.cmp(&b.due).then(b.count.cmp(&a.count)));
     let weak: Vec<Value> = weak_items
         .iter()
@@ -118,11 +118,11 @@ pub async fn weekly(deps: &Deps, folder_id: &str) -> Value {
         .map(|s| s.title)
         .take(20)
         .collect();
-    let due: Vec<String> = Memory::new(&deps.cfg.tutor_dir).folder_weak(folder_id, &folder.subject).into_iter().filter(|w| w.due <= today + Duration::days(2)).map(|w| w.topic).collect();
+    let due: Vec<String> = Memory::new(&deps.cfg.tutor_dir).folder_weak(folder_id, &folder.kind).into_iter().filter(|w| w.due <= today + Duration::days(2)).map(|w| w.topic).collect();
     let data = format!(
         "Folder: {} (môn {})\nTừ {} tới {}\nPhiên học trong tuần: {}\nGhi nhớ trong tuần:\n{}\nSắp tới hạn ôn: {}",
         folder.name,
-        memory::subject_name(&folder.subject),
+        memory::subject_name(&folder.kind),
         fmt(from),
         fmt(today),
         if titles.is_empty() { "không có".to_string() } else { titles.join("; ") },
@@ -147,14 +147,14 @@ pub async fn weekly(deps: &Deps, folder_id: &str) -> Value {
     review_frame(deps, folder_id)
 }
 
-/// First turn of `new_session{kickoff:"review_quiz"}`: what is due and weak in the folder (or in
-/// all subjects for a session without folder).
+/// First turn of `new_session{kickoff:"review_quiz"}`: what is due and weak in the folder, and
+/// nothing from anywhere else (PROTOCOL section 18; the quiz always has a folder).
 pub fn quiz_kickoff(deps: &Deps, folder: Option<&str>) -> String {
     let today = memory::today();
     let mem = Memory::new(&deps.cfg.tutor_dir);
     let mut items = match folder.and_then(|f| deps.folders.get(f)) {
-        Some(f) => mem.folder_weak(&f.id, &f.subject),
-        None => mem.due_items(today),
+        Some(f) => mem.folder_weak(&f.id, &f.kind),
+        None => Vec::new(),
     };
     items.sort_by(|a, b| a.due.cmp(&b.due).then(b.count.cmp(&a.count)));
     let parts: Vec<String> = items

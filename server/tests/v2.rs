@@ -357,8 +357,10 @@ async fn folders_and_session_management() {
     assert!(!e.data().join("sessions").join(format!("{first}.jsonl")).exists());
 }
 
+/// v3 (PROTOCOL section 18): folders are free-form knowledge streams, so the server no longer files
+/// old sessions into subject folders by their title (this test used to check that it did).
 #[tokio::test]
-async fn hello_folder_and_old_sessions_are_sorted_into_subject_folders() {
+async fn hello_folder_and_old_sessions_are_never_filed_into_folders() {
     let dir = temp_dir();
     std::fs::create_dir_all(dir.join("data")).unwrap();
     std::fs::write(
@@ -372,13 +374,14 @@ async fn hello_folder_and_old_sessions_are_sorted_into_subject_folders() {
     v2(&mut p, json!({})).await;
     p.send(json!({"t":"list_folders"})).await;
     let f = p.until(|x| x["t"] == "folders").await.pop().unwrap();
-    assert_eq!((f["items"][0]["name"].as_str(), f["items"][0]["subject"].as_str(), f["items"][0]["sessionCount"].as_u64()), (Some("Toán"), Some("toan"), Some(1)));
-    let fid = f["items"][0]["id"].as_str().unwrap().to_string();
+    assert_eq!(f["items"], json!([]), "no folder is made from session titles");
     p.send(json!({"t":"list_sessions"})).await;
     let s = p.until(|x| x["t"] == "sessions").await.pop().unwrap();
     let get = |id: &str| s["items"].as_array().unwrap().iter().find(|x| x["sessionId"] == id).unwrap().clone();
-    assert_eq!((get("old-1")["folderId"].as_str(), get("old-1")["mode"].as_str()), (Some(fid.as_str()), Some("live")));
+    assert_eq!((get("old-1")["folderId"].is_null(), get("old-1")["mode"].as_str()), (true, Some("live")));
     assert!(get("old-2")["folderId"].is_null());
+    p.send(json!({"t":"create_folder","name":"Toán","subject":"toan"})).await;
+    let fid = p.until(|x| x["t"] == "folder_created").await.pop().unwrap()["id"].as_str().unwrap().to_string();
     let mut q = Phone::connect(e.addr).await;
     assert_eq!(v2(&mut q, json!({"folderId": fid})).await["folderId"], fid.as_str());
 }

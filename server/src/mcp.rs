@@ -26,7 +26,7 @@ fn memory_tool_def() -> Value {
         "inputSchema": {
             "type": "object",
             "properties": {
-                "subject": {"type": "string", "description": "toan, ly, hoa, van, anh-ssat, duc, tin-cpp or chung (any other subject)"},
+                "subject": {"type": "string", "description": "toan, ly, hoa, van, anh-ssat, duc, tin-cpp, ngoai-ngu or chung (any other subject); inside a folder the server files the note under the folder whatever you pass"},
                 "kind": {"type": "string", "enum": ["mistake", "mastered", "style", "progress", "understood"]},
                 "topic": {"type": "string"},
                 "note": {"type": "string"},

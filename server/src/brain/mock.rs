@@ -95,6 +95,8 @@ pub fn context_echo(text: &str) -> Vec<String> {
             out.push(format!("Mock ôn nhanh: {}", l[i + "[ôn nhanh: ".len()..].trim_end_matches(']')));
         } else if l.starts_with("[tóm tắt phiên trước") {
             out.push("Mock thấy tóm tắt.".to_string());
+        } else if let Some(f) = l.strip_prefix("[folder: ") {
+            out.push(format!("Mock folder: {}", f.trim_end_matches(']')));
         }
         // (only chat is echoed, so live-mode tests keep their exact v1 frames)
         if l.contains("[mode: chat]") {
@@ -142,6 +144,10 @@ impl MockBrain {
             let mut queue: std::collections::VecDeque<Step> = steps.into();
             // Tests can see what context the server attached: echo the memory block and review note.
             let mut echo = context_echo(&input.text);
+            // "#raw" in the student's words: echo every line Claude would receive (isolation tests).
+            if input.user_text.contains("#raw") {
+                echo.extend(input.text.lines().filter(|l| !l.trim().is_empty()).map(|l| format!("Mock raw: {}", l.trim())));
+            }
             if !input.attachments.is_empty() {
                 let kinds: Vec<&str> = input.attachments.iter().map(|a| a.kind.as_str()).collect();
                 echo.push(format!("Mock thấy tệp {} model {}.", kinds.join(" "), input.model));

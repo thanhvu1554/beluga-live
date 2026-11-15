@@ -4,6 +4,7 @@ pub mod brain;
 pub mod config;
 pub mod folders;
 pub mod greeting;
+pub mod home;
 pub mod http;
 pub mod memory;
 pub mod mcp;

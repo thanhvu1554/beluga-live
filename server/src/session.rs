@@ -6,7 +6,7 @@ use crate::brain::claude::{ClaudeCfg, ClaudeDriver};
 use crate::brain::mock::MockBrain;
 use crate::brain::{Attachment, Brain, BrainEvent, BrainMsg, Settings, TurnInput};
 use crate::config::Config;
-use crate::folders::Folders;
+use crate::folders::{FolderMeta, Folders};
 use crate::memory::{self, Kind, Memory};
 use crate::models::{Catalog, ModelEntry};
 use crate::parser::{ChatParser, Event, LessonParser, TurnParser};
@@ -356,9 +356,10 @@ impl Session {
         self.meta.mode == "chat"
     }
 
-    fn folder_subject(&self) -> Option<(String, String)> {
+    /// The session's folder, if it has one that still exists.
+    fn folder(&self) -> Option<FolderMeta> {
         let f = self.meta.folder_id.as_ref()?;
-        self.deps.folders.get(f).map(|m| (m.id, m.subject))
+        self.deps.folders.get(f)
     }
 
     fn on_cmd(&mut self, c: Cmd) {
@@ -453,7 +454,12 @@ impl Session {
             }
             Cmd::EditMeta { edit, reply } => {
                 let old_title = self.meta.title.clone();
+                let old_folder = self.meta.folder_id.clone();
                 edit(&mut self.meta);
+                if self.meta.folder_id != old_folder {
+                    // An unanswered review offer belongs to the old folder (PROTOCOL section 18).
+                    self.pending_review = None;
+                }
                 self.deps.store.upsert_session(&self.meta);
                 if self.meta.title != old_title {
                     self.send(json!({"t": "title", "text": self.meta.title}));
@@ -498,7 +504,7 @@ impl Session {
         let voice = &self.deps.voice;
         let entry = self.deps.catalog.resolve(&self.settings.model);
         let mut ready = json!({
-            "t": "ready", "v": if self.conn_v >= 2 { 2 } else { 1 }, "sessionId": self.id, "title": self.meta.title,
+            "t": "ready", "v": self.conn_v.clamp(1, 3), "sessionId": self.id, "title": self.meta.title,
             "tts": if voice.tts_enabled() { "server" } else { "device" },
             "stt": if voice.stt_enabled() { "server" } else { "device" },
             "boardVersion": self.deps.cfg.board_version(),
@@ -556,7 +562,8 @@ impl Session {
         if let Some(p) = self.capture.take() {
             let _ = p.reply.send(Err("Điện thoại vừa nối lại giữa chừng, chưa chụp được ảnh. Thử gọi lại.".into()));
         }
-        if fresh && init.kickoff.as_deref() == Some("review_quiz") {
+        // The quiz needs a folder (PROTOCOL section 18): without one the session just opens.
+        if fresh && init.kickoff.as_deref() == Some("review_quiz") && self.folder().is_some() {
             let text = crate::review::quiz_kickoff(&self.deps, self.meta.folder_id.as_deref());
             self.pending.push_back(UserMsg { text, files: vec![], via: "text".into(), kickoff: true });
             self.try_start_turn();
@@ -571,13 +578,12 @@ impl Session {
         if self.turn != 0 || !self.journal.is_empty() || self.running.is_some() || self.brain_busy || self.conn.is_none() {
             return;
         }
+        // Only inside a folder, and only that folder's items (PROTOCOL section 18): a session
+        // without a folder never gets a self-initiated offer.
+        let Some(folder) = self.folder() else { return };
         let mem = Memory::new(&self.deps.cfg.tutor_dir);
-        let item = match self.folder_subject() {
-            Some((f, sub)) => mem.folder_review_candidate(&f, &sub, memory::today()),
-            None => mem.review_candidate(memory::today()),
-        };
-        let Some(item) = item else { return };
-        let lines = offer_lines(&self.settings.lang, &item);
+        let Some(item) = mem.folder_review_candidate(&folder.id, &folder.kind, memory::today()) else { return };
+        let lines = offer_lines(&self.settings.lang, &item, Some(&folder));
         self.quiet = true;
         let chat = self.is_chat();
         let r = self.emit_lines(lines, chat);
@@ -595,13 +601,14 @@ impl Session {
             return Err("Thiếu topic.".into());
         }
         let topic_id = field("topicId");
-        let mut subject = field("subject");
-        let folder = self.folder_subject();
-        if let (Some((_, sub)), true) = (&folder, subject.is_empty()) {
-            subject = sub.clone();
-        }
+        let folder = self.folder();
+        // Inside a folder the note always goes to the folder's file, whatever subject Claude names.
+        let subject = match &folder {
+            Some(f) => f.kind.clone(),
+            None => field("subject"),
+        };
         let r = Memory::new(&self.deps.cfg.tutor_dir).note_at(
-            folder.as_ref().map(|(f, _)| f.as_str()),
+            folder.as_ref().map(|f| f.id.as_str()),
             &subject,
             kind,
             &topic,
@@ -634,10 +641,11 @@ impl Session {
     }
 
     fn spawn_fix(&self, raw: String, files: Vec<String>, via: String, draft: bool, server_stt: bool) {
-        let (subject, terms) = match self.folder_subject() {
-            Some((f, sub)) => {
-                let terms = self.deps.folders.knowledge(&f).map(|k| crate::folders::curriculum_terms(&k, 30)).unwrap_or_default();
-                (memory::subject_name(&sub), terms)
+        // Only this session's folder (PROTOCOL section 18): its name and its curriculum terms.
+        let (subject, terms) = match self.folder() {
+            Some(f) => {
+                let terms = self.deps.folders.knowledge(&f.id).map(|k| crate::folders::curriculum_terms(&k, 30)).unwrap_or_default();
+                (format!("{} ({})", f.name, memory::subject_name(&f.kind)), terms)
             }
             None => (String::new(), vec![]),
         };
@@ -708,15 +716,23 @@ impl Session {
             self.send(notice("no_vision", &format!("{} không đọc được ảnh/PDF, tớ bỏ tệp đính kèm. Đổi sang model khác để gửi ảnh.", entry.label)));
         }
 
-        // The memory summary goes in once per Claude session (also not again after a `--resume`).
-        let summary = if self.meta.memory_sent {
-            None
+        // The folder line and memory summary go in once per Claude session (also not again after a
+        // `--resume`), and again when the session moved to another folder (PROTOCOL section 18).
+        let folder = self.folder();
+        let scope = folder.as_ref().map(|f| f.id.clone()).unwrap_or_default();
+        let had = self.meta.context_scope();
+        let (summary, folder_note) = if had.as_deref() == Some(scope.as_str()) {
+            (None, None)
         } else {
             self.meta.memory_sent = true;
+            self.meta.memory_scope = Some(scope);
             let mem = Memory::new(&self.deps.cfg.tutor_dir);
-            match self.folder_subject() {
-                Some((f, sub)) => mem.folder_summary(&f, &sub, self.deps.folders.knowledge(&f).as_ref(), memory::today()),
-                None => mem.summary(memory::today()),
+            match &folder {
+                Some(f) => (mem.folder_summary(&f.id, &f.kind, self.deps.folders.knowledge(&f.id).as_ref(), memory::today()), Some(folder_line(f))),
+                None => {
+                    let moved_out = had.map(|s| !s.is_empty()).unwrap_or(false);
+                    (mem.summary(memory::today()), moved_out.then(|| NO_FOLDER_LINE.to_string()))
+                }
             }
         };
         let mode_note = if self.meta.mode_noted.as_deref() != Some(self.meta.mode.as_str()) {
@@ -730,6 +746,7 @@ impl Session {
         let compact = self.compact_note.take();
         let ctx = TurnCtx {
             mode: mode_note.as_deref(),
+            folder: folder_note.as_deref(),
             memory: summary.as_deref(),
             review: review.as_ref(),
             interrupt: interrupt.as_deref(),
@@ -853,7 +870,7 @@ impl Session {
             return;
         }
         self.title_asked = true;
-        let subject = self.folder_subject().map(|(_, s)| memory::subject_name(&s)).unwrap_or_default();
+        let subject = self.folder().map(|f| memory::subject_name(&f.kind)).unwrap_or_default();
         let prompt = format!(
             "Môn của folder (có thể trống): {subject}\nHọc sinh: {}\nGia sư: {}",
             cut(&user.join(" / "), 400),
@@ -904,6 +921,7 @@ impl Session {
         self.meta.claude_id = Some(new_id);
         self.meta.claude_started = false;
         self.meta.memory_sent = false;
+        self.meta.memory_scope = None;
         self.meta.mode_noted = None;
         self.last_context = 0;
         self.compact_note = Some(summary);
@@ -1265,6 +1283,8 @@ fn tts_fallback_notice() -> Value {
 pub struct TurnCtx<'a> {
     /// `chat` / `live`: sent on the first turn and when the mode changes.
     pub mode: Option<&'a str>,
+    /// `[folder: …]` line (first turn in a folder, and after a move to another folder).
+    pub folder: Option<&'a str>,
     pub memory: Option<&'a str>,
     pub review: Option<&'a ReviewRef>,
     pub interrupt: Option<&'a str>,
@@ -1284,6 +1304,10 @@ pub fn compose_turn_text(settings: &Settings, user_text: &str, ctx: &TurnCtx) ->
     if let Some(c) = ctx.compact {
         text.push_str(&format!("\n[tóm tắt phiên trước, ngữ cảnh cũ đã được thu gọn]\n{}\n[/tóm tắt]", c.trim()));
     }
+    if let Some(f) = ctx.folder {
+        text.push('\n');
+        text.push_str(f);
+    }
     if let Some(m) = ctx.memory {
         text.push('\n');
         text.push_str(m);
@@ -1302,6 +1326,20 @@ pub fn compose_turn_text(settings: &Settings, user_text: &str, ctx: &TurnCtx) ->
     text
 }
 
+/// Told to Claude when a session that had a folder's context was moved out of every folder.
+pub const NO_FOLDER_LINE: &str = "[folder: không có | phiên này vừa được chuyển ra khỏi folder; không bám phạm vi folder cũ nữa]";
+
+/// `[folder: <name> | <about> | kiểu dạy: <kind>]` (PROTOCOL section 17); an empty description is left out.
+pub fn folder_line(f: &FolderMeta) -> String {
+    let clean = |s: &str| s.replace('|', "/").replace(['[', ']'], "");
+    let about = clean(f.about.trim());
+    if about.is_empty() {
+        format!("[folder: {} | kiểu dạy: {}]", clean(&f.name), f.kind)
+    } else {
+        format!("[folder: {} | {about} | kiểu dạy: {}]", clean(&f.name), f.kind)
+    }
+}
+
 /// Lower the first letter of a topic so it reads inside a sentence ("Xét dấu" -> "xét dấu"),
 /// but leave acronyms and names such as "C++" or "SSAT" alone.
 fn inline_topic(topic: &str) -> String {
@@ -1314,14 +1352,15 @@ fn inline_topic(topic: &str) -> String {
     }
 }
 
-/// Lesson lines of the review invitation: spoken sentence, step, `review_offer` block.
-pub fn offer_lines(lang: &str, item: &memory::DueItem) -> String {
+/// Lesson lines of the review invitation: spoken sentence, step, `review_offer` block. Inside a
+/// folder the block names the folder (`subjectName` is the folder's name, never a subject's).
+pub fn offer_lines(lang: &str, item: &memory::DueItem, folder: Option<&FolderMeta>) -> String {
     let (say, step) = if lang == "en" {
         (format!("Last time you kept mixing up {}. Want a quick review question?", inline_topic(&item.topic)), "Review")
     } else {
         (format!("Lần trước cậu hay nhầm {}, ôn một câu không?", inline_topic(&item.topic)), "Ôn lại")
     };
-    let name = memory::subject_name(&item.subject);
+    let name = folder.map(|f| f.name.clone()).unwrap_or_else(|| memory::subject_name(&item.subject));
     let mut fallback = format!("**{step}** · {name} · {}", item.topic);
     if !item.note.is_empty() {
         fallback.push_str(&format!("\n\n{}", item.note));
@@ -1332,6 +1371,10 @@ pub fn offer_lines(lang: &str, item: &memory::DueItem) -> String {
     });
     if !item.note.is_empty() {
         block["note"] = json!(item.note);
+    }
+    if let Some(f) = folder {
+        block["folderId"] = json!(f.id);
+        block["folderName"] = json!(f.name);
     }
     format!("{say}\n@step {}\n@show {block}", json!({"title": step}))
 }
@@ -1365,6 +1408,7 @@ mod tests {
         assert_eq!(compose_turn_text(&st, "chào", &TurnCtx::default()), "[lang=vi] [rigor=medium] chào");
         let ctx = TurnCtx {
             mode: Some("chat"),
+            folder: Some("[folder: Toán 9 | kiểu dạy: toan]"),
             memory: Some("[memory]\nx\n[/memory]"),
             review: Some(&rref("hay quên")),
             interrupt: Some("(Ghi chú hệ thống: ngắt)"),
@@ -1372,7 +1416,7 @@ mod tests {
         };
         assert_eq!(
             compose_turn_text(&st, "ừ", &ctx),
-            "[lang=vi] [rigor=medium] [mode: chat] ừ\n[tóm tắt phiên trước, ngữ cảnh cũ đã được thu gọn]\n- đang làm bài 2\n[/tóm tắt]\n[memory]\nx\n[/memory]\n[ôn lại: toan · Xét dấu tam thức khi a âm · hay quên]\n(Ghi chú hệ thống: ngắt)"
+            "[lang=vi] [rigor=medium] [mode: chat] ừ\n[tóm tắt phiên trước, ngữ cảnh cũ đã được thu gọn]\n- đang làm bài 2\n[/tóm tắt]\n[folder: Toán 9 | kiểu dạy: toan]\n[memory]\nx\n[/memory]\n[ôn lại: toan · Xét dấu tam thức khi a âm · hay quên]\n(Ghi chú hệ thống: ngắt)"
         );
         // empty note: no trailing field
         let t = compose_turn_text(&st, "ừ", &TurnCtx { review: Some(&rref("")), ..Default::default() });
@@ -1415,7 +1459,7 @@ mod tests {
         };
         for lang in ["vi", "en"] {
             let mut p = crate::parser::LessonParser::new(1, 1, 0);
-            let mut ev = p.push_str(&offer_lines(lang, &item));
+            let mut ev = p.push_str(&offer_lines(lang, &item, None));
             ev.extend(p.push_str("\n"));
             ev.extend(p.finish());
             assert!(p.take_dropped().is_empty(), "{lang}");

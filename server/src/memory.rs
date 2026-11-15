@@ -35,6 +35,7 @@ pub const SUBJECTS: &[(&str, &str)] = &[
     ("anh-ssat", "Anh · SSAT"),
     ("duc", "Đức"),
     ("tin-cpp", "Tin · C++"),
+    ("ngoai-ngu", "Ngoại ngữ"),
     ("chung", "Khác"),
 ];
 
@@ -95,6 +96,8 @@ pub fn normalize_subject(s: &str) -> String {
         "anh-ssat"
     } else if has(&["tieng duc", "german", "deutsch"]) || is(&["duc"]) {
         "duc"
+    } else if has(&["ngoai ngu", "tieng phap", "tieng nhat", "tieng han", "tieng trung", "french", "japanese", "korean", "chinese"]) {
+        "ngoai-ngu"
     } else {
         "chung"
     };
@@ -1032,6 +1035,7 @@ mod tests {
             ("anh", "anh-ssat"), ("SSAT", "anh-ssat"), ("Tiếng Anh", "anh-ssat"), ("anh-ssat", "anh-ssat"),
             ("đức", "duc"), ("Tiếng Đức", "duc"), ("German", "duc"),
             ("tin", "tin-cpp"), ("C++", "tin-cpp"), ("Tin học", "tin-cpp"), ("tin-cpp", "tin-cpp"),
+            ("ngoai-ngu", "ngoai-ngu"), ("Ngoại ngữ", "ngoai-ngu"), ("tiếng Pháp", "ngoai-ngu"),
             ("sinh", "chung"), ("Lịch sử", "chung"), ("", "chung"), ("../etc", "chung"),
         ] {
             assert_eq!(normalize_subject(s), id, "{s}");

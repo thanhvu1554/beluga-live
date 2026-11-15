@@ -21,6 +21,11 @@ pub struct SessionMeta {
     /// also not after a `--resume`).
     #[serde(default)]
     pub memory_sent: bool,
+    /// Where the `[memory]` (and `[folder: …]`) Claude last got came from: a folder id, or `""` for
+    /// "no folder". A session moved to another folder gets the new folder's context on its next turn.
+    /// `None` with `memory_sent` = written before v3 (treated as the session's folder at that time).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory_scope: Option<String>,
     /// Folder (PROTOCOL section 8); `None` = no folder.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub folder_id: Option<String>,
@@ -59,6 +64,7 @@ impl SessionMeta {
             updated_at: now_rfc3339(),
             claude_started: false,
             memory_sent: false,
+            memory_scope: None,
             folder_id: None,
             mode: "live".into(),
             mode_noted: None,
@@ -73,6 +79,24 @@ impl SessionMeta {
     /// The id the Claude Code transcript lives under.
     pub fn claude_session(&self) -> String {
         self.claude_id.clone().unwrap_or_else(|| self.session_id.clone())
+    }
+
+    /// Move the session to `folder` (or out of any folder). Pins down where the context Claude
+    /// already has came from, so the next turn knows it must attach the new folder's context.
+    pub fn set_folder(&mut self, folder: Option<String>) {
+        if self.memory_sent && self.memory_scope.is_none() {
+            self.memory_scope = Some(self.folder_id.clone().unwrap_or_default());
+        }
+        self.folder_id = folder;
+    }
+
+    /// The folder (or `""`) whose context Claude already has, if any.
+    pub fn context_scope(&self) -> Option<String> {
+        match (&self.memory_scope, self.memory_sent) {
+            (Some(s), true) => Some(s.clone()),
+            (None, true) => Some(self.folder_id.clone().unwrap_or_default()),
+            _ => None,
+        }
     }
 
     pub fn has_title(&self) -> bool {

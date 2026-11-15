@@ -17,5 +17,15 @@
      "desc": "Nam trẻ miền Nam, ấm, thân thiện, nhịp vừa."},
     {"id": "JxmKvRaNYFidf0N27Vng", "name": "Sơn", "gender": "male", "accent": "central",
      "desc": "Nam trẻ miền Trung, nói chuyện thoải mái."}
+  ],
+  "fillers": [
+    {"id": "short-1", "when": "short", "text": "Đợi tớ một chút nha, tớ đang nghĩ cho cậu nè."},
+    {"id": "short-2", "when": "short", "text": "Ừm, để tớ nghĩ một xíu nha."},
+    {"id": "short-3", "when": "short", "text": "Câu này hay đó, chờ tớ tí nha."},
+    {"id": "long-1", "when": "long", "text": "Tớ vẫn đang nghĩ nè, sắp xong rồi, cậu chờ thêm chút nha."},
+    {"id": "long-2", "when": "long", "text": "Câu này hơi khó, tớ nghĩ kỹ thêm một chút cho chắc nha."},
+    {"id": "vision-1", "when": "vision", "text": "Để tớ nhìn kỹ đề của cậu một chút nha."},
+    {"id": "hello-1", "when": "hello", "text": "A lô, tớ nghe nè."},
+    {"id": "hello-2", "when": "hello", "text": "Tớ đây, cậu cần gì nè?"}
   ]
 }

@@ -15,6 +15,9 @@ async fn main() {
     if args.first().map(String::as_str) == Some("gen-voice-previews") {
         std::process::exit(gen_voice_previews(&cfg).await);
     }
+    if args.first().map(String::as_str) == Some("gen-voice-fillers") {
+        std::process::exit(gen_voice_fillers(&cfg).await);
+    }
 
     let listener = match TcpListener::bind(("0.0.0.0", cfg.port)).await {
         Ok(l) => l,
@@ -80,6 +83,58 @@ async fn gen_voice_previews(cfg: &Config) -> i32 {
     }
     for (id, why) in &failed {
         println!("  lỗi  {id}: {why}");
+    }
+    if let Some(g) = &gv {
+        if let Ok(c) = g.credit_balance().await {
+            println!("Credit sau: {c}");
+        }
+    }
+    if failed.is_empty() { 0 } else { 1 }
+}
+
+/// `beluga-server gen-voice-fillers`: create `server/voices/<voiceId>/<fillerId>.mp3` for every
+/// voice x wait/pick-up line of `server/voices.json` that has no clip yet (same TTS as the previews;
+/// existing clips are kept, delete a file to regenerate it). Spends voice credits.
+async fn gen_voice_fillers(cfg: &Config) -> i32 {
+    use beluga_server::voice::{ElevenLabs, GenVoice, Tts};
+    use beluga_server::voices::VoiceCatalog;
+    let gv = cfg.genvoice.clone().map(GenVoice::new);
+    let tts: Box<dyn Tts> = match (&gv, &cfg.eleven) {
+        (Some(_), _) => Box::new(GenVoice::new(cfg.genvoice.clone().unwrap())),
+        (None, Some(e)) => Box::new(ElevenLabs::new(e.clone())),
+        _ => {
+            eprintln!("Cần GENVOICE_API_KEY (hoặc ELEVENLABS_API_KEY + ELEVENLABS_VOICE_ID) trong server/.env.");
+            return 2;
+        }
+    };
+    let cat = VoiceCatalog::load(&cfg.voices_path, &cfg.voice_clips_dir, &cfg.data_dir, "");
+    let missing = cat.missing_fillers();
+    println!(
+        "Danh mục: {} ({} giọng x {} câu chờ), thư mục clip: {}",
+        cfg.voices_path.display(),
+        cat.entries().len(),
+        cat.fillers().len(),
+        cfg.voice_clips_dir.display()
+    );
+    if missing.is_empty() {
+        println!("Mọi câu chờ đã có clip, không tạo gì.");
+        return 0;
+    }
+    let chars: usize = missing.iter().map(|(_, f)| f.text.chars().count()).sum();
+    println!("Sẽ tạo {} clip ({chars} ký tự).", missing.len());
+    if let Some(g) = &gv {
+        match g.credit_balance().await {
+            Ok(c) => println!("Credit trước: {c}"),
+            Err(e) => println!("Không đọc được credit: {}", e.message),
+        }
+    }
+    let (made, failed) = cat.generate_missing_fillers(tts.as_ref(), "vi").await;
+    for key in &made {
+        let size = std::fs::metadata(cfg.voice_clips_dir.join(format!("{key}.mp3"))).map(|m| m.len()).unwrap_or(0);
+        println!("  ok   {key} ({size} byte)");
+    }
+    for (key, why) in &failed {
+        println!("  lỗi  {key}: {why}");
     }
     if let Some(g) = &gv {
         if let Ok(c) = g.credit_balance().await {

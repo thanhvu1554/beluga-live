@@ -135,7 +135,7 @@ fn is_turn_end(f: &Value) -> bool {
 async fn health_and_board_are_served() {
     let h = harness().await;
     let r: Value = reqwest::get(format!("http://{}/health", h.addr)).await.unwrap().json().await.unwrap();
-    assert_eq!(r, json!({"ok": true, "v": 2, "boardVersion": 7}));
+    assert_eq!(r, json!({"ok": true, "v": 3, "boardVersion": 7}), "PROTOCOL v3: health reports v 3");
     let body = reqwest::get(format!("http://{}/board/version.json", h.addr)).await.unwrap().text().await.unwrap();
     assert!(body.contains("\"version\":7"));
 }
