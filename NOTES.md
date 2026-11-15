@@ -15,7 +15,7 @@
 
 ### Bản v2 (giao thức v2, 15/11/2026)
 
-CI xanh ở run 43656665973 (commit 2752895): `swift test` BelugaCore (thêm `V2Tests.swift`: mọi frame v2 hai chiều,
+CI xanh ở run 43659462176 (commit 10f9565; trước đó 43656665973): `swift test` BelugaCore (thêm `V2Tests.swift`: mọi frame v2 hai chiều,
 frame lạ/thiếu trường, `ChatTranscript`), IPA unsigned, 62 ảnh simulator, video demo. App gửi `hello.v = 2`.
 
 **Cấu trúc mới**
@@ -49,7 +49,7 @@ tab Phiên, Kiến thức (`knowledge.html`: tổng quan, mức độ, loại c�
 Ôn tập (Ôn nhanh, thanh trạng thái chủ đề, danh sách), Đề (đang viết đề + danh sách), PDF đề trong QuickLook (2 trang,
 đáp án trang sau), chọn model, hạn mức và chi phí, xem lại bài giảng (bảng chỉ đọc, "Bước 4 trên 4"), cài đặt, và toàn bộ
 cảnh live cũ. Ảnh `chatflow-*`: gửi câu hỏi thật qua mock transport, câu trả lời stream rồi chốt. Ảnh `flow-*`: luồng live.
-Sau khi xem đã sửa: nút Live/Gửi bị nhạt trong lớp kính (đổi sang `.glassProminent` mực đen/trắng), giờ làm mới hạn mức theo
+Sau khi xem đã sửa (và xem lại ở run 43659462176): nút Live/Gửi bị nhạt trong lớp kính (đổi sang `.glassProminent` mực đen/trắng), giờ làm mới hạn mức theo
 ngôn ngữ app, tên khung hạn mức, `limit.utilization`, `usage.exam`; mock dùng `knowledge.sample.json` thật của server.
 
 **Chỉ biên dịch, chưa thấy chạy**: tải tệp thật (`/upload` với Bearer, tiến độ từ `URLSessionTaskDelegate`), mở tệp từ
