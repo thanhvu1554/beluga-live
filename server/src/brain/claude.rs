@@ -7,7 +7,8 @@
 //!   running turn (the process stays alive, a `result` with `terminal_reason":"aborted_streaming"` follows);
 //! * a `result` line marks the end of each turn.
 
-use super::{BrainEvent, BrainMsg, Sink, TurnInput};
+use super::{BrainEvent, BrainMsg, Sink, TurnInput, TurnUsage};
+use crate::models::Launch;
 use base64::Engine;
 use serde_json::{json, Value};
 use std::collections::VecDeque;
@@ -25,20 +26,15 @@ pub struct ClaudeCfg {
     pub bin: String,
     pub tutor_dir: PathBuf,
     pub mcp_config: PathBuf,
-    pub effort: Option<String>,
-    /// `BELUGA_MODEL_MAP`: alias → real model, e.g. `opus=ds/deepseek-flash`.
-    pub model_map: Vec<(String, String)>,
+    /// `--settings` file that switches off the bundled skills the env var leaves on.
+    pub settings_file: Option<PathBuf>,
 }
 
-/// Apply `BELUGA_MODEL_MAP`; unknown names pass through unchanged.
-pub fn resolve_model(map: &[(String, String)], model: &str) -> String {
-    map.iter().find(|(from, _)| from == model).map(|(_, to)| to.clone()).unwrap_or_else(|| model.to_string())
-}
-
-/// Anything that is not a built-in alias runs through the user's own gateway
-/// (`ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN`), so its auth env must survive (see `spawn`).
-pub fn is_gateway_model(model: &str) -> bool {
-    !matches!(model, "sonnet" | "opus" | "haiku")
+/// Settings for the tutor process: with `CLAUDE_CODE_DISABLE_BUNDLED_SKILLS=1` three built-in
+/// skills remain (design, doctor, plugin-authoring); these overrides turn them off too, so `init`
+/// lists only the eight subject skills (verified with claude 2.1.325).
+pub fn tutor_settings() -> serde_json::Value {
+    json!({"skillOverrides": {"design": "off", "doctor": "off", "plugin-authoring": "off"}})
 }
 
 /// Name of the MCP server and its tool as Claude sees them.
@@ -55,6 +51,7 @@ pub fn skill_rules() -> Vec<String> {
 enum DriverCmd {
     Turn(TurnInput),
     Interrupt,
+    Reset(String),
     Shutdown,
 }
 
@@ -63,7 +60,8 @@ pub struct ClaudeDriver {
 }
 
 /// Command-line flags for the long-lived process. Kept pure so tests can pin them down.
-pub fn build_args(cfg: &ClaudeCfg, session_id: &str, resume: bool, model: &str) -> Vec<String> {
+pub fn build_args(cfg: &ClaudeCfg, session_id: &str, resume: bool, launch: &Launch) -> Vec<String> {
+    let model = launch.model.as_str();
     let mut a: Vec<String> = [
         "-p",
         "--input-format",
@@ -91,25 +89,16 @@ pub fn build_args(cfg: &ClaudeCfg, session_id: &str, resume: bool, model: &str) 
     a.extend(skill_rules());
     a.extend([CAPTURE_TOOL, MEMORY_TOOL].map(String::from));
     a.extend(["--permission-mode", "dontAsk", "--permission-prompts", "none"].map(String::from));
-    if let Some(e) = effort_for(cfg, model) {
+    if let Some(f) = &cfg.settings_file {
+        a.push("--settings".into());
+        a.push(f.to_string_lossy().into_owned());
+    }
+    // Values are the ones `claude --help` lists for `--effort`: low, medium, high, xhigh, max.
+    if let Some(e) = &launch.effort {
         a.push("--effort".into());
-        a.push(e);
+        a.push(e.clone());
     }
     a
-}
-
-/// Reasoning effort per model: sonnet medium, opus low (it is slow), haiku none.
-/// `BELUGA_EFFORT` (cfg.effort) overrides for every model. Values are the ones `claude --help`
-/// lists for `--effort`: low, medium, high, xhigh, max.
-pub fn effort_for(cfg: &ClaudeCfg, model: &str) -> Option<String> {
-    if let Some(e) = &cfg.effort {
-        return Some(e.clone());
-    }
-    match model {
-        "sonnet" => Some("medium".into()),
-        "opus" => Some("low".into()),
-        _ => None,
-    }
 }
 
 impl ClaudeDriver {
@@ -127,6 +116,10 @@ impl ClaudeDriver {
         let _ = self.tx.send(DriverCmd::Interrupt);
     }
 
+    pub fn reset(&self, new_id: String) {
+        let _ = self.tx.send(DriverCmd::Reset(new_id));
+    }
+
     pub fn shutdown(&self) {
         let _ = self.tx.send(DriverCmd::Shutdown);
     }
@@ -140,8 +133,10 @@ enum ProcEvent {
 struct Proc {
     child: Child,
     stdin: ChildStdin,
-    model: String,
+    launch: Launch,
     gen: u64,
+    /// `total_cost_usd` of the last `result` (it is cumulative over the process).
+    cost_so_far: f64,
 }
 
 struct Inflight {
@@ -197,6 +192,12 @@ async fn run(cfg: ClaudeCfg, session_id: String, started: bool, sink: Sink, mut 
                 None | Some(DriverCmd::Shutdown) => break,
                 Some(DriverCmd::Turn(t)) => d.queue.push_back(t),
                 Some(DriverCmd::Interrupt) => d.interrupt().await,
+                Some(DriverCmd::Reset(id)) => {
+                    tracing::info!("claude session reset (compaction): {} -> {id}", d.session_id);
+                    d.kill_proc();
+                    d.session_id = id;
+                    d.started = false;
+                }
             },
             ev = prx.recv() => {
                 if let Some((gen, ev)) = ev {
@@ -214,10 +215,10 @@ async fn run(cfg: ClaudeCfg, session_id: String, started: bool, sink: Sink, mut 
 
 fn user_line(inp: &TurnInput) -> String {
     let mut content = Vec::new();
-    if let Some(img) = &inp.image {
-        content.push(json!({"type":"image","source":{
-            "type":"base64","media_type":"image/jpeg",
-            "data": base64::engine::general_purpose::STANDARD.encode(img)}}));
+    for a in &inp.attachments {
+        let data = base64::engine::general_purpose::STANDARD.encode(&a.data);
+        let kind = if a.kind == "pdf" { "document" } else { "image" };
+        content.push(json!({"type": kind, "source": {"type": "base64", "media_type": a.mime, "data": data}}));
     }
     content.push(json!({"type":"text","text":inp.text}));
     json!({"type":"user","message":{"role":"user","content":content}}).to_string()
@@ -253,8 +254,8 @@ impl Driver {
 
     /// (Re)spawn if needed and write the in-flight turn to stdin.
     async fn write_current(&mut self) {
-        let Some(model) = self.inflight.as_ref().map(|i| i.input.model.clone()) else { return };
-        if let Err((code, text)) = self.ensure_proc(&model).await {
+        let Some(launch) = self.inflight.as_ref().map(|i| i.input.launch.clone()) else { return };
+        if let Err((code, text)) = self.ensure_proc(&launch).await {
             self.end_turn(Some((code, text)));
             return;
         }
@@ -272,17 +273,16 @@ impl Driver {
         }
     }
 
-    async fn ensure_proc(&mut self, model: &str) -> Result<(), (String, String)> {
-        let model = resolve_model(&self.cfg.model_map, model);
+    async fn ensure_proc(&mut self, launch: &Launch) -> Result<(), (String, String)> {
         if let Some(p) = &self.proc {
-            if p.model == model {
+            if p.launch == *launch {
                 return Ok(());
             }
-            // Model changed: restart with --resume so the conversation continues.
-            tracing::info!("claude model change -> restart");
+            // Model, effort or provider changed: restart with --resume so the conversation continues.
+            tracing::info!("claude launch change -> restart ({})", launch.describe());
             self.kill_proc();
         }
-        let args = build_args(&self.cfg, &self.session_id, self.started, &model);
+        let args = build_args(&self.cfg, &self.session_id, self.started, launch);
         let mut cmd = Command::new(&self.cfg.bin);
         cmd.args(&args)
             .current_dir(&self.cfg.tutor_dir)
@@ -290,10 +290,14 @@ impl Driver {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
-        if !is_gateway_model(&model) {
-            // Built-in aliases use the CLI's own login (Pro plan), never a stray API key.
-            cmd.env_remove("ANTHROPIC_API_KEY").env_remove("ANTHROPIC_AUTH_TOKEN");
+        for k in &launch.env_remove {
+            cmd.env_remove(k);
         }
+        for (k, v) in &launch.env {
+            cmd.env(k, v);
+        }
+        // Only the subject skills: no bundled skills in the tutor's context.
+        cmd.env("CLAUDE_CODE_DISABLE_BUNDLED_SKILLS", "1");
         #[cfg(windows)]
         cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
         let mut child = cmd.spawn().map_err(|e| {
@@ -338,8 +342,8 @@ impl Driver {
                 }
             }
         });
-        tracing::info!("claude started (session {}, resume={}, model={})", self.session_id, self.started, model);
-        self.proc = Some(Proc { child, stdin, model: model.clone(), gen });
+        tracing::info!("claude started (session {}, resume={}, {})", self.session_id, self.started, launch.describe());
+        self.proc = Some(Proc { child, stdin, launch: launch.clone(), gen, cost_so_far: 0.0 });
         Ok(())
     }
 
@@ -498,6 +502,9 @@ impl Driver {
                 }
             }
             "rate_limit_event" => {
+                if let Some(inf) = &self.inflight {
+                    self.emit(inf.input.turn, BrainEvent::RateLimit(v["rate_limit_info"].clone()));
+                }
                 let st = v["rate_limit_info"]["status"].as_str().unwrap_or("allowed");
                 if st != "allowed" && st != "allowed_warning" {
                     if let Some(inf) = self.inflight.as_mut() {
@@ -515,6 +522,9 @@ impl Driver {
                     self.started = true;
                     self.emit(turn, BrainEvent::SessionStarted);
                 }
+                if let Some(u) = self.turn_usage(&v) {
+                    self.emit(turn, BrainEvent::Usage(u));
+                }
                 if is_error && !aborted {
                     let detail = v["result"].as_str().unwrap_or("");
                     let (code, text) = if rate_limited {
@@ -529,6 +539,33 @@ impl Driver {
             }
             _ => {}
         }
+    }
+}
+
+impl Driver {
+    /// Usage of the turn that just ended. `usage` in `result` is per turn; `total_cost_usd` is
+    /// cumulative over the process (measured with claude 2.1.325), so the turn's cost is the delta.
+    fn turn_usage(&mut self, v: &Value) -> Option<TurnUsage> {
+        let u = v.get("usage")?;
+        let n = |x: &Value, k: &str| x[k].as_u64().unwrap_or(0);
+        let total = v["total_cost_usd"].as_f64().unwrap_or(0.0);
+        let cli_cost_usd = match self.proc.as_mut() {
+            Some(p) => {
+                let d = (total - p.cost_so_far).max(0.0);
+                p.cost_so_far = total;
+                d
+            }
+            None => total,
+        };
+        let last = u["iterations"].as_array().and_then(|a| a.last()).unwrap_or(u);
+        Some(TurnUsage {
+            input_tokens: n(u, "input_tokens"),
+            output_tokens: n(u, "output_tokens"),
+            cache_read_tokens: n(u, "cache_read_input_tokens"),
+            cache_write_tokens: n(u, "cache_creation_input_tokens"),
+            cli_cost_usd,
+            context_tokens: n(last, "input_tokens") + n(last, "cache_read_input_tokens") + n(last, "cache_creation_input_tokens"),
+        })
     }
 }
 
@@ -566,36 +603,31 @@ mod tests {
     use super::*;
 
     fn cfg() -> ClaudeCfg {
-        ClaudeCfg {
-            bin: "claude".into(),
-            tutor_dir: PathBuf::from("tutor"),
-            mcp_config: PathBuf::from("mcp.json"),
-            effort: None,
-            model_map: vec![],
-        }
+        ClaudeCfg { bin: "claude".into(), tutor_dir: PathBuf::from("tutor"), mcp_config: PathBuf::from("mcp.json"), settings_file: Some(PathBuf::from("s.json")) }
+    }
+
+    fn l(model: &str, effort: Option<&str>) -> Launch {
+        Launch { model: model.into(), effort: effort.map(String::from), ..Default::default() }
     }
 
     #[test]
-    fn model_map_redirects_alias() {
-        let m = vec![("opus".to_string(), "ds/deepseek-flash".to_string())];
-        assert_eq!(resolve_model(&m, "opus"), "ds/deepseek-flash");
-        assert_eq!(resolve_model(&m, "haiku"), "haiku");
-        assert_eq!(resolve_model(&[], "opus"), "opus");
-        let a = build_args(&cfg(), "sid", false, &resolve_model(&m, "opus"));
+    fn args_carry_model_effort_and_settings() {
+        let a = build_args(&cfg(), "sid", false, &l("ds/deepseek-flash", None));
         assert_eq!(a[a.iter().position(|x| x == "--model").unwrap() + 1], "ds/deepseek-flash");
-        assert!(is_gateway_model("ds/deepseek-flash"));
-        for alias in ["sonnet", "opus", "haiku"] {
-            assert!(!is_gateway_model(alias));
-        }
+        assert!(!a.contains(&"--effort".to_string()));
+        let a = build_args(&cfg(), "sid", false, &l("sonnet", Some("high")));
+        assert_eq!(a[a.iter().position(|x| x == "--effort").unwrap() + 1], "high");
+        assert_eq!(a[a.iter().position(|x| x == "--settings").unwrap() + 1], "s.json");
+        assert_eq!(tutor_settings()["skillOverrides"]["design"], "off");
     }
 
     #[test]
     fn args_new_vs_resume() {
-        let a = build_args(&cfg(), "sid", false, "sonnet");
+        let a = build_args(&cfg(), "sid", false, &l("sonnet", None));
         let pos = a.iter().position(|x| x == "--session-id").unwrap();
         assert_eq!(a[pos + 1], "sid");
         assert!(!a.contains(&"--resume".to_string()));
-        let r = build_args(&cfg(), "sid", true, "haiku");
+        let r = build_args(&cfg(), "sid", true, &l("haiku", None));
         let pos = r.iter().position(|x| x == "--resume").unwrap();
         assert_eq!(r[pos + 1], "sid");
         assert!(!r.contains(&"--session-id".to_string()));
@@ -603,24 +635,8 @@ mod tests {
     }
 
     #[test]
-    fn effort_depends_on_model_unless_overridden() {
-        let flag = |c: &ClaudeCfg, m: &str| {
-            let a = build_args(c, "sid", false, m);
-            a.iter().position(|x| x == "--effort").map(|i| a[i + 1].clone())
-        };
-        let c = cfg();
-        assert_eq!(flag(&c, "sonnet").as_deref(), Some("medium"));
-        assert_eq!(flag(&c, "opus").as_deref(), Some("low"));
-        assert_eq!(flag(&c, "haiku"), None);
-        let o = ClaudeCfg { effort: Some("high".into()), ..cfg() };
-        for m in ["sonnet", "opus", "haiku"] {
-            assert_eq!(flag(&o, m).as_deref(), Some("high"));
-        }
-    }
-
-    #[test]
     fn args_are_locked_down() {
-        let a = build_args(&cfg(), "sid", false, "sonnet");
+        let a = build_args(&cfg(), "sid", false, &l("sonnet", Some("medium")));
         for flag in ["--strict-mcp-config", "--include-partial-messages", "--verbose"] {
             assert!(a.contains(&flag.to_string()), "{flag}");
         }
@@ -661,9 +677,20 @@ mod tests {
 
     #[test]
     fn user_line_has_image_first() {
-        let inp = TurnInput { turn: 1, user_text: "a".into(), text: "[lang=vi] a".into(), image: Some(vec![1, 2, 3]), model: "sonnet".into() };
+        let att = |kind: &str, mime: &str| super::super::Attachment { kind: kind.into(), mime: mime.into(), data: vec![1, 2, 3] };
+        let inp = TurnInput {
+            turn: 1,
+            user_text: "a".into(),
+            text: "[lang=vi] a".into(),
+            attachments: vec![att("image", "image/png"), att("pdf", "application/pdf")],
+            model: "sonnet".into(),
+            mode: "chat".into(),
+            launch: l("sonnet", None),
+        };
         let v: Value = serde_json::from_str(&user_line(&inp)).unwrap();
-        assert_eq!(v["message"]["content"][0]["type"], "image");
-        assert_eq!(v["message"]["content"][1]["text"], "[lang=vi] a");
+        let c = &v["message"]["content"];
+        assert_eq!((c[0]["type"].as_str(), c[0]["source"]["media_type"].as_str()), (Some("image"), Some("image/png")));
+        assert_eq!((c[1]["type"].as_str(), c[1]["source"]["media_type"].as_str()), (Some("document"), Some("application/pdf")));
+        assert_eq!(c[2]["text"], "[lang=vi] a");
     }
 }

@@ -173,6 +173,8 @@ pub enum Tag {
     Mastered,
     Learned,
     Style,
+    /// Understood after a re-explanation; the note is the way of explaining that worked.
+    Understood,
 }
 
 impl Tag {
@@ -182,6 +184,7 @@ impl Tag {
             Tag::Mastered => "vững",
             Tag::Learned => "học",
             Tag::Style => "cách",
+            Tag::Understood => "hiểu",
         }
     }
 
@@ -191,6 +194,7 @@ impl Tag {
             Tag::Mastered => "Đã vững",
             Tag::Learned => "Đã học",
             Tag::Style => "Cách giảng hợp",
+            Tag::Understood => "Đã hiểu sau khi giảng lại",
         }
     }
 }
@@ -207,6 +211,8 @@ pub struct Entry {
     pub due: Option<NaiveDate>,
     /// Subject id, used by style entries in `profile.md`.
     pub subject: Option<String>,
+    /// Topic id in the folder's curriculum (`c1.t2`), when known.
+    pub topic_id: Option<String>,
     pub note: String,
 }
 
@@ -233,6 +239,7 @@ impl Entry {
             last: today,
             due: None,
             subject: None,
+            topic_id: None,
             note: clean_field(note, MAX_NOTE),
         }
     }
@@ -253,7 +260,10 @@ impl Entry {
                 }
                 parts.push(format!("ngày {}", fmt_date(self.last)));
             }
-            Tag::Mastered | Tag::Learned => parts.push(format!("ngày {}", fmt_date(self.last))),
+            Tag::Mastered | Tag::Learned | Tag::Understood => parts.push(format!("ngày {}", fmt_date(self.last))),
+        }
+        if let Some(id) = &self.topic_id {
+            parts.push(format!("id {id}"));
         }
         if !self.note.is_empty() {
             parts.push(self.note.clone());
@@ -273,6 +283,7 @@ pub fn parse_entry(line: &str) -> Option<Entry> {
         "vung" => Tag::Mastered,
         "hoc" => Tag::Learned,
         "cach" => Tag::Style,
+        "hieu" => Tag::Understood,
         _ => return None,
     };
     let mut parts = rest.split(" | ");
@@ -281,7 +292,7 @@ pub fn parse_entry(line: &str) -> Option<Entry> {
         return None;
     }
     let (mut count, mut streak, mut stage) = (None, None, None);
-    let (mut last, mut due, mut subject) = (None, None, None);
+    let (mut last, mut due, mut subject, mut topic_id) = (None, None, None, None);
     let mut note_parts: Vec<&str> = Vec::new();
     for p in parts {
         if !note_parts.is_empty() {
@@ -303,6 +314,8 @@ pub fn parse_entry(line: &str) -> Option<Entry> {
             due = Some(d);
         } else if let Some(s) = f.strip_prefix("mon ").filter(|s| !s.trim().is_empty() && !s.contains(' ')) {
             subject = Some(s.trim().to_string());
+        } else if let Some(s) = p.trim().strip_prefix("id ").filter(|s| !s.trim().is_empty() && !s.trim().contains(' ')) {
+            topic_id = Some(s.trim().to_string());
         } else {
             note_parts.push(p);
         }
@@ -318,6 +331,7 @@ pub fn parse_entry(line: &str) -> Option<Entry> {
         last,
         due: if weak { Some(due.unwrap_or(last + Duration::days(1))) } else { due },
         subject,
+        topic_id,
         note: note_parts.join(" | ").trim().to_string(),
     })
 }
@@ -416,6 +430,7 @@ pub enum Kind {
     Mastered,
     Style,
     Progress,
+    Understood,
 }
 
 impl Kind {
@@ -425,6 +440,7 @@ impl Kind {
             "mastered" => Some(Kind::Mastered),
             "style" => Some(Kind::Style),
             "progress" => Some(Kind::Progress),
+            "understood" => Some(Kind::Understood),
             _ => None,
         }
     }
@@ -448,6 +464,29 @@ impl NoteResult {
 
 /// Apply one note to a file (pure apart from the file model). `subject` is a normalized id.
 pub fn apply_note(f: &mut MemFile, subject: &str, kind: Kind, topic: &str, note: &str, today: NaiveDate) -> Result<NoteResult, String> {
+    apply_note_id(f, subject, kind, topic, note, None, today)
+}
+
+/// Same, with the curriculum topic id (folder sessions). The id is kept on the entry.
+pub fn apply_note_id(f: &mut MemFile, subject: &str, kind: Kind, topic: &str, note: &str, topic_id: Option<&str>, today: NaiveDate) -> Result<NoteResult, String> {
+    let r = apply_note_inner(f, subject, kind, topic, note, today)?;
+    if let Some(id) = topic_id.map(|s| clean_field(s, 40).replace(' ', "")).filter(|s| !s.is_empty()) {
+        let tag = match kind {
+            Kind::Mistake => Tag::Weak,
+            Kind::Mastered => if r.action == "reviewed" { Tag::Weak } else { Tag::Mastered },
+            Kind::Progress => Tag::Learned,
+            Kind::Style => Tag::Style,
+            Kind::Understood => Tag::Understood,
+        };
+        if let Some((i, mut e)) = f.find(tag, &r.topic) {
+            e.topic_id = Some(id);
+            f.replace(i, &e);
+        }
+    }
+    Ok(r)
+}
+
+fn apply_note_inner(f: &mut MemFile, subject: &str, kind: Kind, topic: &str, note: &str, today: NaiveDate) -> Result<NoteResult, String> {
     let topic = clean_field(topic, MAX_TOPIC);
     if topic.is_empty() {
         return Err("Thiếu topic.".into());
@@ -513,6 +552,7 @@ pub fn apply_note(f: &mut MemFile, subject: &str, kind: Kind, topic: &str, note:
             Ok(done("mastered", None))
         }
         Kind::Progress => upsert_plain(f, Tag::Learned, &topic, &note, None, today).map(|a| done(a, None)),
+        Kind::Understood => upsert_plain(f, Tag::Understood, &topic, &note, None, today).map(|a| done(a, None)),
         Kind::Style => {
             let sub = (subject != "chung").then(|| subject.to_string());
             upsert_plain(f, Tag::Style, &topic, &note, sub, today).map(|a| done(a, None))
@@ -585,6 +625,42 @@ pub fn build_summary(style: &[String], weak: &[(String, Entry)], learned: &[(Str
     Some(out.join("\n"))
 }
 
+/// Where the class is at school, from `knowledge.json.schoolProgress` (at most 3 lines).
+/// Topics are written `title [id]` so the tutor can pass the id to `memory_note`.
+pub fn school_lines(k: &Value) -> Vec<String> {
+    let topics = crate::folders::curriculum_topics(k);
+    if topics.is_empty() {
+        return vec![];
+    }
+    let name = |id: &str| topics.iter().find(|(i, _, _)| i == id).map(|(i, t, _)| format!("{t} [{i}]"));
+    let sp = &k["schoolProgress"];
+    let covered: Vec<String> = sp["coveredTopicIds"].as_array().into_iter().flatten().filter_map(|x| x.as_str()).map(String::from).collect();
+    let current = sp["currentTopicId"].as_str().map(String::from);
+    if covered.is_empty() && current.is_none() {
+        let all: Vec<String> = topics.iter().take(10).map(|(i, t, _)| format!("{t} [{i}]")).collect();
+        return vec![format!("Giáo trình folder (chưa rõ trên trường học tới đâu): {}", all.join("; "))];
+    }
+    let mut out = Vec::new();
+    if let Some(c) = current.as_deref().and_then(name) {
+        let conf = sp["confidence"].as_f64().map(|x| format!(" (độ tin {:.1})", x)).unwrap_or_default();
+        out.push(format!("Trên trường đang học: {c}{conf}"));
+    }
+    let done: Vec<String> = covered.iter().filter_map(|i| name(i)).take(10).collect();
+    if !done.is_empty() {
+        out.push(format!("Trên trường đã học: {}", done.join("; ")));
+    }
+    let not_yet: Vec<String> = topics
+        .iter()
+        .filter(|(i, _, _)| !covered.contains(i) && current.as_deref() != Some(i.as_str()))
+        .take(10)
+        .map(|(i, t, _)| format!("{t} [{i}]"))
+        .collect();
+    if !not_yet.is_empty() {
+        out.push(format!("Trên trường CHƯA học (muốn dùng thì phải dạy từ đầu): {}", not_yet.join("; ")));
+    }
+    out
+}
+
 // ------------------------------------------------------------------ the store (files)
 
 /// Reads and writes `tutor/memory/`.
@@ -648,6 +724,86 @@ impl Memory {
         let r = apply_note(&mut f, &subject, kind, topic, note, today)?;
         write_atomic(&self.path(&name), &f.render()).map_err(|e| format!("Không ghi được memory: {e}"))?;
         Ok(r)
+    }
+
+    fn folder_name(folder: &str) -> Option<String> {
+        crate::store::is_valid_session_id(folder).then(|| format!("folders/{folder}"))
+    }
+
+    /// Record a note for a session: style always goes to `profile.md`; the rest to the folder's
+    /// file (`memory/folders/<id>.md`) when the session has a folder, else to the subject's file.
+    #[allow(clippy::too_many_arguments)]
+    pub fn note_at(&self, folder: Option<&str>, subject: &str, kind: Kind, topic: &str, note: &str, topic_id: Option<&str>, today: NaiveDate) -> Result<NoteResult, String> {
+        let subject = normalize_subject(subject);
+        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let folder_file = folder.and_then(Memory::folder_name);
+        let name = match (&folder_file, kind) {
+            (_, Kind::Style) => "profile".to_string(),
+            (Some(f), _) => f.clone(),
+            (None, _) => subject.clone(),
+        };
+        std::fs::create_dir_all(self.dir.join("folders")).map_err(|e| format!("Không tạo được thư mục memory: {e}"))?;
+        let mut f = self.read(&name);
+        let title = if name == "profile" {
+            "Hồ sơ học sinh".to_string()
+        } else if folder_file.as_deref() == Some(name.as_str()) {
+            format!("Trí nhớ · folder {}", folder.unwrap_or(""))
+        } else {
+            format!("Trí nhớ · {}", subject_name(&name))
+        };
+        f.ensure_header(&title);
+        let r = apply_note_id(&mut f, &subject, kind, topic, note, topic_id, today)?;
+        write_atomic(&self.path(&name), &f.render()).map_err(|e| format!("Không ghi được memory: {e}"))?;
+        Ok(r)
+    }
+
+    /// The folder's memory file (empty when it does not exist).
+    pub fn folder_file(&self, folder: &str) -> MemFile {
+        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        Memory::folder_name(folder).map(|n| self.read(&n)).unwrap_or_default()
+    }
+
+    /// Weak items of a folder, due or not, as review items.
+    pub fn folder_weak(&self, folder: &str, subject: &str) -> Vec<DueItem> {
+        self.folder_file(folder)
+            .of_tag(Tag::Weak)
+            .into_iter()
+            .map(|e| DueItem { subject: subject.to_string(), due: e.due.unwrap_or(e.last + Duration::days(1)), topic: e.topic, note: e.note, last: e.last, count: e.count })
+            .collect()
+    }
+
+    pub fn folder_review_candidate(&self, folder: &str, subject: &str, today: NaiveDate) -> Option<DueItem> {
+        pick_review(self.folder_weak(folder, subject), today)
+    }
+
+    /// The `[memory]` block of a folder session: teaching style, the folder's weak points, what
+    /// worked when re-explaining, and where the class is at school (from `knowledge.json`).
+    pub fn folder_summary(&self, folder: &str, subject: &str, knowledge: Option<&Value>, today: NaiveDate) -> Option<String> {
+        let style = {
+            let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            self.style_lines()
+        };
+        let f = self.folder_file(folder);
+        let tagged = |t: Tag| f.of_tag(t).into_iter().map(|e| (subject.to_string(), e)).collect::<Vec<_>>();
+        let base = build_summary(&style, &tagged(Tag::Weak), &tagged(Tag::Learned), today);
+        let mut extra = Vec::new();
+        let mut understood = f.of_tag(Tag::Understood);
+        understood.sort_by(|a, b| b.last.cmp(&a.last));
+        if !understood.is_empty() {
+            let items: Vec<String> = understood.iter().take(3).map(|e| if e.note.is_empty() { e.topic.clone() } else { format!("{} ({})", e.topic, e.note) }).collect();
+            extra.push(format!("Đã hiểu sau khi giảng lại: {}", items.join("; ")));
+        }
+        if let Some(k) = knowledge {
+            extra.extend(school_lines(k));
+        }
+        let mut lines: Vec<String> = match base {
+            Some(b) => b.lines().filter(|l| *l != "[/memory]").map(String::from).collect(),
+            None if extra.is_empty() => return None,
+            None => vec!["[memory]".to_string()],
+        };
+        lines.extend(extra);
+        lines.push("[/memory]".to_string());
+        Some(lines.join("\n"))
     }
 
     /// Weak items that are due, across all subjects.
@@ -917,6 +1073,50 @@ mod tests {
         assert_eq!(lines.iter().filter(|l| l.starts_with("- toan")).count(), MAX_SUMMARY_WEAK);
         assert!(s.contains("Đã học gần đây: ly · Chuyển động thẳng đều (12/11)"));
         assert!(!s.contains("Dạng 9"), "least urgent items are left out");
+    }
+
+    #[test]
+    fn understood_and_topic_ids_roundtrip() {
+        let l = "- [hiểu] Rút gọn căn | ngày 2026-11-14 | id c1.t1 | ví dụ số 4 và 9";
+        let e = parse_entry(l).unwrap();
+        assert_eq!((e.tag, e.topic_id.as_deref(), e.note.as_str()), (Tag::Understood, Some("c1.t1"), "ví dụ số 4 và 9"));
+        assert_eq!(e.render(), l);
+        let mut f = MemFile::default();
+        f.ensure_header("T");
+        apply_note_id(&mut f, "toan", Kind::Mistake, "Rút gọn căn", "quên điều kiện", Some("c1.t1"), d("2026-11-14")).unwrap();
+        apply_note_id(&mut f, "toan", Kind::Understood, "Rút gọn căn", "so sánh với chia bánh", Some("c1.t1"), d("2026-11-14")).unwrap();
+        assert_eq!(f.of_tag(Tag::Weak)[0].topic_id.as_deref(), Some("c1.t1"));
+        assert_eq!(f.of_tag(Tag::Understood)[0].note, "so sánh với chia bánh");
+        assert!(f.render().contains("## Đã hiểu sau khi giảng lại"));
+    }
+
+    #[test]
+    fn folder_notes_and_summary_with_school_progress() {
+        let dir = tmp();
+        let m = Memory::new(&dir);
+        let t = d("2026-11-14");
+        m.note_at(Some("fold-1"), "toan", Kind::Mistake, "Rút gọn căn", "quên điều kiện", Some("c1.t1"), t).unwrap();
+        m.note_at(Some("fold-1"), "toan", Kind::Understood, "Rút gọn căn", "ví dụ số", None, t).unwrap();
+        m.note_at(Some("fold-1"), "toan", Kind::Style, "Thích hình vẽ", "", None, t).unwrap();
+        assert!(dir.join("memory").join("folders").join("fold-1.md").exists());
+        assert!(!dir.join("memory").join("toan.md").exists(), "folder notes stay in the folder file");
+        assert!(std::fs::read_to_string(dir.join("memory").join("profile.md")).unwrap().contains("Thích hình vẽ"));
+        let k = serde_json::json!({"curriculum":[{"id":"c1","title":"Căn","topics":[
+            {"id":"c1.t1","title":"Rút gọn"},{"id":"c1.t2","title":"Trục căn"},{"id":"c1.t3","title":"Phương trình chứa căn"}]}],
+            "schoolProgress":{"coveredTopicIds":["c1.t1"],"currentTopicId":"c1.t2","confidence":0.7}});
+        let s = m.folder_summary("fold-1", "toan", Some(&k), t).unwrap();
+        assert!(s.starts_with("[memory]") && s.ends_with("[/memory]"), "{s}");
+        assert!(s.contains("Cách giảng hợp: Thích hình vẽ"), "{s}");
+        assert!(s.contains("- toan · Rút gọn căn · sai 1"), "{s}");
+        assert!(s.contains("Đã hiểu sau khi giảng lại: Rút gọn căn (ví dụ số)"), "{s}");
+        assert!(s.contains("Trên trường đang học: Trục căn [c1.t2] (độ tin 0.7)"), "{s}");
+        assert!(s.contains("Trên trường đã học: Rút gọn [c1.t1]"), "{s}");
+        assert!(s.contains("CHƯA học (muốn dùng thì phải dạy từ đầu): Phương trình chứa căn [c1.t3]"), "{s}");
+        assert!(m.folder_summary("empty", "toan", None, t).is_some(), "style alone is worth a summary");
+        assert_eq!(m.folder_weak("fold-1", "toan").len(), 1);
+        assert!(m.folder_review_candidate("fold-1", "toan", d("2026-11-20")).is_some());
+        assert!(m.note_at(Some("../x"), "toan", Kind::Mistake, "a", "", None, t).is_ok(), "bad folder id falls back to the subject file");
+        assert!(dir.join("memory").join("toan.md").exists());
     }
 
     #[test]

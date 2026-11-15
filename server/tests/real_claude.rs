@@ -43,6 +43,10 @@ async fn real_claude_turn_with_capture_photo_tool() {
         stt_base_ms: 8000,
         stt_per_sec_ms: 1500,
         fixed_pair_code: Some("111111".into()),
+        models_path: std::path::PathBuf::from("no-models.json"),
+        secrets: Default::default(),
+        compact_tokens: 120_000,
+        util_in_mock: false,
     };
     tokio::spawn(async move {
         let _ = start_with(cfg, listener, Voice::none()).await;
@@ -111,6 +115,10 @@ async fn real_server(data: &std::path::Path) -> std::net::SocketAddr {
         stt_base_ms: 8000,
         stt_per_sec_ms: 1500,
         fixed_pair_code: Some("111111".into()),
+        models_path: std::path::PathBuf::from("no-models.json"),
+        secrets: Default::default(),
+        compact_tokens: 120_000,
+        util_in_mock: false,
     };
     tokio::spawn(async move {
         let _ = start_with(cfg, listener, Voice::none()).await;

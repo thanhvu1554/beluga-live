@@ -1,6 +1,6 @@
 //! "Fake Claude": plays a scripted lesson in small chunks with delays, through the real parser.
 
-use super::{BrainEvent, BrainMsg, Sink, TurnInput};
+use super::{BrainEvent, BrainMsg, Sink, TurnInput, TurnUsage};
 use crate::session::Cmd;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -25,6 +25,14 @@ pub enum Step {
 
 fn lines(v: &[&str]) -> Vec<String> {
     v.iter().map(|s| s.to_string()).collect()
+}
+
+/// Chat-mode answer: markdown with an inline block and a heading.
+pub fn chat_script() -> Vec<Step> {
+    ["Đây là **markdown** với $x^2$.", "", "- ý một", "@show {\"type\":\"math\",\"tex\":\"x^2-5x+6=0\"}", "@step {\"title\":\"Bước 2\"}", "Xong phần này."]
+        .iter()
+        .map(|s| Step::Line(s.to_string()))
+        .collect()
 }
 
 pub fn script(user_text: &str) -> Vec<Step> {
@@ -83,6 +91,14 @@ pub fn context_echo(text: &str) -> Vec<String> {
             out.push(format!("Mock nhớ: {}", l.trim_start_matches("- ")));
         } else if let Some(r) = l.strip_prefix("[ôn lại: ") {
             out.push(format!("Mock ôn lại: {}", r.trim_end_matches(']')));
+        } else if let Some(i) = l.find("[ôn nhanh: ") {
+            out.push(format!("Mock ôn nhanh: {}", l[i + "[ôn nhanh: ".len()..].trim_end_matches(']')));
+        } else if l.starts_with("[tóm tắt phiên trước") {
+            out.push("Mock thấy tóm tắt.".to_string());
+        }
+        // (only chat is echoed, so live-mode tests keep their exact v1 frames)
+        if l.contains("[mode: chat]") {
+            out.push("Mock mode chat.".to_string());
         }
     }
     out
@@ -122,9 +138,15 @@ impl MockBrain {
                     send(piece.iter().collect());
                 }
             };
-            let mut queue: std::collections::VecDeque<Step> = script(&input.user_text).into();
+            let steps = if input.mode == "chat" && !input.user_text.contains("chụp") { chat_script() } else { script(&input.user_text) };
+            let mut queue: std::collections::VecDeque<Step> = steps.into();
             // Tests can see what context the server attached: echo the memory block and review note.
-            for l in context_echo(&input.text).into_iter().rev() {
+            let mut echo = context_echo(&input.text);
+            if !input.attachments.is_empty() {
+                let kinds: Vec<&str> = input.attachments.iter().map(|a| a.kind.as_str()).collect();
+                echo.push(format!("Mock thấy tệp {} model {}.", kinds.join(" "), input.model));
+            }
+            for l in echo.into_iter().rev() {
                 queue.push_front(Step::Line(l));
             }
             while let Some(step) = queue.pop_front() {
@@ -148,6 +170,10 @@ impl MockBrain {
                     }
                 }
             }
+            // "#ctx" in the student's words simulates a context that is too big (compaction tests).
+            let context_tokens = if input.user_text.contains("#ctx") { 500_000 } else { 1_000 };
+            let usage = TurnUsage { input_tokens: 100, output_tokens: 50, cache_read_tokens: 900, cache_write_tokens: 0, cli_cost_usd: 0.001, context_tokens };
+            let _ = sink.send(BrainMsg { turn, ev: BrainEvent::Usage(usage) });
             let _ = sink.send(BrainMsg { turn, ev: BrainEvent::End });
         });
     }

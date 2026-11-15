@@ -59,6 +59,10 @@ async fn serve(dir: &Path, voice: Arc<Voice>) -> SocketAddr {
         stt_base_ms: 8000,
         stt_per_sec_ms: 1500,
         fixed_pair_code: Some(CODE.into()),
+        models_path: std::path::PathBuf::from("no-models.json"),
+        secrets: Default::default(),
+        compact_tokens: 120_000,
+        util_in_mock: false,
     };
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();

@@ -21,6 +21,63 @@ pub struct SessionMeta {
     /// also not after a `--resume`).
     #[serde(default)]
     pub memory_sent: bool,
+    /// Folder (PROTOCOL section 8); `None` = no folder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder_id: Option<String>,
+    /// `chat` or `live`. Sessions from before v2 were live.
+    #[serde(default = "default_mode")]
+    pub mode: String,
+    /// The `[mode: ...]` note Claude has last seen in this session's context.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode_noted: Option<String>,
+    /// The title came from `@title`, the utility model or the user (not the placeholder).
+    #[serde(default)]
+    pub titled: bool,
+    /// The user renamed the session: `@title` no longer changes it.
+    #[serde(default)]
+    pub user_titled: bool,
+    /// Last thing the student wrote (for the session list).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
+    /// Claude Code session id when it differs from `session_id` (after a compaction).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claude_id: Option<String>,
+    /// Already looked at by the one-time "put old sessions into subject folders" pass.
+    #[serde(default)]
+    pub foldered: bool,
+}
+
+fn default_mode() -> String {
+    "live".into()
+}
+
+impl SessionMeta {
+    pub fn new(id: &str) -> SessionMeta {
+        SessionMeta {
+            session_id: id.to_string(),
+            title: format!("Phiên mới · {}", date_suffix()),
+            updated_at: now_rfc3339(),
+            claude_started: false,
+            memory_sent: false,
+            folder_id: None,
+            mode: "live".into(),
+            mode_noted: None,
+            titled: false,
+            user_titled: false,
+            preview: None,
+            claude_id: None,
+            foldered: true,
+        }
+    }
+
+    /// The id the Claude Code transcript lives under.
+    pub fn claude_session(&self) -> String {
+        self.claude_id.clone().unwrap_or_else(|| self.session_id.clone())
+    }
+
+    pub fn has_title(&self) -> bool {
+        self.titled || !self.title.starts_with("Phiên mới")
+    }
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -138,6 +195,30 @@ impl Store {
         let _ = std::fs::write(self.index_path(), serde_json::to_string_pretty(&v).unwrap());
     }
 
+    /// Read-modify-write the index under the lock.
+    pub fn update_sessions(&self, f: impl FnOnce(&mut Vec<SessionMeta>)) {
+        let _g = self.lock.lock().unwrap();
+        let mut v = self.read_index();
+        f(&mut v);
+        let _ = std::fs::write(self.index_path(), serde_json::to_string_pretty(&v).unwrap());
+    }
+
+    /// Remove a session from the index and delete its journal and MCP config.
+    pub fn delete_session(&self, id: &str) -> bool {
+        if !valid_id(id) {
+            return false;
+        }
+        let mut found = false;
+        self.update_sessions(|v| {
+            let before = v.len();
+            v.retain(|m| m.session_id != id);
+            found = v.len() != before;
+        });
+        let _ = std::fs::remove_file(self.journal_path(id));
+        let _ = std::fs::remove_file(self.dir.join("mcp").join(format!("{id}.json")));
+        found
+    }
+
     fn journal_path(&self, id: &str) -> PathBuf {
         self.dir.join("sessions").join(format!("{id}.jsonl"))
     }
@@ -192,18 +273,18 @@ mod tests {
         let d = tmp();
         let s = Store::open(&d, Some("123456")).unwrap();
         let id = uuid::Uuid::new_v4().to_string();
-        s.upsert_session(&SessionMeta {
-            session_id: id.clone(),
-            title: "Toán".into(),
-            updated_at: "2026-11-14T10:00:00+07:00".into(),
-            claude_started: false,
-            memory_sent: false,
-        });
+        s.upsert_session(&SessionMeta { title: "Toán".into(), updated_at: "2026-11-14T10:00:00+07:00".into(), ..SessionMeta::new(&id) });
         s.append_event(&id, &serde_json::json!({"t":"say","seq":1}));
         s.append_event(&id, &serde_json::json!({"t":"say","seq":2}));
         assert_eq!(s.load_events(&id).len(), 2);
         assert_eq!(s.list_sessions().len(), 1);
         assert_eq!(s.get_session(&id).unwrap().title, "Toán");
         assert!(s.get_session("../x").is_none());
+        // an index written before v2 still loads: live mode, no folder, not yet foldered
+        std::fs::write(d.join("sessions.json"), format!(r#"[{{"sessionId":"{id}","title":"Toán · A · 01/11","updatedAt":"x"}}]"#)).unwrap();
+        let m = s.get_session(&id).unwrap();
+        assert_eq!((m.mode.as_str(), m.folder_id.is_none(), m.foldered, m.has_title()), ("live", true, false, true));
+        assert!(s.delete_session(&id));
+        assert!(s.load_events(&id).is_empty() && s.list_sessions().is_empty());
     }
 }

@@ -53,6 +53,15 @@ pub struct Config {
     pub stt_per_sec_ms: u64,
     /// Fixed pairing code (tests); normally generated and persisted.
     pub fixed_pair_code: Option<String>,
+    /// `server/models.json` (model catalogue; built-in defaults when missing).
+    pub models_path: PathBuf,
+    /// Provider keys and other values from `server/.env` plus the process environment.
+    /// Never logged; read through [`Config::secret`].
+    pub secrets: HashMap<String, String>,
+    /// Compact a session when the last turn's input exceeds this many tokens.
+    pub compact_tokens: u64,
+    /// Use the utility model (DeepSeek/OpenRouter) even in `--mock` (`BELUGA_UTIL_IN_MOCK=1`).
+    pub util_in_mock: bool,
 }
 
 /// Minimal `.env` parser. Values are never printed.
@@ -126,6 +135,12 @@ impl Config {
             }
         }
         let get = |k: &str| env.get(k).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        let mut secrets = env.clone();
+        for (k, v) in std::env::vars() {
+            if k.ends_with("_API_KEY") || k.ends_with("_TOKEN") || k.starts_with("BELUGA_UTIL") {
+                secrets.insert(k, v);
+            }
+        }
 
         let mut port: u16 = get("PORT").and_then(|p| p.parse().ok()).unwrap_or(8787);
         let mut mock = false;
@@ -189,6 +204,44 @@ impl Config {
             stt_base_ms: get("BELUGA_STT_BASE_MS").and_then(|v| v.parse().ok()).unwrap_or(crate::voice::DEFAULT_STT_BASE_MS),
             stt_per_sec_ms: get("BELUGA_STT_PER_SEC_MS").and_then(|v| v.parse().ok()).unwrap_or(crate::voice::DEFAULT_STT_PER_SEC_MS),
             fixed_pair_code: None,
+            models_path: server_dir.join("models.json"),
+            secrets,
+            compact_tokens: get("BELUGA_COMPACT_TOKENS").and_then(|v| v.parse().ok()).unwrap_or(120_000),
+            util_in_mock: get("BELUGA_UTIL_IN_MOCK").is_some(),
+        }
+    }
+
+    /// A value from `.env` or the environment (keys: never log the result).
+    pub fn secret(&self, k: &str) -> Option<String> {
+        self.secrets.get(k).map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+    }
+
+    /// Mock-mode config rooted in `dir` (tests): no voice, no utility model, no keys.
+    pub fn for_test(dir: &Path) -> Config {
+        Config {
+            port: 0,
+            mock: true,
+            mock_delay_ms: 5,
+            capture_timeout_ms: 8000,
+            data_dir: dir.join("data"),
+            board_dir: dir.join("board"),
+            tutor_dir: dir.join("tutor"),
+            claude_bin: "claude".into(),
+            claude_effort: None,
+            claude_model_map: vec![],
+            eleven: None,
+            genvoice: None,
+            tts_provider: "auto".into(),
+            stt_provider: "auto".into(),
+            tts_base_ms: 8000,
+            tts_per_char_ms: 60,
+            stt_base_ms: 8000,
+            stt_per_sec_ms: 1500,
+            fixed_pair_code: Some("424242".into()),
+            models_path: dir.join("models.json"),
+            secrets: HashMap::new(),
+            compact_tokens: 120_000,
+            util_in_mock: false,
         }
     }
 

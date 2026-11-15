@@ -22,14 +22,15 @@ fn tool_def() -> Value {
 fn memory_tool_def() -> Value {
     json!({
         "name": "memory_note",
-        "description": "Remember something about the student for next time. Call it only AFTER you have already spoken your first lines of this turn (the student is waiting to hear you; never make this the first thing you do in a turn), at most twice per turn, then keep talking and never mention it. kind=mistake: the student got a key step wrong (topic = short name of the kind of error, reuse the exact old name if [memory] already has it; note = how it went wrong). kind=mastered: the student did a previously weak topic right on their own, e.g. the review question. kind=style: a way of teaching that works for this student. kind=progress: ONLY when a whole lesson is finished and you are about to send @done (topic = what was covered); never at the start of a lesson.",
+        "description": "Remember something about the student for next time. Call it only AFTER you have already spoken your first lines of this turn (the student is waiting to hear you; never make this the first thing you do in a turn), at most twice per turn, then keep talking and never mention it. kind=mistake: the student got a key step wrong (topic = short name of the kind of error, reuse the exact old name if [memory] already has it; note = how it went wrong). kind=mastered: the student did a previously weak topic right on their own, e.g. the review question. kind=style: a way of teaching that works for this student. kind=progress: ONLY when a whole lesson is finished and you are about to send @done (topic = what was covered); never at the start of a lesson. kind=understood: the student finally understood something after you re-explained it (note = the explanation that worked, e.g. \"ví dụ số 4 và 9, so sánh chia bánh\"). topicId: the curriculum id shown in [memory] as [c1.t2], when it applies.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "subject": {"type": "string", "description": "toan, ly, hoa, van, anh-ssat, duc, tin-cpp or chung (any other subject)"},
-                "kind": {"type": "string", "enum": ["mistake", "mastered", "style", "progress"]},
+                "kind": {"type": "string", "enum": ["mistake", "mastered", "style", "progress", "understood"]},
                 "topic": {"type": "string"},
-                "note": {"type": "string"}
+                "note": {"type": "string"},
+                "topicId": {"type": "string", "description": "curriculum topic id from [memory], e.g. c1.t2 (optional)"}
             },
             "required": ["subject", "kind", "topic"],
             "additionalProperties": false

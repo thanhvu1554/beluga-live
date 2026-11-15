@@ -50,6 +50,10 @@ async fn harness_with(voice: Arc<Voice>, delay_ms: u64, capture_ms: u64) -> Harn
         stt_base_ms: 8000,
         stt_per_sec_ms: 1500,
         fixed_pair_code: Some(CODE.into()),
+        models_path: std::path::PathBuf::from("no-models.json"),
+        secrets: Default::default(),
+        compact_tokens: 120_000,
+        util_in_mock: false,
     };
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -129,7 +133,7 @@ fn is_turn_end(f: &Value) -> bool {
 async fn health_and_board_are_served() {
     let h = harness().await;
     let r: Value = reqwest::get(format!("http://{}/health", h.addr)).await.unwrap().json().await.unwrap();
-    assert_eq!(r, json!({"ok": true, "v": 1, "boardVersion": 7}));
+    assert_eq!(r, json!({"ok": true, "v": 2, "boardVersion": 7}));
     let body = reqwest::get(format!("http://{}/board/version.json", h.addr)).await.unwrap().text().await.unwrap();
     assert!(body.contains("\"version\":7"));
 }
@@ -175,22 +179,24 @@ async fn full_lesson_flow_in_seq_order() {
     p.send(json!({"t":"user_text","text":"giảng bài này đi"})).await;
     let turn1 = p.until(is_turn_end).await;
     let content: Vec<String> = kinds(&turn1).into_iter().filter(|k| k != "state").collect();
-    assert_eq!(content, ["title", "say", "step", "show", "say", "ask", "turn_end"]);
-    assert_eq!(seqs(&turn1), vec![1, 2, 3, 4, 5, 6]);
+    assert_eq!(content, ["user", "title", "say", "step", "show", "say", "ask", "turn_end"]);
+    assert_eq!(seqs(&turn1), vec![1, 2, 3, 4, 5, 6, 7]);
+    let echo = turn1.iter().find(|f| f["t"] == "user").unwrap();
+    assert_eq!((echo["text"].as_str(), echo["via"].as_str(), echo["turn"].as_u64()), (Some("giảng bài này đi"), Some("text"), Some(1)));
     let title = turn1.iter().find(|f| f["t"] == "title").unwrap();
     let ttext = title["text"].as_str().unwrap();
     assert!(ttext.starts_with("Toán · Bất phương trình bậc hai · "), "{ttext}");
     assert_eq!(turn1.iter().find(|f| f["t"] == "ask").unwrap()["kind"], "next");
     assert_eq!(turn1.iter().find(|f| f["t"] == "show").unwrap()["block"]["type"], "math");
-    assert_eq!(turn1[0], json!({"t":"state","state":"thinking"}));
+    assert!(turn1.contains(&json!({"t":"state","state":"thinking"})));
 
     // The student answers; the tutor finishes the lesson. seq and step index continue.
-    p.send(json!({"t":"played","seq":6})).await;
+    p.send(json!({"t":"played","seq":7})).await;
     p.send(json!({"t":"user_text","text":"tìm nghiệm bằng delta"})).await;
     let turn2 = p.until(is_turn_end).await;
     let content: Vec<String> = kinds(&turn2).into_iter().filter(|k| k != "state").collect();
-    assert_eq!(content, ["say", "step", "show", "say", "done", "turn_end"]);
-    assert_eq!(seqs(&turn2), vec![7, 8, 9, 10, 11, 12]);
+    assert_eq!(content, ["user", "say", "step", "show", "say", "done", "turn_end"]);
+    assert_eq!(seqs(&turn2), vec![8, 9, 10, 11, 12, 13, 14]);
     let step = turn2.iter().find(|f| f["t"] == "step").unwrap();
     assert_eq!(step["index"], 1);
     assert_eq!(turn2.iter().find(|f| f["t"] == "show").unwrap()["step"], 1);
