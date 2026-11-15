@@ -223,3 +223,26 @@ async fn home_is_pushed_again_after_turns_and_list_changes_only_once_asked() {
     p.send(json!({"t":"list_sessions"})).await;
     assert!(p.until(|x| x["t"] == "home").await.pop().unwrap()["folderId"].is_null());
 }
+
+/// Real utility model (DeepSeek, then OpenRouter) naming the kind of a few folders. Spends a tiny
+/// amount: `DEEPSEEK_API_KEY=... cargo test --test v3 real_kind -- --ignored --nocapture`.
+#[tokio::test]
+#[ignore]
+async fn real_kind_assignment() {
+    let util = beluga_server::util_llm::from_keys(|k| std::env::var(k).ok());
+    assert!(util.available(), "needs DEEPSEEK_API_KEY or OPENROUTER_API_KEY");
+    let usage = beluga_server::usage::Usage::open(&temp_dir());
+    for (name, about, want) in [
+        ("Tiếng Anh trên lớp", "Anh 9 Global Success, cô hay cho ngữ pháp và viết lại câu", "ngoai-ngu"),
+        ("Luyện SSAT", "Reading và verbal cho kỳ thi SSAT Upper", "anh-ssat"),
+        ("Ôn thi vào 10", "Đại số và hình học lớp 9", "toan"),
+        ("Sinh học", "Di truyền lớp 9", "chung"),
+        ("Hóa 10", "", "hoa"),
+    ] {
+        let t = Instant::now();
+        let got = beluga_server::folders::assign_kind(&util, &usage, name, about).await;
+        println!("{name} | {about} -> {got:?} ({} ms)", t.elapsed().as_millis());
+        assert_eq!(got.as_deref(), Ok(want), "{name}");
+    }
+    println!("cost: {}", usage.report(None)["other"]["today"]);
+}

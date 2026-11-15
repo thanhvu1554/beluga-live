@@ -60,7 +60,7 @@ pub fn home_frame(deps: &Deps, folder: Option<&str>) -> Value {
             quick.push(json!({"folderId": f.id, "folderName": f.name, "kind": f.kind}));
         }
     }
-    due.sort_by(|a, b| b.0.cmp(&a.0));
+    due.sort_by_key(|d| std::cmp::Reverse(d.0));
     let mut due: Vec<Value> = due.into_iter().map(|(_, v)| v).collect();
     if folder.is_none() {
         due.truncate(MAX_DUE);
