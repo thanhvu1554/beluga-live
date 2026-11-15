@@ -28,7 +28,7 @@
 //! Env: `OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL`, `BELUGA_INGEST_MODEL` (default
 //! `anthropic/claude-haiku-5.5`), `BELUGA_INGEST_EFFORT` (default `high`), `BELUGA_MERGE_MODEL`,
 //! `BELUGA_MERGE_EFFORT` (default: ingest values), `BELUGA_EXAM_MODEL` (default `anthropic/claude-haiku-5.5`),
-//! `BELUGA_EXAM_EFFORT` (default `high`), `BELUGA_INGEST_CONCURRENCY` (3), `BELUGA_INGEST_BATCH` (5 images).
+//! `BELUGA_EXAM_EFFORT` (default `high`), `BELUGA_INGEST_CONCURRENCY` (4), `BELUGA_INGEST_BATCH` (3 images).
 
 pub mod exam;
 pub mod ingest;
@@ -252,7 +252,7 @@ impl StudyService {
                 let _ = tx.send(ev);
             })
         };
-        emit(ingest::ingest_event(&folder, &job_id, "queued", 0, req.files.len(), "Đang xếp hàng nạp đề", None, Some(0.0)));
+        emit(ingest::ingest_event(&folder, &job_id, "queued", 0, 0, "Đang xếp hàng nạp đề", None, Some(0.0)));
         let dir = self.folder_dir(&folder);
         let existing = self.knowledge(&folder);
         let previous: Option<Records> =
@@ -328,7 +328,11 @@ impl StudyService {
         let Some(llm) = self.inner.llm.clone() else { return fail("thiếu OPENROUTER_API_KEY".into()) };
         let Some(k) = self.knowledge(folder_id) else { return fail("folder chưa có kiến thức (hãy nạp đề trước)".into()) };
         let opts = self.inner.cfg.exam.clone();
-        match exam::gen_exam(llm, &opts, &k, structure_id, note, &exam_id, &emit).await {
+        let spent = Mutex::new(llm::Usage::default());
+        let t0 = std::time::Instant::now();
+        let r = exam::gen_exam(llm, &opts, &k, structure_id, note, &exam_id, &emit, &spent).await;
+        tracing::info!(ms = t0.elapsed().as_millis() as u64, cost = spent.lock().unwrap().cost_usd, ok = r.is_ok(), "gen_exam");
+        match r {
             Ok((doc, usage)) => {
                 self.log_usage("exam", folder_id, &opts.model, &usage);
                 let path = self.folder_dir(folder_id).join("exams").join(format!("{exam_id}.json"));
@@ -339,7 +343,11 @@ impl StudyService {
                 emit(exam::exam_event(folder_id, &exam_id, "done", &format!("Xong: {} câu", doc["questions"]), Some(title)));
                 Ok(list_item(&doc))
             }
-            Err(m) => fail(m),
+            Err(m) => {
+                // Failed attempts cost money too.
+                self.log_usage("exam", folder_id, &opts.model, &spent.lock().unwrap());
+                fail(m)
+            }
         }
     }
 

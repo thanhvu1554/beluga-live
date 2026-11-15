@@ -83,10 +83,10 @@ impl Default for IngestOptions {
             effort: Some("high".into()),
             merge_model: "anthropic/claude-haiku-5.5".into(),
             merge_effort: Some("high".into()),
-            batch_images: 5,
+            batch_images: 3,
             pdf_whole_max_pages: 6,
             pdf_pages_per_batch: 5,
-            concurrency: 3,
+            concurrency: 4,
             retries: 2,
             retry_base_ms: 1500,
             max_tokens_extract: 24_000,
@@ -1701,4 +1701,117 @@ async fn run_inner(
     write_atomic(&folder_dir.join("knowledge.json"), &serde_json::to_vec_pretty(&k).unwrap_or_default())
         .map_err(|e| IngestError::Failed(format!("ghi knowledge.json: {e}")))?;
     Ok(k)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn batch(i: usize, files: &[&str]) -> Batch {
+        Batch {
+            index: i,
+            first_page: 1,
+            pages: files.iter().map(|f| PageRef { file_id: f.to_string(), file_name: format!("{f}.jpg"), page_in_file: 1 }).collect(),
+            parts: vec![],
+        }
+    }
+
+    fn q(n: &str, text: &str) -> QRec {
+        QRec { n: n.into(), text: text.into(), kind: "mcq".into(), level: "th".into(), ..Default::default() }
+    }
+
+    fn src(title: &str) -> SrcRec {
+        SrcRec { title: title.into(), kind: "exam".into(), full_exam: true, ..Default::default() }
+    }
+
+    #[test]
+    fn stitch_joins_continued_documents_and_dedupes_overlap() {
+        let b = vec![batch(0, &["p1", "p2"]), batch(1, &["p3", "p4"])];
+        let o1 = BatchOut {
+            sources: vec![("A".into(), src("Đề 1"), false, vec![1, 2])],
+            questions: vec![("A".into(), 1, q("1", "Câu một")), ("A".into(), 2, q("6", "Căn bậc ba của -27"))],
+        };
+        let o2 = BatchOut {
+            sources: vec![("A".into(), src(""), true, vec![1]), ("B".into(), src("Phiếu bài tập"), false, vec![2])],
+            questions: vec![
+                ("A".into(), 1, q("6", "Căn bậc ba của  -27")), // overlap of the two photos
+                ("A".into(), 1, q("7", "Cặp số nghiệm")),
+                ("B".into(), 2, q("1", "Bài một")),
+            ],
+        };
+        let r = stitch(&b, &[Some(o1), Some(o2)], 1);
+        assert_eq!(r.sources.len(), 2);
+        assert_eq!(r.sources[0].id, "p1#1");
+        assert_eq!(r.sources[0].file_ids, vec!["p1", "p2", "p3"]);
+        assert_eq!(r.sources[0].pages, 3);
+        assert_eq!(r.sources[1].id, "p4#1");
+        let ns: Vec<&str> = r.questions.iter().filter(|q| q.src == "p1#1").map(|q| q.n.as_str()).collect();
+        assert_eq!(ns, ["1", "6", "7"]);
+        assert_eq!(r.questions[2].id, "p1#1/q3");
+        // A failed batch in between breaks the chain.
+        let o3 = BatchOut { sources: vec![("A".into(), src(""), true, vec![1])], questions: vec![("A".into(), 1, q("9", "x"))] };
+        let b3 = vec![batch(0, &["p1"]), batch(1, &["p2"]), batch(2, &["p3"])];
+        let r = stitch(&b3, &[Some(BatchOut::default()), None, Some(o3)], 1);
+        assert_eq!(r.sources.len(), 1);
+        assert_eq!(r.sources[0].id, "p3#1");
+    }
+
+    #[test]
+    fn combine_replaces_reuploaded_files() {
+        let mut old = Records { run: 1, ..Default::default() };
+        old.sources.push(SrcRec { id: "a#1".into(), file_ids: vec!["a".into()], ..Default::default() });
+        old.sources.push(SrcRec { id: "b#1".into(), file_ids: vec!["b".into()], ..Default::default() });
+        old.questions.push(QRec { id: "a#1/q1".into(), src: "a#1".into(), ..Default::default() });
+        old.questions.push(QRec { id: "b#1/q1".into(), src: "b#1".into(), ..Default::default() });
+        let mut new = Records { run: 2, ..Default::default() };
+        new.sources.push(SrcRec { id: "b#1".into(), file_ids: vec!["b".into()], ..Default::default() });
+        new.questions.push(QRec { id: "b#1/q1".into(), src: "b#1".into(), text: "new".into(), ..Default::default() });
+        let r = combine_records(Some(old), new);
+        assert_eq!(r.run, 2);
+        assert_eq!(r.sources.len(), 2);
+        assert_eq!(r.questions.iter().filter(|q| q.src == "b#1").count(), 1);
+        assert_eq!(r.questions.iter().find(|q| q.src == "b#1").unwrap().text, "new");
+    }
+
+    #[test]
+    fn points_are_filled_sensibly() {
+        let mk = |k: &str, p: f64| QRec { kind: k.into(), points: p, ..Default::default() };
+        let qs = [mk("mcq", 0.0), mk("mcq", 0.0), mk("essay", 0.0)];
+        let refs: Vec<&QRec> = qs.iter().collect();
+        assert_eq!(fill_points(&refs, 0.0), vec![0.25, 0.25, 9.5]);
+        let qs = [mk("mcq", 0.25), mk("mcq", 0.25), mk("essay", 0.0)];
+        let refs: Vec<&QRec> = qs.iter().collect();
+        assert_eq!(fill_points(&refs, 2.0), vec![0.25, 0.25, 1.5]);
+    }
+
+    #[test]
+    fn levels_and_kinds_normalise() {
+        assert_eq!(norm_level("Vận dụng cao"), "vdc");
+        assert_eq!(norm_level("NB"), "nb");
+        assert_eq!(norm_level("?"), "th");
+        assert_eq!(norm_kind("Trắc nghiệm"), "mcq");
+        assert_eq!(norm_kind("whatever"), "essay");
+        assert_eq!(norm("  Rút gọn   Biểu thức. "), "rút gọn biểu thức");
+    }
+
+    #[test]
+    fn validation_catches_inconsistent_matrix() {
+        let k = json!({"v": 1, "folderId": "f", "subject": "toan", "updatedAt": "", "sources": [],
+            "curriculum": [{"id": "c1", "title": "C", "topics": [{"id": "c1.t1", "title": "T", "count": 2, "share": 1.0,
+                "forms": [{"id": "c1.t1.f1", "title": "F", "count": 2, "levels": {"nb": 1, "th": 1, "vd": 0, "vdc": 0}}]}]}],
+            "structures": [{"id": "s1", "totalPoints": 1.0, "sections": [{"id": "A", "kind": "mcq", "count": 3}],
+                "matrix": [{"section": "A", "topicId": "c1.t9", "formId": "", "level": "th", "count": 2, "points": 0.5}]}],
+            "schoolProgress": {"coveredTopicIds": ["c1.t1"]}, "stats": {"questions": 2}});
+        let e = validate_knowledge(&k);
+        assert!(e.iter().any(|x| x.contains("matrix count 2")), "{e:?}");
+        assert!(e.iter().any(|x| x.contains("unknown topic c1.t9")), "{e:?}");
+        assert!(e.iter().any(|x| x.contains("totalPoints")), "{e:?}");
+    }
+
+    #[test]
+    fn events_have_protocol_fields() {
+        let e = ingest_event("f", "j", "reading", 3, 10, "Đang đọc", Some((5, 2)), Some(0.012345));
+        assert_eq!(e, json!({"t": "ingest", "folderId": "f", "jobId": "j", "state": "reading", "done": 3, "total": 10,
+            "note": "Đang đọc", "found": {"questions": 5, "topics": 2}, "costUsd": 0.0123}));
+    }
 }

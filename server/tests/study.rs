@@ -465,3 +465,23 @@ async fn real_ingest_and_exam() {
     println!("usage: {}", svc.usage_summary());
     println!("out: {}", out.display());
 }
+
+/// Exam only, on the knowledge of a previous `real_ingest_and_exam` run (`BELUGA_STUDY_OUT`).
+/// `BELUGA_EXAM_MODEL` / `BELUGA_EXAM_EFFORT` pick the generator.
+#[tokio::test]
+#[ignore]
+async fn real_exam_only() {
+    let out = PathBuf::from(std::env::var("BELUGA_STUDY_OUT").expect("BELUGA_STUDY_OUT"));
+    let server_dir = PathBuf::from(std::env::var("BELUGA_SERVER_DIR").unwrap_or_else(|_| env!("CARGO_MANIFEST_DIR").into()));
+    let cfg = StudyConfig::from_env(&server_dir);
+    println!("model {} effort {:?}", cfg.exam.model, cfg.exam.effort);
+    let svc = StudyService::new(out.join("data"), cfg);
+    let k = svc.knowledge("real").expect("knowledge");
+    let sid = k["structures"][0]["id"].as_str().unwrap().to_string();
+    let t1 = std::time::Instant::now();
+    let item = svc.gen_exam("real", &sid, None, |e| println!("{e}")).await.expect("exam");
+    println!("exam: {:.1}s {item}", t1.elapsed().as_secs_f64());
+    let id = item["examId"].as_str().unwrap();
+    std::fs::write(out.join(format!("{id}.html")), svc.exam_html(id).unwrap()).unwrap();
+    println!("usage: {}", svc.usage_summary());
+}

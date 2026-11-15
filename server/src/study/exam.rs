@@ -304,7 +304,7 @@ pub fn validate_items(v: &Value, slots: &[Slot], banned: &HashSet<String>) -> Ve
                 let ch = arr("choices");
                 if ch.len() != 4 || ch.iter().any(|c| c.is_empty()) {
                     errs.push(format!("slot {n}: mcq needs exactly 4 non-empty choices"));
-                } else if ch.iter().map(|c| norm(c)).collect::<HashSet<_>>().len() != 4 {
+                } else if ch.iter().map(|c| c.split_whitespace().collect::<String>()).collect::<HashSet<_>>().len() != 4 {
                     errs.push(format!("slot {n}: mcq choices must be distinct"));
                 }
                 if !["A", "B", "C", "D"].contains(&answer.trim_end_matches('.').to_uppercase().as_str()) {
@@ -422,6 +422,7 @@ pub async fn gen_exam(
     note: Option<&str>,
     exam_id: &str,
     emit: &(dyn Fn(Value) + Send + Sync),
+    spent: &std::sync::Mutex<Usage>,
 ) -> Result<(Value, Usage), String> {
     let folder = s_of(&k["folderId"]);
     let (st, slots) = blueprint(k, structure_id)?;
@@ -461,6 +462,7 @@ pub async fn gen_exam(
     };
     let (first, u) = call(req.clone()).await?;
     usage.add(&u);
+    spent.lock().unwrap().add(&u);
     emit(exam_event(&folder, exam_id, "checking", "Đang kiểm tra số câu, loại câu, điểm và đáp án", None));
     let mut items = first.unwrap_or(Value::Null);
     let mut errs = validate_items(&items, &slots, &banned);
@@ -478,6 +480,7 @@ pub async fn gen_exam(
         ];
         let (second, u) = call(req).await?;
         usage.add(&u);
+        spent.lock().unwrap().add(&u);
         emit(exam_event(&folder, exam_id, "checking", "Đang kiểm tra lại đề đã sửa", None));
         items = second.unwrap_or(Value::Null);
         errs = validate_items(&items, &slots, &banned);
@@ -838,4 +841,84 @@ pub fn render_html_with_base(exam: &Value, katex_base: &str) -> String {
     ));
     h.push_str(&format!("<script>{JS}</script></body></html>"));
     h
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn knowledge() -> Value {
+        json!({"folderId": "f", "subject": "toan", "grade": "9",
+            "curriculum": [{"id": "c1", "title": "Căn", "topics": [{"id": "c1.t1", "title": "Rút gọn", "count": 3,
+                "forms": [{"id": "c1.t1.f1", "title": "Rút gọn biểu thức", "method": "1. Đặt ĐK", "count": 3,
+                           "example": {"md": "Rút gọn $A=\\sqrt{8}$"}}]}]}],
+            "structures": [{"id": "s1", "title": "Đề", "durationMin": 45, "totalPoints": 2.0,
+                "sections": [{"id": "A", "kind": "mcq", "count": 3, "pointsEach": 0.25},
+                             {"id": "B", "kind": "essay", "count": 1, "pointsEach": 1.25}],
+                "matrix": [{"section": "A", "topicId": "c1.t1", "formId": "c1.t1.f1", "level": "nb", "count": 2, "points": 0.5},
+                           {"section": "B", "topicId": "c1.t1", "formId": "c1.t1.f1", "level": "vd", "count": 1, "points": 1.25}]}]})
+    }
+
+    #[test]
+    fn blueprint_follows_matrix_and_fills_gaps() {
+        let (st, slots) = blueprint(&knowledge(), "s1").unwrap();
+        assert_eq!(st["id"], "s1");
+        assert_eq!(slots.len(), 4);
+        assert_eq!(slots.iter().map(|s| s.slot).collect::<Vec<_>>(), [1, 2, 3, 4]);
+        assert_eq!(slots[0].level, "nb");
+        assert_eq!(slots[2].level, "th", "filler slot for the missing matrix row");
+        assert_eq!(slots[2].points, 0.25);
+        assert_eq!(slots[3].kind, "essay");
+        assert_eq!(slots[0].form, "Rút gọn biểu thức");
+        assert_eq!(slots[0].example, "Rút gọn $A=\\sqrt{8}$");
+        let total: f64 = slots.iter().map(|s| s.points).sum();
+        assert!((total - 2.0).abs() < 1e-9);
+        assert!(blueprint(&knowledge(), "nope").is_err());
+    }
+
+    #[test]
+    fn points_remainder_goes_to_last_item() {
+        let mut k = knowledge();
+        k["structures"][0]["matrix"][0]["count"] = json!(3);
+        k["structures"][0]["matrix"][0]["points"] = json!(1.0);
+        let (_, slots) = blueprint(&k, "s1").unwrap();
+        assert_eq!(slots[..3].iter().map(|s| s.points).collect::<Vec<_>>(), [0.33, 0.33, 0.34]);
+    }
+
+    #[test]
+    fn item_validation() {
+        let (_, slots) = blueprint(&knowledge(), "s1").unwrap();
+        let banned: HashSet<String> = [norm("Rút gọn $A=\\sqrt{8}$")].into_iter().collect();
+        let v = json!({"questions": [
+            {"slot": 1, "text": "Rút gọn $A=\\sqrt{8}$", "choices": ["1", "2", "3", "4"], "answer": "E"},
+            {"slot": 2, "text": "Tính $\\sqrt{9}$ nhé", "choices": ["1", "1", "3", "4"], "answer": "C"},
+            {"slot": 2, "text": "dup dup dup", "choices": [], "answer": "A"},
+            {"slot": 4, "text": "Bài tự luận $x", "solution": "", "answer": ""},
+            {"slot": 9, "text": "extra"}]});
+        let e = validate_items(&v, &slots, &banned).join("\n");
+        for needle in ["slot 1: copied", "slot 1: mcq answer", "slot 2: mcq choices must be distinct", "slot 2 written twice",
+                       "slot 4: unbalanced $", "slot 4: essay needs", "slot 9 is not in the blueprint", "missing slots: 3"] {
+            assert!(e.contains(needle), "{needle} in {e}");
+        }
+    }
+
+    #[test]
+    fn true_false_answers_parse() {
+        assert_eq!(parse_tf("Đ,S,S,Đ"), Some(vec![true, false, false, true]));
+        assert_eq!(parse_tf("a)Đ; b)S; c)Đ; d)S"), Some(vec![true, false, true, false]));
+        assert_eq!(parse_tf("D S D S"), Some(vec![true, false, true, false]));
+        assert_eq!(parse_tf("Đ,S"), None);
+    }
+
+    #[test]
+    fn rich_text_marks_math_and_escapes() {
+        assert_eq!(rich("a<b $x^2$"), "a&lt;b <span class=\"m\" data-tex=\"x^2\">x^2</span>");
+        assert!(rich("$$\\frac{1}{2}$$").starts_with("<span class=\"mb\""));
+        assert!(rich("\\(a\\) và").contains("class=\"m\" data-tex=\"a\""));
+        assert!(rich("\\[b\\]").contains("class=\"mb\""));
+        assert_eq!(rich("giá 5\\$ và **đậm**\ndòng"), "giá 5$ và <b>đậm</b><br>dòng");
+        assert_eq!(rich("lẻ $ không đóng"), "lẻ $ không đóng");
+        assert_eq!(pts(0.5), "0,5");
+        assert_eq!(pts(1.0), "1");
+    }
 }
