@@ -3,7 +3,7 @@
   {"id": "opus", "label": "Claude Opus", "provider": "claude", "model": "opus", "efforts": ["low", "medium", "high", "xhigh", "max"], "defaultEffort": "low", "vision": true},
   {"id": "haiku", "label": "Claude Haiku", "provider": "claude", "model": "haiku", "efforts": [], "vision": true},
   {"id": "deepseek", "label": "DeepSeek Flash", "provider": "anthropic-compatible", "baseUrl": "https://api.deepseek.com/anthropic", "keyEnv": "DEEPSEEK_API_KEY",
-   "model": "deepseek-flash", "efforts": [], "vision": false, "price": {"input": 0.05, "output": 0.2, "cacheRead": 0.01, "cacheWrite": 0.05}},
+   "model": "deepseek-flash", "efforts": [], "vision": true, "price": {"input": 0.05, "output": 0.2, "cacheRead": 0.01, "cacheWrite": 0.05}},
   {"id": "deepseek-pro", "label": "DeepSeek Pro", "provider": "anthropic-compatible", "baseUrl": "https://api.deepseek.com/anthropic", "keyEnv": "DEEPSEEK_API_KEY",
    "model": "deepseek-v4-pro", "efforts": [], "vision": false, "price": {"input": 0.9, "output": 1.5, "cacheRead": 0.09, "cacheWrite": 0.9}},
   {"id": "openrouter-haiku", "label": "Haiku · OpenRouter", "provider": "anthropic-compatible", "baseUrl": "https://openrouter.ai/api", "keyEnv": "OPENROUTER_API_KEY",

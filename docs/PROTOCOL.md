@@ -194,6 +194,7 @@ Viết tắt mức độ câu hỏi: `nb` nhận biết, `th` thông hiểu, `vd
 ## 7. Hai chế độ: `chat` (mặc định) và `live`
 
 `settings.mode: "chat"|"live"`. Đổi được bất kỳ lúc nào trong cùng một phiên (cùng session Claude).
+Phiên mới không nói mode: `hello.v >= 2` thì `chat`, `v:1` thì `live` (app cũ giữ nguyên hành vi). Mode lưu theo phiên.
 Server đính `[mode: chat]` / `[mode: live]` vào lượt người dùng đầu tiên và mỗi khi mode đổi.
 
 - **live** = v1 nguyên vẹn (camera, giọng nói, bảng từng bước, `say`/`audio`/`step`/`show`).
@@ -211,7 +212,8 @@ Sự kiện mới (server → máy):
 | `chat` | `seq, turn, md` | Một đoạn markdown hoàn chỉnh của trợ lý; thay thế toàn bộ `chat_delta` đã nhận kể từ `chat`/`show` gần nhất của lượt đó. Phát khi gặp chỉ thị `@...` hoặc hết lượt. |
 | `show` | `seq, turn, step:-1, block` | Ở chat, `step` là -1: khối nằm xen trong dòng chat. |
 
-Máy → server: `user_text{text, files?:[fileId]}` (tệp đã tải qua `POST /upload`). Ảnh thành image block, PDF thành
+Máy → server: `user_text{text, files?:[fileId], via?:"text"|"voice", draft?}` (tệp đã tải qua `POST /upload`;
+`via:"voice"` khi chữ đến từ STT của máy, mặc định `"text"`: chữ gõ không bao giờ bị sửa). Lượt `kickoff` của server không có `user`. Ảnh thành image block, PDF thành
 document block trong lượt gửi cho Claude (model không có vision: server báo `notice{code:"no_vision"}` và bỏ ảnh).
 
 **Đọc chính tả (chat):** `audio_start{mime, sampleRate, draft:true}` … `audio_end` → `heard{text, raw?, draft:true}`;
@@ -220,7 +222,8 @@ chỉ trả `heard{draft:true}` sau khi sửa.
 
 **Sửa STT bằng model rẻ:** mọi kết quả STT (server hoặc thiết bị, khi `settings.sttFix != false`) được model tiện ích
 sửa theo ngữ cảnh (môn của folder, thuật ngữ trong giáo trình, 2 câu gần nhất của trợ lý) trước khi dùng.
-`heard{text, raw?}`: `raw` là bản gốc khi có sửa. Quá 2,5 giây thì dùng bản gốc.
+`heard{text, raw?}`: `raw` là bản gốc khi có sửa. Quá 2,5 giây thì dùng bản gốc. STT của server và chính tả luôn có `heard`;
+STT của máy (`via:"voice"`) chỉ có `heard` khi chữ bị sửa.
 
 ## 8. Folder và phiên
 
@@ -234,12 +237,14 @@ Folder do người dùng đặt tên, gắn đúng một môn (`subject` là id 
 | máy → | `create_folder` | `name, subject` → server trả `folder_created{id}` rồi `folders` mới |
 | máy → | `rename_folder` / `delete_folder` | `id, name?`. Xóa folder: phiên bên trong thành không folder; kiến thức và đề của folder bị xóa. |
 | máy → | `move_session` | `sessionId, folderId\|null` |
-| máy → | `rename_session` / `delete_session` | `sessionId, title?` |
+| máy → | `rename_session` / `delete_session` | `sessionId, title?`. Đổi tên tay thì `@title` không đổi tên phiên đó nữa. Không xóa được phiên đang mở (`error{code:"busy_session"}`). |
 | máy → | `new_session` | `folderId?, mode?, kickoff?:"review_quiz"` → `ready` của phiên mới (kickoff: server tự mở lượt đầu, xem mục 12) |
 | máy → | `list_sessions` | `folderId?` (thiếu = tất cả) |
 | → máy | `sessions` | `items:[{sessionId,title,updatedAt,folderId?,mode,preview?}]` |
 
-`hello` thêm `folderId?` (cho phiên mới). `ready` thêm `folderId?`, `mode`, `models`, `model`, `effort` (mục 10).
+`hello` thêm `folderId?` (cho phiên mới). `ready` thêm `folderId?`, `mode`, `models`, `model`, `effort` (mục 10); `ready.v` = 2 với app v2.
+Sau `create_folder`/`rename_folder`/`delete_folder` server gửi `folders`; sau `move_session`/`rename_session`/`delete_session` gửi `sessions`
+(tất cả phiên). Lỗi: `error{code:"no_folder"|"no_session"|"bad_folder", fatal:false}`.
 Phiên cũ được tự xếp vào folder mặc định theo môn nếu suy được từ tên phiên; không suy được thì để trống.
 
 **Tên phiên:** nếu sau lượt đầu chưa có `@title`, server nhờ model tiện ích đặt tên ngắn (<= 40 ký tự,
@@ -271,8 +276,13 @@ Danh mục ở `server/models.json` (không có thì dùng mặc định dựng 
 
 ```json
 [{"id":"sonnet","label":"Claude Sonnet","provider":"claude","model":"sonnet","efforts":["low","medium","high"],"defaultEffort":"medium","vision":true},
- {"id":"deepseek","label":"DeepSeek","provider":"anthropic-compatible","baseUrl":"https://api.deepseek.com/anthropic","keyEnv":"DEEPSEEK_API_KEY","model":"deepseek-chat","efforts":[],"vision":false}]
+ {"id":"deepseek","label":"DeepSeek Flash","provider":"anthropic-compatible","baseUrl":"https://api.deepseek.com/anthropic","keyEnv":"DEEPSEEK_API_KEY",
+  "model":"deepseek-flash","efforts":[],"vision":true,"price":{"input":0.05,"output":0.2,"cacheRead":0.01,"cacheWrite":0.05}}]
 ```
+
+Mặc định dựng sẵn: `sonnet`, `opus`, `haiku` (gói Claude), `deepseek` (`deepseek-flash`), `deepseek-pro` (`deepseek-v4-pro`),
+`openrouter-haiku` (OpenRouter `https://openrouter.ai/api`, `anthropic/claude-haiku-5.5`). `price` (USD / triệu token, tùy chọn) dùng
+để tính `costUsd` cho nhà cung cấp ngoài gói Claude.
 
 `provider:"claude"` = đăng nhập gói Claude (có theo dõi usage). Mục có `keyEnv` mà thiếu key thì không xuất hiện.
 `BELUGA_MODEL_MAP` (v1) vẫn được tôn trọng.
@@ -280,7 +290,7 @@ Danh mục ở `server/models.json` (không có thì dùng mặc định dựng 
 - `ready.models: [{id,label,provider,efforts:[string],defaultEffort?,vision,tracked:boolean}]`, `ready.model`, `ready.effort`.
 - `settings{model:<id>, effort?:"low"|"medium"|"high"|"xhigh"|"max"|null, mode, lang, rigor, sttFix?}`. Đổi model/effort áp dụng từ lượt sau.
 - `get_usage` → `usage{claude:{session:{inputTokens,outputTokens,cacheReadTokens,cacheWriteTokens,costUsd,turns},today:{...},week:{...},limit?:{status,resetsAt,type}},other:{today:{costUsd,inputTokens,outputTokens}},ingest:{today:{costUsd},total:{costUsd}}}`.
-  Server cũng tự phát `usage` sau mỗi `turn_end` của model `tracked`. `costUsd` của gói Claude là quy đổi tham khảo
+  Server cũng tự phát `usage` sau mỗi `turn_end` của model `tracked` (chỉ với app v2). `limit` có thể kèm `utilization` (0..1). `costUsd` của gói Claude là quy đổi tham khảo
   (từ `total_cost_usd` trong `result` của stream-json), không phải tiền thật. Lưu ở `server/data/usage.jsonl`.
 
 ## 11. Ma trận đề: nạp đề → kiến thức của folder
@@ -322,7 +332,8 @@ Danh mục ở `server/models.json` (không có thì dùng mặc định dựng 
 | → máy | `review` | `folderId, topics:[{topicId,title,chapter,state:"new"\|"learning"\|"weak"\|"solid",wrong,right,lastSeen?}], weak:[{topic,note,count,lastSeen,due}], due:[{topic,note,due}], weekly:{from,to,md}\|null, sessions:[{sessionId,title,updatedAt,mode,steps}], updatedAt` |
 | máy → | `get_weekly` | `folderId` → server nhờ model tiện ích viết tóm tắt tuần (học gì, sai gì, nên ôn gì), lưu lại, phát `review` mới. |
 
-`topics` là chồng memory của folder lên giáo trình (`knowledge.curriculum`); chưa có giáo trình thì suy từ memory.
+`topics` là chồng memory của folder lên giáo trình (`knowledge.curriculum`); chưa có giáo trình thì suy từ memory
+(khi đó `topicId` là `topicId` đã ghi, hoặc chính tên chủ đề). `get_review` với folder lạ: `error{code:"no_folder"}`.
 **Quiz ôn nhanh:** `new_session{folderId, mode, kickoff:"review_quiz"}`: server tự gửi lượt đầu cho Claude
 (`[ôn nhanh: <các mục tới hạn và đang yếu>]`), gia sư hỏi từng câu một, chấm, gọi `memory_note`.
 **Xem lại bài giảng cũ:** `open_session` rồi dựng lại từ `snapshot`; app cho lướt các bước (mục 14).
@@ -365,6 +376,12 @@ Khi trang vẽ xong toàn bộ công thức nó đặt `document.documentElement
 
 `get_greeting{localTime:"2026-11-15T01:45", name?}` → `greeting{text, sub?, doodle}`.
 `text`: một câu chào ngắn, dễ thương, xưng tớ gọi cậu, theo giờ và tiến độ (<= 60 ký tự); `sub`: gợi ý việc nên làm
-(ví dụ "Có 2 mục Toán tới hạn ôn"), tùy chọn. `doodle` ∈ `cat_walk|cat_sleep|whale_swim|bird_hop|snail|paper_plane`
+(ví dụ "Có 2 mục Toán tới hạn ôn"), tùy chọn, server tự tính từ memory. `doodle` ∈ `cat_walk|cat_sleep|whale_swim|bird_hop|snail|paper_plane`
 (app vẽ nét SVG chuyển động; tên lạ thì dùng `cat_walk`). Model tiện ích viết, cache 3 giờ; app có sẵn danh sách dự phòng.
 
+## Ghi chú triển khai server (v2)
+
+- Thông báo mới: `notice{code}` = `no_vision` (model không đọc ảnh, tệp bị bỏ), `bad_file` (fileId lạ), `compacted`,
+  `not_ready` (tin nhắn của module đề `ingest_*`, `get_knowledge`, `*_exam` khi server chưa có module đó).
+- `GET /health` trả `v:2`. `GET /file/<id>` nhận token qua `?token=` hoặc header `Authorization: Bearer`.
+- Tóm tắt `[memory]` của phiên trong folder ghi chủ đề giáo trình dạng `tên [id]` để gia sư truyền `topicId`.

@@ -113,6 +113,39 @@ không nghe.
 
 ## Server (Rust, `server/`)
 
+**Giao thức v2 (15/11/2026, PROTOCOL mục 7-12, 15; trừ module đề mục 11, 13)**
+- Xong, có test giả (Claude giả + model tiện ích giả + điện thoại giả, `tests/v2.rs` 14 test, cộng test đơn vị trong từng
+  module): chế độ chat (`ChatParser`: markdown chảy qua `chat_delta`, đóng thành `chat` ở mỗi chỉ thị và cuối lượt,
+  `@show` có `step:-1`, `@step` thành `### tiêu đề`, dòng `@` lạ hoặc nằm trong khối ``` là chữ thường, không TTS),
+  `[mode: ...]` chỉ khi đổi, `user` (ghi nhật ký cả hai mode), tệp đính kèm thành image/document block, `no_vision`,
+  đọc chính tả (`draft`, cả STT máy lẫn server), sửa STT bằng model tiện ích (chỉ lời nói, quá 2,5 s dùng bản gốc),
+  folder (`server/data/folders.json`) và mọi tin nhắn phiên/folder, xếp phiên cũ vào folder theo môn một lần,
+  memory theo folder (`tutor/memory/folders/<id>.md`), `understood` + `topicId`, tóm tắt `[memory]` có vị trí trên trường
+  từ `knowledge.json` (chỉ đọc), tên phiên tự đặt, compact (phiên Claude mới `claudeId`, đính tóm tắt vào lượt kế),
+  `/upload` + `/file` (pairToken), danh mục model (`models.json` / dựng sẵn / `models.example.json`), effort theo model,
+  `usage.jsonl` + `get_usage` + tự phát `usage`, `get_review`, `get_weekly`, `kickoff:"review_quiz"`, lời chào (cache 3 giờ
+  và theo buổi, danh sách dự phòng). Tin nhắn module đề trả `notice{not_ready}`.
+- Model tiện ích (`src/util_llm.rs`): DeepSeek `deepseek-flash` qua `https://api.deepseek.com/chat/completions` với
+  `thinking:{type:"disabled"}` (đo: khoảng 1 s cho một câu; bật thinking thì 2 s và tốn token suy nghĩ), dự phòng OpenRouter
+  `deepseek/deepseek-v4.1-flash` với `reasoning.enabled=false` (gọi thật 1 lần, 1,7 s). `/models` của DeepSeek hôm nay chỉ có
+  `deepseek-flash` (đọc được ảnh) và `deepseek-v4-pro`; không còn `deepseek-chat`.
+- **Đã chạy thật** (`tests/real_v2.rs`, `--ignored`, một phiên chat): haiku (gói Claude) -> `deepseek` (DeepSeek
+  `https://api.deepseek.com/anthropic`) -> `openrouter-haiku` (OpenRouter `https://openrouter.ai/api`,
+  `anthropic/claude-haiku-5.5`) -> lại haiku, cùng một session Claude Code nối bằng `--resume` qua ba nhà cung cấp, cả bốn lượt
+  trả đúng và lượt cuối nhớ phép tính đầu (không lỗi chữ ký thinking khi quay về Claude). Mỗi lượt 1,2 đến 1,9 s. Tên phiên
+  tự đặt "Toán · Phép cộng cơ bản · 15/11"; STT "tam thứt bật hai" -> "tam thức bậc hai" (`heard.raw` giữ bản gốc); ảnh tải qua
+  `/upload` rồi gửi kèm: haiku chép đúng đề trong ảnh; `usage` có `limit` thật (`seven_day`, `allowed_warning`); lời chào thật.
+  Gọi thẳng endpoint Anthropic của DeepSeek với ảnh: `deepseek-flash` đọc đúng đề nên mục `deepseek` để `vision:true`.
+- Giá: `usage` trong `result` là của từng lượt, còn `total_cost_usd` cộng dồn theo tiến trình `claude` (đo thật hai lượt liền),
+  nên chi phí lượt = hiệu số. Với nhà cung cấp ngoài gói, `costUsd` tính theo `price` trong danh mục (giá tham khảo, sửa được
+  trong `models.json`), vì con số của Claude Code cho model lạ là ước lượng sai.
+- **Bỏ skill dựng sẵn:** `CLAUDE_CODE_DISABLE_BUNDLED_SKILLS=1` bỏ 14 trong 17; ba cái còn lại (`design`, `doctor`,
+  `plugin-authoring`) tắt bằng `--settings` với `skillOverrides: off` (file `server/data/mcp/tutor-settings.json`). `init` thật
+  báo đúng 8 skill môn học với cả ba nhà cung cấp, và `Skill {"skill":"toan"}` vẫn chạy.
+- Chưa kiểm chứng: `--effort` với DeepSeek/OpenRouter (danh mục để `efforts:[]`); compact và tóm tắt tuần với model thật
+  (chỉ test giả); PDF thật gửi cho Claude; ảnh qua `deepseek` trong Claude Code (mới gọi thẳng API); chạy trên Ubuntu.
+  Ở lượt có tool, haiku nói "Để tớ nạp kiến thức môn Toán đã" dù prompt cấm nhắc việc nạp skill.
+
 **Đã xong và đã kiểm chứng**
 - Parser dòng bài giảng streaming (`src/parser.rs`): đủ quy tắc PROTOCOL mục 2, 19 test (mảnh cắt giữa dòng/JSON/UTF-8, CRLF, LaTeX có dấu gạch chéo ngược kép, `@show` trước `@step`, dòng `@` hỏng, bỏ sau `@ask`, cắt câu >220).
 - Server axum: `/health`, `/board/*`, `/ws`, ghép đôi (mã 6 số lưu `server/data/pair.json`, đổi lấy `pairToken`), phiên + nhật ký sự kiện (`server/data/sessions/<id>.jsonl`), `snapshot` khi nối lại bằng `lastSeq`, `open_session`/`list_sessions`, `interrupt`, `played`, `capture_request`/`photo`, TTS/STT sau interface (có bản giả).
@@ -161,6 +194,9 @@ không nghe.
 - Đã xác nhận bằng Claude Code thật không tốn lượt model: `claude -p --strict-mcp-config --mcp-config` trỏ `/mcp`, thông điệp `init` báo `beluga` `connected` và 6 tool `mcp__beluga__*`. `claude mcp list` không kiểm tra được vì server phạm vi project cần duyệt tay, và không tự đăng ký vào cấu hình user. `scripts/register-mcp.ps1` chỉ được tạo, chưa chạy (đã thử cú pháp `claude mcp add --transport http --scope user beluga http://127.0.0.1:8787/mcp` qua `--help`).
 
 **Cờ `claude` đang dùng** (xem `build_args` trong `src/brain/claude.rs`, có test khóa lại):
+(v2: thêm `--settings <tutor-settings.json>`, env `CLAUDE_CODE_DISABLE_BUNDLED_SKILLS=1`; model/effort theo danh mục; nhà cung cấp
+ngoài gói nhận `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_DEFAULT_{HAIKU,SONNET,OPUS}_MODEL`,
+`CLAUDE_CODE_SUBAGENT_MODEL`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`)
 `-p --input-format stream-json --output-format stream-json --verbose --include-partial-messages --model <sonnet|opus|haiku> (--session-id <uuid> | --resume <uuid>) --setting-sources project --strict-mcp-config --mcp-config <file> --tools Read,Skill --allowedTools Read Skill(toan) Skill(ly) Skill(hoa) Skill(van) Skill(anh-ssat) Skill(duc) Skill(tin-cpp) Skill(chung) mcp__beluga__capture_photo mcp__beluga__memory_note --permission-mode dontAsk --permission-prompts none [--effort <mức>]` (mức: sonnet `medium`, opus `low`, haiku không truyền; `BELUGA_EFFORT` ghi đè mọi model; `claude --help` xác nhận `--effort` nhận low, medium, high, xhigh, max; có test khóa), cwd = `tutor/`. `--setting-sources project` vẫn nạp `tutor/CLAUDE.md` nhưng không nạp plugin/MCP/skill cá nhân của người dùng (init báo plugin chỉ có loại builtin, `mcp_servers` rỗng khi không truyền MCP); đăng nhập sẵn có của CLI vẫn dùng được. Không dùng `--bare` vì nó bỏ OAuth.
 
 **Bài thử thật đầu-cuối (14/11/2026, không cần iPhone)**

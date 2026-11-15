@@ -100,7 +100,7 @@ pub fn builtin() -> Vec<ModelEntry> {
         entry("sonnet", "Claude Sonnet", "claude", None, None, "sonnet", &["low", "medium", "high"], Some("medium"), true, None),
         entry("opus", "Claude Opus", "claude", None, None, "opus", &["low", "medium", "high", "xhigh", "max"], Some("low"), true, None),
         entry("haiku", "Claude Haiku", "claude", None, None, "haiku", &[], None, true, None),
-        entry("deepseek", "DeepSeek Flash", ac, Some("https://api.deepseek.com/anthropic"), Some("DEEPSEEK_API_KEY"), "deepseek-flash", &[], None, false,
+        entry("deepseek", "DeepSeek Flash", ac, Some("https://api.deepseek.com/anthropic"), Some("DEEPSEEK_API_KEY"), "deepseek-flash", &[], None, true,
             Some(Price { input: 0.05, output: 0.2, cache_read: 0.01, cache_write: 0.05 })),
         entry("deepseek-pro", "DeepSeek Pro", ac, Some("https://api.deepseek.com/anthropic"), Some("DEEPSEEK_API_KEY"), "deepseek-v4-pro", &[], None, false,
             Some(Price { input: 0.9, output: 1.5, cache_read: 0.09, cache_write: 0.9 })),
