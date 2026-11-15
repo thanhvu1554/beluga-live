@@ -12,6 +12,7 @@ pub mod parser;
 pub mod review;
 pub mod session;
 pub mod store;
+pub mod study;
 pub mod uploads;
 pub mod usage;
 pub mod util_llm;

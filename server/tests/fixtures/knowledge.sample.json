@@ -1,0 +1,1211 @@
+{
+  "curriculum": [
+    {
+      "id": "c1",
+      "title": "Căn bậc hai. Căn bậc ba",
+      "topics": [
+        {
+          "count": 2,
+          "forms": [
+            {
+              "count": 2,
+              "example": {
+                "answer": "C",
+                "md": "Số nào sau đây là căn bậc hai số học của $0,36$? A. $-0,6$ B. $0,06$ C. $0,6$ D. $\\pm 0,6$"
+              },
+              "id": "c1.t1.f1",
+              "levels": {
+                "nb": 2,
+                "th": 0,
+                "vd": 0,
+                "vdc": 0
+              },
+              "method": "1. Xác định số a cần tìm căn; a phải không âm. 2. Tìm số x ≥ 0 sao cho $x^2=a$. 3. Kết luận $\\sqrt{a}=x$ (chỉ lấy giá trị không âm).",
+              "refs": [
+                {
+                  "fileId": "de1_p1_jpg",
+                  "q": "1"
+                },
+                {
+                  "fileId": "de2_pdf",
+                  "q": "2"
+                }
+              ],
+              "title": "Tìm căn bậc hai số học của một số"
+            }
+          ],
+          "id": "c1.t1",
+          "share": 0.039,
+          "summary": "Khái niệm căn bậc hai số học của số không âm và cách xác định nó.",
+          "title": "Căn bậc hai số học"
+        },
+        {
+          "count": 2,
+          "forms": [
+            {
+              "count": 2,
+              "example": {
+                "answer": "B",
+                "md": "Giá trị của $\\sqrt[3]{64}-\\sqrt[3]{-8}$ là A. 2 B. 6 C. $-6$ D. 12"
+              },
+              "id": "c1.t2.f1",
+              "levels": {
+                "nb": 1,
+                "th": 1,
+                "vd": 0,
+                "vdc": 0
+              },
+              "method": "1. Nhận dạng số a cần tính căn bậc ba. 2. Tìm x sao cho $x^3=a$; căn bậc ba tồn tại với mọi số thực. 3. Thực hiện các phép cộng, trừ các kết quả.",
+              "refs": [
+                {
+                  "fileId": "de1_p1_jpg",
+                  "q": "6"
+                },
+                {
+                  "fileId": "de2_pdf",
+                  "q": "5"
+                }
+              ],
+              "title": "Tìm và tính căn bậc ba"
+            }
+          ],
+          "id": "c1.t2",
+          "share": 0.039,
+          "summary": "Khái niệm căn bậc ba và cách tính căn bậc ba của một số thực.",
+          "title": "Căn bậc ba"
+        },
+        {
+          "count": 8,
+          "forms": [
+            {
+              "count": 4,
+              "example": {
+                "answer": "B",
+                "md": "Biểu thức $\\sqrt{x-5}$ xác định khi A. $x>5$ B. $x\\ge 5$ C. $x\\le 5$ D. $x\\ne 5$"
+              },
+              "id": "c1.t3.f1",
+              "levels": {
+                "nb": 0,
+                "th": 4,
+                "vd": 0,
+                "vdc": 0
+              },
+              "method": "1. Căn thức $\\sqrt{A}$ có nghĩa khi $A\\ge 0$. 2. Giải bất phương trình $A\\ge 0$. 3. Kết luận tập xác định.",
+              "refs": [
+                {
+                  "fileId": "de1_p1_jpg",
+                  "q": "2"
+                },
+                {
+                  "fileId": "phieu_jpg",
+                  "q": "1a"
+                },
+                {
+                  "fileId": "phieu_jpg",
+                  "q": "1b"
+                },
+                {
+                  "fileId": "de2_pdf",
+                  "q": "1"
+                }
+              ],
+              "title": "Tìm điều kiện xác định của căn thức"
+            },
+            {
+              "count": 2,
+              "example": {
+                "answer": "B",
+                "md": "Với $a<0$, biểu thức $\\sqrt{4a^2}$ bằng A. $2a$ B. $-2a$ C. $4a$ D. $-4a$"
+              },
+              "id": "c1.t3.f2",
+              "levels": {
+                "nb": 0,
+                "th": 2,
+                "vd": 0,
+                "vdc": 0
+              },
+              "method": "1. Áp dụng $\\sqrt{A^2}=|A|$. 2. Xét dấu của A để bỏ dấu giá trị tuyệt đối. 3. Rút gọn kết quả.",
+              "refs": [
+                {
+                  "fileId": "de1_p1_jpg",
+                  "q": "4"
+                },
+                {
+                  "fileId": "de2_pdf",
+                  "q": "4"
+                }
+              ],
+              "title": "Rút gọn căn của bình phương"
+            },
+            {
+              "count": 2,
+              "example": {
+                "md": "Giải phương trình $\\sqrt{4x^2-4x+1}=5$"
+              },
+              "id": "c1.t3.f3",
+              "levels": {
+                "nb": 0,
+                "th": 2,
+                "vd": 0,
+                "vdc": 0
+              },
+              "method": "1. Tìm điều kiện xác định $A\\ge 0$. 2. Biến đổi đưa phương trình về dạng $\\sqrt{A}=B$ rồi bình phương hai vế. 3. Giải phương trình, đối chiếu điều kiện và kết luận.",
+              "refs": [
+                {
+                  "fileId": "phieu_jpg",
+                  "q": "4a"
+                },
+                {
+                  "fileId": "phieu_jpg",
+                  "q": "4b"
+                }
+              ],
+              "title": "Giải phương trình chứa căn bậc hai"
+            }
+          ],
+          "id": "c1.t3",
+          "share": 0.157,
+          "summary": "Điều kiện có nghĩa của căn thức và hằng đẳng thức $\\sqrt{A^2}=|A|$ để rút gọn và giải phương trình.",
+          "title": "Căn thức bậc hai và hằng đẳng thức $\\sqrt{A^2}=|A|$"
+        },
+        {
+          "count": 3,
+          "forms": [
+            {
+              "count": 1,
+              "example": {
+                "md": "Trục căn thức ở mẫu: $\\frac{3}{\\sqrt{6}}$"
+              },
+              "id": "c1.t4.f1",
+              "levels": {
+                "nb": 0,
+                "th": 1,
+                "vd": 0,
+                "vdc": 0
+              },
+              "method": "1. Nhân cả tử và mẫu với $\\sqrt{b}$. 2. Rút gọn mẫu thành số hữu tỉ. 3. Kết luận.",
+              "refs": [
+                {
+                  "fileId": "phieu_jpg",
+                  "q": "3a"
+                }
+              ],
+              "title": "Trục căn thức ở mẫu dạng $\\frac{a}{\\sqrt{b}}$"
+            },
+            {
+              "count": 2,
+              "example": {
+                "md": "Trục căn thức ở mẫu: $\\frac{4}{\\sqrt{7}+\\sqrt{3}}$"
+              },
+              "id": "c1.t4.f2",
+              "levels": {
+                "nb": 0,
+                "th": 2,
+                "vd": 0,
+                "vdc": 0
+              },
+              "method": "1. Nhân cả tử và mẫu với biểu thức liên hợp $\\sqrt{x}-\\sqrt{y}$ (hoặc $\\sqrt{x}+b$ với mẫu dạng $\\sqrt{x}-b$). 2. Dùng hằng đẳng thức $(\\sqrt{x}+\\sqrt{y})(\\sqrt{x}-\\sqrt{y})=x-y$ để khử căn ở mẫu. 3. Rút gọn.",
+              "refs": [
+                {
+                  "fileId": "de1_p1_jpg",
+                  "q": "5"
+                },
+                {
+                  "fileId": "phieu_jpg",
+                  "q": "3b"
+                }
+              ],
+              "title": "Trục căn thức ở mẫu dạng $\\frac{a}{\\sqrt{x}+\\sqrt{y}}$ hoặc $\\frac{a}{\\sqrt{x}-b}$"
+            }
+          ],
+          "id": "c1.t4",
+          "share": 0.059,
+          "summary": "Khử căn thức ở mẫu bằng cách nhân với biểu thức liên hợp.",
+          "title": "Trục căn thức ở mẫu"
+        },
+        {
+          "count": 7,
+          "forms": [
+            {
+              "count": 1,
+              "example": {
+                "md": "Kết quả của phép tính $\\sqrt{12}\\cdot\\sqrt{3}$ là A. 36 B. 6 C. $\\sqrt{15}$ D. 4"
+              },
+              "id": "c1.t5.f1",
+              "levels": {
+                "nb": 0,
+                "th": 1,
+                "vd": 0,
+                "vdc": 0
+              },
+              "method": "1. Áp dụng $\\sqrt{A}\\cdot\\sqrt{B}=\\sqrt{AB}$ với A, B ≥ 0. 2. Rút gọn biểu thức dưới dấu căn bằng cách tách thừa số chính phương. 3. Kết luận.",
+              "refs": [
+                {
+                  "fileId": "de1_p1_jpg",
+                  "q": "3"
+                }
+              ],
+              "title": "Nhân các căn thức bậc hai"
+            },
+            {
+              "count": 5,
+              "example": {
+                "md": "Tính $M=2\\sqrt{12}-\\sqrt{48}+\\frac{6}{\\sqrt{3}}$."
+              },
+              "id": "c1.t5.f2",
+              "levels": {
+                "nb": 0,
+                "th": 5,
+                "vd": 0,
+                "vdc": 0
+              },
+              "method": "1. Đưa mỗi căn về dạng tối giản bằng $\\sqrt{a^2b}=a\\sqrt{b}$. 2. Gộp các căn thức đồng dạng bằng cách cộng, trừ hệ số. 3. Kết luận.",
+              "refs": [
+                {
+                  "fileId": "de1_p1_jpg",
+                  "q": "1a"
+                },
+                {
+                  "fileId": "phieu_jpg",
+                  "q": "2a"
+                },
+                {
+                  "fileId": "phieu_jpg",
+                  "q": "2b"
+                },
+                {
+                  "fileId": "de2_pdf",
+                  "q": "3"
+                },
+                {
+                  "fileId": "de2_pdf",
+                  "q": "1a"
+                }
+              ],
+              "title": "Rút gọn tổng, hiệu các căn thức đồng dạng"
+            },
+            {
+              "count": 1,
+              "example": {
+                "answer": "A",
+                "md": "Kết quả khử mẫu của biểu thức $\\sqrt{\\frac{2}{3}}$ là A. $\\frac{\\sqrt{6}}{3}$ B. $\\frac{\\sqrt{2}}{3}$ C. $\\frac{\\sqrt{6}}{2}$ D. $\\sqrt{6}$"
+              },
+              "id": "c1.t5.f3",
+              "levels": {
+                "nb": 0,
+                "th": 1,
+                "vd": 0,
+                "vdc": 0
+              },
+              "method": "1. Viết $\\sqrt{\\frac{A}{B}}=\\frac{\\sqrt{AB}}{|B|}$. 2. Nhân tử và mẫu với B để mẫu thành bình phương. 3. Rút gọn.",
+              "refs": [
+                {
+                  "fileId": "de2_pdf",
+                  "q": "6"
+                }
+              ],
+              "title": "Khử mẫu của biểu thức lấy căn"
+            }
+          ],
+          "id": "c1.t5",
+          "share": 0.137,
+          "summary": "Nhân, khử mẫu, đưa thừa số ra ngoài và rút gọn tổng các căn thức bậc hai.",
+          "title": "Các phép biến đổi căn thức bậc hai"
+        },
+        {
+          "count": 6,
+          "forms": [
+            {
+              "count": 3,
+              "example": {
+                "md": "Rút gọn $Q=\\frac{x-\\sqrt{x}}{\\sqrt{x}-1}+\\frac{x+2\\sqrt{x}}{\\sqrt{x}+2}$ với $x\\ge 0,\\ x\\ne 1$."
+              },
+              "id": "c1.t6.f1",
+              "levels": {
+                "nb": 0,
+                "th": 0,
+                "vd": 3,
+                "vdc": 0
+              },
+              "method": "1. Tìm điều kiện xác định của biểu thức. 2. Quy đồng mẫu, phân tích tử và mẫu thành nhân tử (đặt $\\sqrt{x}$ làm nhân tử chung). 3. Rút gọn và kết luận.",
+              "refs": [
+                {
+                  "fileId": "de1_p1_jpg",
+                  "q": "1b"
+                },
+                {
+                  "fileId": "phieu_jpg",
+                  "q": "6"
+                },
+                {
+                  "fileId": "de2_pdf",
+                  "q": "1b"
+                }
+              ],
+              "title": "Rút gọn biểu thức chứa căn"
+            },
+            {
+              "count": 1,
+              "example": {
+                "md": "Cho $C=\\frac{\\sqrt{x}+1}{\\sqrt{x}-3}$ với x ≥ 0, x ≠ 9. Tính C khi x = 16."
+              },
+              "id": "c1.t6.f2",
+              "levels": {
+                "nb": 0,
+                "th": 1,
+                "vd": 0,
+                "vdc": 0
+              },
+              "method": "1. Kiểm tra giá trị x có thỏa điều kiện xác định. 2. Tính $\\sqrt{x}$ rồi thay vào biểu thức. 3. Rút gọn kết quả.",
+              "refs": [
+                {
+                  "fileId": "phieu_jpg",
+                  "q": "5a"
+                }
+              ],
+              "title": "Tính giá trị biểu thức chứa căn"
+            },
+            {
+              "count": 1,
+              "example": {
+                "md": "Cho $C=\\frac{\\sqrt{x}+1}{\\sqrt{x}-3}$ với x ≥ 0, x ≠ 9. Tìm x nguyên để C nhận giá trị nguyên."
+              },
+              "id": "c1.t6.f3",
+              "levels": {
+                "nb": 0,
+                "th": 0,
+                "vd": 1,
+                "vdc": 0
+              },
+              "method": "1. Rút gọn biểu thức về dạng $\\frac{k}{\\sqrt{x}-3}$ hoặc tương tự. 2. Lập luận theo ước của k để $\\sqrt{x}-3$ nhận giá trị nguyên phù hợp. 3. Tìm x và đối chiếu điều kiện.",
+              "refs": [
+                {
+                  "fileId": "phieu_jpg",
+                  "q": "5b"
+                }
+              ],
+              "title": "Tìm x để biểu thức nhận giá trị nguyên"
+            },
+            {
+              "count": 1,
+              "example": {
+                "md": "Tìm giá trị nhỏ nhất của $T=x-2\\sqrt{x-1}+3$ với $x\\ge 1$."
+              },
+              "id": "c1.t6.f4",
+              "levels": {
+                "nb": 0,
+                "th": 0,
+                "vd": 0,
+                "vdc": 1
+              },
+              "method": "1. Biến đổi biểu thức về dạng $(\\sqrt{x}-m)^2+k$ hoặc dùng bất đẳng thức phụ. 2. Lập luận $(\\ldots)^2\\ge 0$ để suy ra giá trị nhỏ nhất. 3. Xác định x đạt giá trị nhỏ nhất và kết luận.",
+              "refs": [
+                {
+                  "fileId": "de2_pdf",
+                  "q": "5"
+                }
+              ],
+              "title": "Tìm giá trị nhỏ nhất của biểu thức chứa căn"
+            }
+          ],
+          "id": "c1.t6",
+          "share": 0.118,
+          "summary": "Rút gọn, tính giá trị và tìm x để biểu thức chứa căn đạt yêu cầu, kể cả bài toán cực trị.",
+          "title": "Biểu thức chứa căn"
+        }
+      ]
+    },
+    {
+      "id": "c2",
+      "title": "Hệ hai phương trình bậc nhất hai ẩn",
+      "topics": [
+        {
+          "count": 2,
+          "forms": [
+            {
+              "count": 1,
+              "example": {
+                "answer": "C",
+                "md": "Phương trình nào sau đây là phương trình bậc nhất hai ẩn? A. $x^2+y=1$ B. $0x+0y=2$ C. $3x-2y=5$ D. $xy=4$"
+              },
+              "id": "c2.t1.f1",
+              "levels": {
+                "nb": 1,
+                "th": 0,
+                "vd": 0,
+                "vdc": 0
+              },
+              "method": "1. Kiểm tra phương trình có dạng $ax+by=c$ với a, b không đồng thời bằng 0. 2. Loại các phương trình chứa $x^2$, $xy$ hoặc có a = b = 0. 3. Kết luận.",
+              "refs": [
+                {
+                  "fileId": "de2_pdf",
+                  "q": "7"
+                }
+              ],
+              "title": "Nhận biết phương trình bậc nhất hai ẩn"
+            },
+            {
+              "count": 1,
+              "example": {
+                "md": "Cặp số nào sau đây là nghiệm của phương trình $2x-y=3$? A. (1;1) B. (2;−1) C. (2;1) D. (0;3)"
+              },
+              "id": "c2.t1.f2",
+              "levels": {
+                "nb": 1,
+                "th": 0,
+                "vd": 0,
+                "vdc": 0
+              },
+              "method": "1. Thay x, y của từng cặp số vào phương trình. 2. So sánh vế trái với vế phải. 3. Chọn cặp số làm hai vế bằng nhau.",
+              "refs": [
+                {
+                  "fileId": "de1_p1_jpg",
+                  "q": "7"
+                }
+              ],
+              "title": "Kiểm tra cặp số là nghiệm của phương trình bậc nhất hai ẩn"
+            }
+          ],
+          "id": "c2.t1",
+          "share": 0.039,
+          "summary": "Nhận biết phương trình bậc nhất hai ẩn và kiểm tra một cặp số có là nghiệm của phương trình hay không.",
+          "title": "Phương trình bậc nhất hai ẩn"
+        },
+        {
+          "count": 4,
+          "forms": [
+            {
+              "count": 1,
+              "example": {
+                "answer": "A",
+                "md": "Hệ phương trình $\\{2x+y=4;\\ x+y=3$ có nghiệm $(x;y)$ là A. $(1;2)$ B. $(2;1)$ C. $(1;3)$ D. $(-1;4)$"
+              },
+              "id": "c2.t2.f1",
+              "levels": {
+                "nb": 0,
+                "th": 1,
+                "vd": 0,
+                "vdc": 0
+              },
+              "method": "1. Thay cặp số vào cả hai phương trình của hệ. 2. Kiểm tra cả hai phương trình đều thỏa mãn. 3. Kết luận cặp nghiệm.",
+              "refs": [
+                {
+                  "fileId": "de2_pdf",
+                  "q": "8"
+                }
+              ],
+              "title": "Kiểm tra nghiệm của hệ phương trình"
+            },
+            {
+              "count": 3,
+              "example": {
+                "md": "Giải hệ phương trình $\\{x+2y=5;\\ 3x-y=1$."
+              },
+              "id": "c2.t2.f2",
+              "levels": {
+                "nb": 0,
+                "th": 3,
+                "vd": 0,
+                "vdc": 0
+              },
+              "method": "1. Chọn phương pháp: rút một ẩn theo ẩn kia (thế) hoặc nhân hệ số để khử một ẩn (cộng đại số). 2. Giải phương trình một ẩn vừa thu được. 3. Thay ngược để tìm ẩn còn lại và kết luận nghiệm $(x;y)$.",
+              "refs": [
+                {
+                  "fileId": "de1_p1_jpg",
+                  "q": "8"
+                },
+                {
+                  "fileId": "de1_p1_jpg",
+                  "q": "2a"
+                },
+                {
+                  "fileId": "de2_pdf",
+                  "q": "2a"
+                }
+              ],
+              "title": "Giải hệ phương trình bằng phương pháp thế hoặc cộng đại số"
+            }
+          ],
+          "id": "c2.t2",
+          "share": 0.078,
+          "summary": "Nghiệm của hệ hai phương trình bậc nhất hai ẩn và cách giải bằng phương pháp thế hoặc cộng đại số.",
+          "title": "Hệ hai phương trình bậc nhất hai ẩn"
+        },
+        {
+          "count": 2,
+          "forms": [
+            {
+              "count": 1,
+              "example": {
+                "md": "Hai lớp 9A và 9B quyên góp được 180 quyển vở. Số vở lớp 9A nhiều hơn lớp 9B là 20 quyển. Hỏi mỗi lớp quyên góp được bao nhiêu quyển vở?"
+              },
+              "id": "c2.t3.f1",
+              "levels": {
+                "nb": 0,
+                "th": 0,
+                "vd": 1,
+                "vdc": 0
+              },
+              "method": "1. Chọn hai ẩn và đặt điều kiện cho ẩn. 2. Diễn đạt hai quan hệ trong đề bằng hai phương trình. 3. Giải hệ và đối chiếu với điều kiện thực tế.",
+              "refs": [
+                {
+                  "fileId": "de1_p1_jpg",
+                  "q": "2b"
+                }
+              ],
+              "title": "Lập hệ phương trình cho bài toán số liệu"
+            },
+            {
+              "count": 1,
+              "example": {
+                "md": "Mảnh vườn hình chữ nhật có chu vi 64 m, chiều dài hơn chiều rộng 8 m. Tính diện tích mảnh vườn."
+              },
+              "id": "c2.t3.f2",
+              "levels": {
+                "nb": 0,
+                "th": 0,
+                "vd": 1,
+                "vdc": 0
+              },
+              "method": "1. Gọi chiều dài và chiều rộng là hai ẩn. 2. Dùng công thức $P=2(a+b)$ và $S=ab$ để lập hai phương trình. 3. Giải hệ và kết luận.",
+              "refs": [
+                {
+                  "fileId": "de2_pdf",
+                  "q": "2b"
+                }
+              ],
+              "title": "Lập hệ phương trình cho bài toán hình học (chu vi, diện tích)"
+            }
+          ],
+          "id": "c2.t3",
+          "share": 0.039,
+          "summary": "Chọn ẩn, lập hệ phương trình từ dữ kiện bài toán thực tế rồi giải và đối chiếu điều kiện.",
+          "title": "Giải bài toán bằng cách lập hệ phương trình"
+        }
+      ]
+    },
+    {
+      "id": "c3",
+      "title": "Bất phương trình bậc nhất một ẩn",
+      "topics": [
+        {
+          "count": 3,
+          "forms": [
+            {
+              "count": 1,
+              "example": {
+                "answer": "D",
+                "md": "Bất phương trình nào sau đây là bất phương trình bậc nhất một ẩn? A. $2x^2-1<0$ B. $0x+3>0$ C. $\\frac{1}{x}>2$ D. $5-2x\\ge 0$"
+              },
+              "id": "c3.t1.f1",
+              "levels": {
+                "nb": 1,
+                "th": 0,
+                "vd": 0,
+                "vdc": 0
+              },
+              "method": "1. Kiểm tra bất phương trình có dạng $ax+b<0$ (hoặc $>$, $\\le$, $\\ge$) với $a\\ne 0$. 2. Loại các bất phương trình chứa $x^2$, $\\frac{1}{x}$ hoặc có a = 0. 3. Kết luận.",
+              "refs": [
+                {
+                  "fileId": "de2_pdf",
+                  "q": "9"
+                }
+              ],
+              "title": "Nhận biết bất phương trình bậc nhất một ẩn"
+            },
+            {
+              "count": 1,
+              "example": {
+                "md": "Nghiệm của bất phương trình $3x-6>0$ là A. x < 2 B. x > 2 C. x > −2 D. x < −2"
+              },
+              "id": "c3.t1.f2",
+              "levels": {
+                "nb": 0,
+                "th": 1,
+                "vd": 0,
+                "vdc": 0
+              },
+              "method": "1. Chuyển các hạng tử chứa x sang một vế, số hạng tự do sang vế kia. 2. Chia hai vế cho hệ số a; đổi chiều bất đẳng thức nếu a < 0. 3. Biểu diễn tập nghiệm trên trục số.",
+              "refs": [
+                {
+                  "fileId": "de1_p1_jpg",
+                  "q": "9"
+                }
+              ],
+              "title": "Giải bất phương trình bậc nhất một ẩn"
+            },
+            {
+              "count": 1,
+              "example": {
+                "md": "Giải bất phương trình $\\frac{2x-1}{3}-\\frac{x+1}{2}\\leq 1$"
+              },
+              "id": "c3.t1.f3",
+              "levels": {
+                "nb": 0,
+                "th": 1,
+                "vd": 0,
+                "vdc": 0
+              },
+              "method": "1. Quy đồng mẫu hai vế rồi nhân với mẫu chung dương. 2. Bỏ ngoặc, chuyển vế và rút gọn. 3. Tìm nghiệm và biểu diễn trên trục số.",
+              "refs": [
+                {
+                  "fileId": "de1_p1_jpg",
+                  "q": "3"
+                }
+              ],
+              "title": "Giải bất phương trình chứa phân số"
+            }
+          ],
+          "id": "c3.t1",
+          "share": 0.059,
+          "summary": "Nhận biết bất phương trình bậc nhất một ẩn và giải, biểu diễn tập nghiệm.",
+          "title": "Bất phương trình bậc nhất một ẩn"
+        }
+      ]
+    },
+    {
+      "id": "c4",
+      "title": "Phương trình bậc nhất và phương trình tích",
+      "topics": [
+        {
+          "count": 1,
+          "forms": [
+            {
+              "count": 1,
+              "example": {
+                "answer": "C",
+                "md": "Nghiệm của phương trình $(x-3)(2x+1)=0$ là A. $x=3$ B. $x=-\\frac{1}{2}$ C. $x=3$ hoặc $x=-\\frac{1}{2}$ D. $x=-3$ hoặc $x=\\frac{1}{2}$"
+              },
+              "id": "c4.t1.f1",
+              "levels": {
+                "nb": 0,
+                "th": 1,
+                "vd": 0,
+                "vdc": 0
+              },
+              "method": "1. Chuyển mọi hạng tử về một vế và phân tích thành tích $A\\cdot B=0$. 2. Áp dụng $A\\cdot B=0 \\Leftrightarrow A=0$ hoặc $B=0$. 3. Giải các phương trình con và kết luận tập nghiệm.",
+              "refs": [
+                {
+                  "fileId": "de2_pdf",
+                  "q": "10"
+                }
+              ],
+              "title": "Giải phương trình tích"
+            }
+          ],
+          "id": "c4.t1",
+          "share": 0.02,
+          "summary": "Giải phương trình có vế trái là tích các biểu thức bằng cách đưa về các phương trình bậc nhất.",
+          "title": "Phương trình tích"
+        },
+        {
+          "count": 2,
+          "forms": [
+            {
+              "count": 1,
+              "example": {
+                "md": "Phương trình $\\frac{x+1}{x-2}=\\frac{3}{x-2}$ có điều kiện xác định là A. x ≠ −1 B. x ≠ 2 C. x ≠ 3 D. x ≠ 0"
+              },
+              "id": "c4.t2.f1",
+              "levels": {
+                "nb": 0,
+                "th": 1,
+                "vd": 0,
+                "vdc": 0
+              },
+              "method": "1. Cho mỗi mẫu khác 0 để tìm điều kiện. 2. Phân tích các mẫu thành nhân tử nếu cần. 3. Kết luận điều kiện xác định.",
+              "refs": [
+                {
+                  "fileId": "de1_p1_jpg",
+                  "q": "10"
+                }
+              ],
+              "title": "Tìm điều kiện xác định của phương trình chứa ẩn ở mẫu"
+            },
+            {
+              "count": 1,
+              "example": {
+                "md": "Giải phương trình $\\frac{x}{x-1}-\\frac{2}{x+1}=\\frac{4}{x^2-1}$."
+              },
+              "id": "c4.t2.f2",
+              "levels": {
+                "nb": 0,
+                "th": 0,
+                "vd": 1,
+                "vdc": 0
+              },
+              "method": "1. Tìm điều kiện xác định. 2. Quy đồng và khử mẫu, giải phương trình vừa nhận được. 3. Đối chiếu nghiệm với điều kiện và kết luận.",
+              "refs": [
+                {
+                  "fileId": "de2_pdf",
+                  "q": "3"
+                }
+              ],
+              "title": "Giải phương trình chứa ẩn ở mẫu"
+            }
+          ],
+          "id": "c4.t2",
+          "share": 0.039,
+          "summary": "Tìm điều kiện xác định và giải phương trình có ẩn ở mẫu, đối chiếu nghiệm với điều kiện.",
+          "title": "Phương trình chứa ẩn ở mẫu"
+        }
+      ]
+    },
+    {
+      "id": "c5",
+      "title": "Hệ thức lượng trong tam giác vuông",
+      "topics": [
+        {
+          "count": 5,
+          "forms": [
+            {
+              "count": 2,
+              "example": {
+                "md": "Cho tam giác ABC vuông tại A có AB = 3 cm, AC = 4 cm. Khi đó $\\sin B$ bằng A. $\\frac{3}{5}$ B. $\\frac{4}{5}$ C. $\\frac{3}{4}$ D. $\\frac{4}{3}$"
+              },
+              "id": "c5.t1.f1",
+              "levels": {
+                "nb": 1,
+                "th": 1,
+                "vd": 0,
+                "vdc": 0
+              },
+              "method": "1. Xác định cạnh đối, cạnh kề và cạnh huyền của góc đã cho. 2. Áp dụng $\\sin\\alpha=\\frac{\\text{đối}}{\\text{huyền}}$, $\\cos\\alpha=\\frac{\\text{kề}}{\\text{huyền}}$, $\\tan\\alpha=\\frac{\\text{đối}}{\\text{kề}}$. 3. Tính và rút gọn kết quả.",
+              "refs": [
+                {
+                  "fileId": "de1_p1_jpg",
+                  "q": "11"
+                },
+                {
+                  "fileId": "de2_pdf",
+                  "q": "11"
+                }
+              ],
+              "title": "Tính tỉ số lượng giác của góc nhọn trong tam giác vuông"
+            },
+            {
+              "count": 2,
+              "example": {
+                "md": "Thang dài 4 m dựa vào tường, chân thang cách tường 1,5 m. Tính góc tạo bởi thang và mặt đất (làm tròn đến độ)."
+              },
+              "id": "c5.t1.f2",
+              "levels": {
+                "nb": 0,
+                "th": 2,
+                "vd": 0,
+                "vdc": 0
+              },
+              "method": "1. Dựa vào bảng hoặc máy tính tìm góc có tỉ số lượng giác đã cho. 2. Đưa về góc đặc biệt (30°, 45°, 60°) nếu có thể. 3. Kết luận số đo góc và làm tròn theo yêu cầu.",
+              "refs": [
+                {
+                  "fileId": "de1_p1_jpg",
+                  "q": "12"
+                },
+                {
+                  "fileId": "de2_pdf",
+                  "q": "4b"
+                }
+              ],
+              "title": "Tìm góc nhọn khi biết tỉ số lượng giác"
+            },
+            {
+              "count": 1,
+              "example": {
+                "answer": "B",
+                "md": "Giá trị của biểu thức $\\sin^2 35^\\circ+\\cos^2 35^\\circ$ là A. 0 B. 1 C. 2 D. $\\frac{1}{2}$"
+              },
+              "id": "c5.t1.f3",
+              "levels": {
+                "nb": 0,
+                "th": 1,
+                "vd": 0,
+                "vdc": 0
+              },
+              "method": "1. Nhận dạng biểu thức có dạng $\\sin^2\\alpha+\\cos^2\\alpha$. 2. Áp dụng hệ thức cơ bản $\\sin^2\\alpha+\\cos^2\\alpha=1$. 3. Kết luận giá trị biểu thức.",
+              "refs": [
+                {
+                  "fileId": "de2_pdf",
+                  "q": "12"
+                }
+              ],
+              "title": "Áp dụng hệ thức $\\sin^2\\alpha+\\cos^2\\alpha=1$"
+            }
+          ],
+          "id": "c5.t1",
+          "share": 0.098,
+          "summary": "Định nghĩa sin, cos, tan, cot của góc nhọn, quan hệ giữa chúng và cách tìm góc khi biết tỉ số.",
+          "title": "Tỉ số lượng giác của góc nhọn"
+        },
+        {
+          "count": 3,
+          "forms": [
+            {
+              "count": 2,
+              "example": {
+                "md": "Cho tam giác $DEF$ vuông tại $D$ có $DE=6$ cm, $DF=8$ cm, đường cao $DK$. Tính $EF$, $DK$."
+              },
+              "id": "c5.t2.f1",
+              "levels": {
+                "nb": 0,
+                "th": 2,
+                "vd": 0,
+                "vdc": 0
+              },
+              "method": "1. Vẽ hình và xác định hình chiếu của các cạnh góc vuông. 2. Áp dụng $AB^2=BH\\cdot BC$, $AH^2=BH\\cdot HC$, $AH\\cdot BC=AB\\cdot AC$. 3. Tính và kết luận.",
+              "refs": [
+                {
+                  "fileId": "de1_p1_jpg",
+                  "q": "4a"
+                },
+                {
+                  "fileId": "de2_pdf",
+                  "q": "4a"
+                }
+              ],
+              "title": "Tính đoạn thẳng trong tam giác vuông (cạnh huyền, đường cao, hình chiếu)"
+            },
+            {
+              "count": 1,
+              "example": {
+                "md": "Tam giác ABC vuông tại A, đường cao AH, BH = 4 cm, HC = 9 cm. Tính số đo góc B (làm tròn đến độ) và chứng minh $AB^2=BH\\cdot BC$."
+              },
+              "id": "c5.t2.f2",
+              "levels": {
+                "nb": 0,
+                "th": 0,
+                "vd": 1,
+                "vdc": 0
+              },
+              "method": "1. Xác định góc cần tính qua tỉ số lượng giác đã biết. 2. Dùng hệ thức lượng để biến đổi và chứng minh. 3. Làm tròn số đo góc theo yêu cầu đề bài.",
+              "refs": [
+                {
+                  "fileId": "de1_p1_jpg",
+                  "q": "4b"
+                }
+              ],
+              "title": "Chứng minh hệ thức lượng và tính số đo góc trong tam giác vuông"
+            }
+          ],
+          "id": "c5.t2",
+          "share": 0.059,
+          "summary": "Các hệ thức về cạnh, đường cao và hình chiếu trong tam giác vuông.",
+          "title": "Hệ thức giữa cạnh và đường cao trong tam giác vuông"
+        }
+      ]
+    },
+    {
+      "id": "c6",
+      "title": "Ôn tập bất đẳng thức",
+      "topics": [
+        {
+          "count": 1,
+          "forms": [
+            {
+              "count": 1,
+              "example": {
+                "md": "Cho x, y là các số thực dương thỏa mãn x + y = 1. Tìm giá trị nhỏ nhất của $P=\\frac{1}{x}+\\frac{4}{y}$."
+              },
+              "id": "c6.t1.f1",
+              "levels": {
+                "nb": 0,
+                "th": 0,
+                "vd": 0,
+                "vdc": 1
+              },
+              "method": "1. Viết điều kiện ràng buộc và xác định dấu của các biến. 2. Biến đổi biểu thức để áp dụng bất đẳng thức Cô-si cho hai số không âm. 3. Tìm điểm xảy ra dấu bằng và kết luận giá trị nhỏ nhất.",
+              "refs": [
+                {
+                  "fileId": "de1_p1_jpg",
+                  "q": "5"
+                }
+              ],
+              "title": "Tìm giá trị nhỏ nhất bằng bất đẳng thức Cô-si"
+            }
+          ],
+          "id": "c6.t1",
+          "share": 0.02,
+          "summary": "Áp dụng bất đẳng thức Cô-si để tìm giá trị nhỏ nhất của biểu thức có điều kiện ràng buộc.",
+          "title": "Bất đẳng thức Cô-si"
+        }
+      ]
+    }
+  ],
+  "folderId": "real",
+  "goal": "ôn giữa kỳ 1",
+  "grade": "9",
+  "schoolProgress": {
+    "confidence": 0.5,
+    "coveredTopicIds": [
+      "c1.t1",
+      "c1.t2",
+      "c1.t3",
+      "c1.t4",
+      "c1.t5",
+      "c1.t6",
+      "c2.t1",
+      "c2.t2",
+      "c2.t3",
+      "c3.t1",
+      "c4.t1",
+      "c4.t2",
+      "c5.t1",
+      "c5.t2",
+      "c6.t1"
+    ],
+    "currentTopicId": "c6.t1",
+    "note": "Đề giữa kỳ I ngày 03/11/2026 bao gồm nội dung từ căn bậc hai đến hệ thức lượng và bất đẳng thức nên có thể suy ra đã học xong các chủ đề này, nhưng phiếu tuần 8 về căn bậc hai cho thấy tiến độ chưa rõ ràng nên mức độ chắc chắn còn hạn chế."
+  },
+  "sources": [
+    {
+      "date": "Năm học 2026 – 2027",
+      "fileId": "de1_p1_jpg",
+      "fileIds": [
+        "de1_p1_jpg",
+        "de1_p2_jpg",
+        "de1_p3_jpg"
+      ],
+      "kind": "exam",
+      "name": "de1_p1.jpg",
+      "pages": 3,
+      "questions": 20,
+      "school": "Trường THCS Nguyễn Du, Phòng GD&ĐT Quận Cầu Giấy",
+      "title": "ĐỀ ÔN TẬP KIỂM TRA GIỮA HỌC KÌ I - MÔN TOÁN 9 - ĐỀ SỐ 1"
+    },
+    {
+      "date": null,
+      "fileId": "phieu_jpg",
+      "fileIds": [
+        "phieu_jpg"
+      ],
+      "kind": "worksheet",
+      "name": "phieu.jpg",
+      "pages": 1,
+      "questions": 11,
+      "school": null,
+      "title": "PHIẾU BÀI TẬP TUẦN 8 – TOÁN 9 (Chủ đề: Căn bậc hai và biến đổi biểu thức chứa căn)"
+    },
+    {
+      "date": "03/11/2026",
+      "fileId": "de2_pdf",
+      "fileIds": [
+        "de2_pdf"
+      ],
+      "kind": "exam",
+      "name": "de2.pdf",
+      "pages": 2,
+      "questions": 20,
+      "school": "TRƯỜNG THCS NGUYỄN DU",
+      "title": "ĐỀ KIỂM TRA GIỮA HỌC KÌ I – ĐỀ SỐ 2"
+    }
+  ],
+  "stats": {
+    "byKind": {
+      "essay": 27,
+      "mcq": 24
+    },
+    "byLevel": {
+      "nb": 7,
+      "th": 34,
+      "vd": 8,
+      "vdc": 2
+    },
+    "questions": 51
+  },
+  "structures": [
+    {
+      "basedOn": [
+        "de1_p1_jpg",
+        "de2_pdf"
+      ],
+      "durationMin": 90,
+      "id": "s1",
+      "matrix": [
+        {
+          "count": 1,
+          "formId": "c1.t1.f1",
+          "level": "nb",
+          "points": 0.25,
+          "section": "A",
+          "topicId": "c1.t1"
+        },
+        {
+          "count": 1,
+          "formId": "c1.t2.f1",
+          "level": "th",
+          "points": 0.25,
+          "section": "A",
+          "topicId": "c1.t2"
+        },
+        {
+          "count": 1,
+          "formId": "c1.t3.f1",
+          "level": "th",
+          "points": 0.25,
+          "section": "A",
+          "topicId": "c1.t3"
+        },
+        {
+          "count": 1,
+          "formId": "c1.t3.f2",
+          "level": "th",
+          "points": 0.25,
+          "section": "A",
+          "topicId": "c1.t3"
+        },
+        {
+          "count": 1,
+          "formId": "c1.t5.f2",
+          "level": "th",
+          "points": 0.25,
+          "section": "A",
+          "topicId": "c1.t5"
+        },
+        {
+          "count": 1,
+          "formId": "c1.t5.f3",
+          "level": "th",
+          "points": 0.25,
+          "section": "A",
+          "topicId": "c1.t5"
+        },
+        {
+          "count": 1,
+          "formId": "c2.t1.f1",
+          "level": "nb",
+          "points": 0.25,
+          "section": "A",
+          "topicId": "c2.t1"
+        },
+        {
+          "count": 1,
+          "formId": "c2.t2.f1",
+          "level": "th",
+          "points": 0.25,
+          "section": "A",
+          "topicId": "c2.t2"
+        },
+        {
+          "count": 1,
+          "formId": "c3.t1.f1",
+          "level": "nb",
+          "points": 0.25,
+          "section": "A",
+          "topicId": "c3.t1"
+        },
+        {
+          "count": 1,
+          "formId": "c4.t1.f1",
+          "level": "th",
+          "points": 0.25,
+          "section": "A",
+          "topicId": "c4.t1"
+        },
+        {
+          "count": 1,
+          "formId": "c5.t1.f1",
+          "level": "nb",
+          "points": 0.25,
+          "section": "A",
+          "topicId": "c5.t1"
+        },
+        {
+          "count": 1,
+          "formId": "c5.t1.f3",
+          "level": "th",
+          "points": 0.25,
+          "section": "A",
+          "topicId": "c5.t1"
+        },
+        {
+          "count": 1,
+          "formId": "c1.t5.f2",
+          "level": "th",
+          "points": 0.5,
+          "section": "B",
+          "topicId": "c1.t5"
+        },
+        {
+          "count": 1,
+          "formId": "c1.t6.f1",
+          "level": "vd",
+          "points": 1.0,
+          "section": "B",
+          "topicId": "c1.t6"
+        },
+        {
+          "count": 1,
+          "formId": "c1.t6.f4",
+          "level": "vdc",
+          "points": 0.5,
+          "section": "B",
+          "topicId": "c1.t6"
+        },
+        {
+          "count": 1,
+          "formId": "c2.t2.f2",
+          "level": "th",
+          "points": 1.0,
+          "section": "B",
+          "topicId": "c2.t2"
+        },
+        {
+          "count": 1,
+          "formId": "c2.t3.f2",
+          "level": "vd",
+          "points": 1.0,
+          "section": "B",
+          "topicId": "c2.t3"
+        },
+        {
+          "count": 1,
+          "formId": "c4.t2.f2",
+          "level": "vd",
+          "points": 1.0,
+          "section": "B",
+          "topicId": "c4.t2"
+        },
+        {
+          "count": 1,
+          "formId": "c5.t1.f2",
+          "level": "th",
+          "points": 1.0,
+          "section": "B",
+          "topicId": "c5.t1"
+        },
+        {
+          "count": 1,
+          "formId": "c5.t2.f1",
+          "level": "th",
+          "points": 1.0,
+          "section": "B",
+          "topicId": "c5.t2"
+        }
+      ],
+      "sections": [
+        {
+          "count": 12,
+          "id": "A",
+          "instructions": "Mỗi câu 0,25 điểm. Học sinh ghi chữ cái đứng trước đáp án đúng vào bài làm.",
+          "kind": "mcq",
+          "points": 3.0,
+          "pointsEach": 0.25,
+          "title": "Trắc nghiệm khách quan"
+        },
+        {
+          "count": 8,
+          "id": "B",
+          "instructions": "",
+          "kind": "essay",
+          "points": 7.0,
+          "pointsEach": 0.88,
+          "title": "Tự luận"
+        }
+      ],
+      "title": "Đề giữa kỳ I (trắc nghiệm + tự luận, 90 phút)",
+      "totalPoints": 10.0
+    }
+  ],
+  "subject": "toan",
+  "updatedAt": "2026-11-14T19:42:40Z",
+  "v": 1
+}

@@ -156,15 +156,19 @@ impl Folders {
     }
 
     /// The `folders` frame.
-    pub fn frame(&self, store: &Store) -> Value {
+    pub fn frame(&self, store: &Store, ingest: impl Fn(&str) -> Option<Value>) -> Value {
         let sessions = store.list_sessions();
         let items: Vec<Value> = self
             .list()
             .into_iter()
             .map(|f| {
                 let count = sessions.iter().filter(|s| s.folder_id.as_deref() == Some(&f.id)).count();
-                json!({"id": f.id, "name": f.name, "subject": f.subject, "sessionCount": count,
-                       "updatedAt": f.updated_at, "hasKnowledge": self.has_knowledge(&f.id)})
+                let mut v = json!({"id": f.id, "name": f.name, "subject": f.subject, "sessionCount": count,
+                       "updatedAt": f.updated_at, "hasKnowledge": self.has_knowledge(&f.id)});
+                if let Some(i) = ingest(&f.id) {
+                    v["ingest"] = json!({"jobId": i["jobId"], "state": i["state"], "done": i["done"], "total": i["total"]});
+                }
+                v
             })
             .collect();
         json!({"t": "folders", "items": items})
@@ -276,7 +280,7 @@ mod tests {
         store.update_sessions(|v| v.iter_mut().for_each(|m| if m.session_id == "s2" { m.folder_id = None }));
         f.sort_old_sessions(&store);
         assert_eq!(get("s2").folder_id, None);
-        assert_eq!(f.frame(&store)["items"].as_array().unwrap().iter().find(|x| x["subject"] == "toan").unwrap()["sessionCount"], 1);
+        assert_eq!(f.frame(&store, |_| None)["items"].as_array().unwrap().iter().find(|x| x["subject"] == "toan").unwrap()["sessionCount"], 1);
 
         let n = f.create("  Ôn giữa kỳ  ", "Toán").unwrap();
         assert_eq!((n.name.as_str(), n.subject.as_str()), ("Ôn giữa kỳ", "toan"));

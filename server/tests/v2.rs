@@ -518,7 +518,7 @@ async fn without_a_utility_model_titles_stay_and_nothing_is_compacted() {
 // ------------------------------------------------------------------ usage, greeting, reserved
 
 #[tokio::test]
-async fn usage_greeting_and_reserved_messages() {
+async fn usage_greeting_and_exam_without_key() {
     let calls = Arc::new(AtomicUsize::new(0));
     let e = env_util(fake_util(calls.clone())).await;
     let mut p = Phone::connect(e.addr).await;
@@ -543,11 +543,9 @@ async fn usage_greeting_and_reserved_messages() {
     let u = p.until(|x| x["t"] == "usage").await.pop().unwrap();
     assert!(u["other"]["today"]["costUsd"].as_f64().unwrap() > 0.0, "{u}");
 
-    for t in ["ingest_start", "ingest_cancel", "get_knowledge", "gen_exam", "list_exams", "delete_exam"] {
-        p.send(json!({"t": t, "folderId": "x"})).await;
-        let n = p.until(|x| x["t"] == "notice").await.pop().unwrap();
-        assert_eq!(n["code"], "not_ready", "{t}");
-    }
+    // without an OpenRouter key the study engine answers with errors, never silence
+    p.send(json!({"t":"gen_exam","folderId":"x","structureId":"s1"})).await;
+    assert_eq!(p.until(|x| x["t"] == "exams").await.iter().find(|x| x["t"] == "exam").unwrap()["state"], "error");
 
     let e2 = env_util(Arc::new(NoUtil)).await;
     let mut q = Phone::connect(e2.addr).await;

@@ -124,7 +124,7 @@ không nghe.
   từ `knowledge.json` (chỉ đọc), tên phiên tự đặt, compact (phiên Claude mới `claudeId`, đính tóm tắt vào lượt kế),
   `/upload` + `/file` (pairToken), danh mục model (`models.json` / dựng sẵn / `models.example.json`), effort theo model,
   `usage.jsonl` + `get_usage` + tự phát `usage`, `get_review`, `get_weekly`, `kickoff:"review_quiz"`, lời chào (cache 3 giờ
-  và theo buổi, danh sách dự phòng). Tin nhắn module đề trả `notice{not_ready}`.
+  và theo buổi, danh sách dự phòng). Module đề: xem đoạn dưới.
 - Model tiện ích (`src/util_llm.rs`): DeepSeek `deepseek-flash` qua `https://api.deepseek.com/chat/completions` với
   `thinking:{type:"disabled"}` (đo: khoảng 1 s cho một câu; bật thinking thì 2 s và tốn token suy nghĩ), dự phòng OpenRouter
   `deepseek/deepseek-v4.1-flash` với `reasoning.enabled=false` (gọi thật 1 lần, 1,7 s). `/models` của DeepSeek hôm nay chỉ có
@@ -145,6 +145,17 @@ không nghe.
 - Chưa kiểm chứng: `--effort` với DeepSeek/OpenRouter (danh mục để `efforts:[]`); compact và tóm tắt tuần với model thật
   (chỉ test giả); PDF thật gửi cho Claude; ảnh qua `deepseek` trong Claude Code (mới gọi thẳng API); chạy trên Ubuntu.
   Ở lượt có tool, haiku nói "Để tớ nạp kiến thức môn Toán đã" dù prompt cấm nhắc việc nạp skill.
+
+**Module đề nối vào server (15/11/2026)**: nhánh `worktree-agent-ae4e3848a4203543d` (module `src/study/`) đã merge. Đã nối
+`ingest_start` (fileId -> tệp đã tải, job chạy nền, sự kiện gửi mọi điện thoại, xong thì `knowledge` + `folders`), `ingest_cancel`,
+`get_knowledge`, `gen_exam` (sự kiện `exam` rồi `exams`), `list_exams`, `delete_exam`, `GET /exam/<id>`, xóa folder thì xóa dữ
+liệu đề, `folders.items[].ingest`, `usage.ingest`/`usage.exam`. Kiến thức dùng cho gia sư: tóm tắt `[memory]` (đang học / đã học /
+chưa học trên trường), từ khóa sửa STT, `review.topics`. Test giả `tests/v2_study.rs` (3 test, gồm job sống sót khi điện thoại
+rớt và hủy job). **Chạy thật** (`real_v2_exam_matrix`, tutor giả, OpenRouter thật, 4 ảnh từ `tests/fixtures/study`): nạp
+94,6 s (đọc 34 s, gộp 60 s), 31 câu, 17 chủ đề, 1 cấu trúc đề, 0,0176 USD; tạo đề 20 câu 53 s, 0,0083 USD; `GET /exam` trả
+HTML 21 KB; tóm tắt `[memory]` sinh ra đúng ba dòng trên trường. Tổng tiền OpenRouter cho đợt nối này khoảng 0,05 USD (gồm một
+lần chạy hỏng do test chờ quá ngắn). Chưa kiểm chứng: PDF qua WebSocket, nạp lần hai gộp vào kiến thức cũ qua WebSocket, mở
+trang đề trong app.
 
 **Đã xong và đã kiểm chứng**
 - Parser dòng bài giảng streaming (`src/parser.rs`): đủ quy tắc PROTOCOL mục 2, 19 test (mảnh cắt giữa dòng/JSON/UTF-8, CRLF, LaTeX có dấu gạch chéo ngược kép, `@show` trước `@step`, dòng `@` hỏng, bỏ sau `@ask`, cắt câu >220).

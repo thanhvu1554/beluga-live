@@ -111,6 +111,24 @@ pub struct Deps {
     pub usage: Arc<Usage>,
     pub uploads: Arc<Uploads>,
     pub folders: Arc<Folders>,
+    /// Exam matrix engine (ingest, knowledge, exams).
+    pub study: crate::study::StudyService,
+}
+
+impl Deps {
+    /// The `usage` frame; `ingest` (and `exam`) spend comes from the study engine's journal.
+    pub fn usage_frame(&self, session_id: Option<&str>) -> Value {
+        let mut u = self.usage.report(session_id);
+        let s = self.study.usage_summary();
+        u["ingest"] = s["ingest"].clone();
+        u["exam"] = s["exam"].clone();
+        u
+    }
+
+    /// The `folders` frame with each folder's last ingest status.
+    pub fn folders_frame(&self) -> Value {
+        self.folders.frame(&self.store, |id| self.study.ingest_status(id))
+    }
 }
 
 struct Running {
@@ -780,7 +798,7 @@ impl Session {
                     self.send(state_frame("idle", None));
                     let tracked = self.turn_model.as_ref().map(|(t, e)| *t == m.turn && e.tracked()).unwrap_or(false);
                     if tracked && self.conn_v >= 2 {
-                        self.send(self.deps.usage.report(Some(&self.id)));
+                        self.send(self.deps.usage_frame(Some(&self.id)));
                     }
                     self.maybe_auto_title(m.turn);
                 }

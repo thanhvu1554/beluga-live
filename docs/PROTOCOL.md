@@ -381,7 +381,21 @@ Khi trang vẽ xong toàn bộ công thức nó đặt `document.documentElement
 
 ## Ghi chú triển khai server (v2)
 
-- Thông báo mới: `notice{code}` = `no_vision` (model không đọc ảnh, tệp bị bỏ), `bad_file` (fileId lạ), `compacted`,
-  `not_ready` (tin nhắn của module đề `ingest_*`, `get_knowledge`, `*_exam` khi server chưa có module đó).
+- Thông báo mới: `notice{code}` = `no_vision` (model không đọc ảnh, tệp bị bỏ), `bad_file` (fileId lạ), `compacted`.
+- Usage có thêm `usage.exam{today,total}{costUsd}` (tiền tạo đề), tách khỏi `usage.ingest`.
 - `GET /health` trả `v:2`. `GET /file/<id>` nhận token qua `?token=` hoặc header `Authorization: Bearer`.
 - Tóm tắt `[memory]` của phiên trong folder ghi chủ đề giáo trình dạng `tên [id]` để gia sư truyền `topicId`.
+
+### Module đề (mục 11, 13): chi tiết đã chốt khi làm
+
+- `knowledge.json` thêm (không phá gì): `sources[].fileIds` (mọi tệp của một tài liệu, `fileId` là tệp đầu),
+  `structures[].sections[].points` (tổng điểm phần đó), `forms[].example.answer` (đáp án của câu ví dụ, tùy chọn),
+  `schoolProgress.currentTopicId` có thể là `null`.
+- `ingest`: `total` là số **trang** (ảnh = 1 trang, PDF theo số trang), bằng 0 khi còn `queued`; `done` là số trang đã đọc.
+  `ingest_start` sai (folder lạ, fileId lạ, không có tệp, folder đang nạp, thiếu key) trả ngay một `ingest{state:"error", note}`.
+- Job chạy tiếp khi điện thoại mất kết nối; sự kiện `ingest` và `exam` gửi tới mọi điện thoại đang nối. Nối lại thì đọc trạng
+  thái hiện tại qua `folders.items[].ingest` hoặc `get_knowledge` (`knowledge.ingest` là sự kiện `ingest` gần nhất).
+  Xong job (done, error, cancelled) server phát `knowledge` rồi `folders`. `ingest_cancel` khi không có job: trả `knowledge`.
+- `exam`: có thể lặp `writing -> checking` một lần (sửa đề khi kiểm tra thấy sai cấu trúc) trước `done`/`error`. Sau đó server
+  phát `exams` của folder. `delete_exam` trả `exams` mới, đề lạ thì `error{code:"no_exam"}`.
+- `GET /exam/<examId>?token=<pairToken>` (hoặc header `Authorization: Bearer`) → `text/html`; sai token 401, đề lạ 404.

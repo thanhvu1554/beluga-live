@@ -37,6 +37,8 @@ pub struct AppState {
     /// The phone connection attached most recently: (connection id, session id).
     active: Mutex<Vec<(u64, String)>>,
     greeting: GreetingCache,
+    /// Every open phone connection (for job events that outlive the request: ingest, exams).
+    phones: Mutex<Vec<(u64, tokio::sync::mpsc::WeakUnboundedSender<Value>)>>,
 }
 
 impl AppState {
@@ -47,7 +49,60 @@ impl AppState {
             next_conn: AtomicU64::new(1),
             active: Mutex::new(Vec::new()),
             greeting: GreetingCache::default(),
+            phones: Mutex::new(Vec::new()),
         })
+    }
+
+    /// Send a frame to every connected phone (jobs keep running when a phone goes away).
+    pub fn broadcast(&self, v: &Value) {
+        let mut p = self.phones.lock().unwrap();
+        p.retain(|(_, w)| w.upgrade().map(|t| t.send(v.clone()).is_ok()).unwrap_or(false));
+    }
+
+    fn knowledge_frame(&self, folder_id: &str) -> Value {
+        let mut k = json!({"t": "knowledge", "folderId": folder_id, "data": self.deps.study.knowledge(folder_id)});
+        if let Some(i) = self.deps.study.ingest_status(folder_id) {
+            k["ingest"] = i;
+        }
+        k
+    }
+
+    fn exams_frame(&self, folder_id: &str) -> Value {
+        json!({"t": "exams", "folderId": folder_id, "items": self.deps.study.list_exams(folder_id)})
+    }
+
+    /// `ingest_start`: run the job in the background; its events go to every phone, and when it
+    /// is done the new `knowledge` and `folders` follow.
+    fn start_ingest(self: &Arc<Self>, v: &Value) -> Result<(), Value> {
+        let folder_id = v["folderId"].as_str().unwrap_or("").to_string();
+        let err = |note: &str| json!({"t": "ingest", "folderId": folder_id, "jobId": null, "state": "error", "done": 0, "total": 0, "note": note});
+        let Some(folder) = self.deps.folders.get(&folder_id) else { return Err(err("Không tìm thấy folder.")) };
+        let mut files = Vec::new();
+        for id in v["files"].as_array().into_iter().flatten().filter_map(|f| f.as_str()) {
+            let Some(m) = self.deps.uploads.meta(id) else { return Err(err(&format!("Không tìm thấy tệp {id}."))) };
+            let kind = if m.kind == "pdf" { crate::study::FileKind::Pdf } else { crate::study::FileKind::Image };
+            files.push(crate::study::IngestFile { file_id: m.file_id.clone(), path: self.deps.uploads.path(&m), kind, name: m.name.clone() });
+        }
+        let req = crate::study::IngestRequest {
+            folder_id: folder_id.clone(),
+            subject: folder.subject,
+            goal: v["goal"].as_str().map(String::from).filter(|g| !g.trim().is_empty()),
+            files,
+        };
+        let mut h = self.deps.study.start_ingest(req).map_err(|e| err(&e))?;
+        let st = self.clone();
+        tokio::spawn(async move {
+            while let Some(ev) = h.events.recv().await {
+                st.broadcast(&ev);
+            }
+            let r = h.task.await;
+            if matches!(r, Ok(Ok(_))) {
+                st.deps.folders.touch(&folder_id);
+            }
+            st.broadcast(&st.knowledge_frame(&folder_id));
+            st.broadcast(&st.deps.folders_frame());
+        });
+        Ok(())
     }
 
     /// Change a session's metadata: through its actor when it is running (so its next save does
@@ -141,6 +196,19 @@ pub async fn start_with(cfg: Config, listener: TcpListener, voice: Arc<Voice>) -
 }
 
 pub async fn start_with_util(cfg: Config, listener: TcpListener, voice: Arc<Voice>, util: Arc<dyn UtilLlm>) -> std::io::Result<()> {
+    start_full(cfg, listener, voice, util, None).await
+}
+
+/// The study engine from the config: OpenRouter when its key exists (never in `--mock` unless
+/// `BELUGA_UTIL_IN_MOCK`).
+pub fn study_from_config(cfg: &Config) -> crate::study::StudyService {
+    let map = if cfg.mock && !cfg.util_in_mock { Default::default() } else { cfg.secrets.clone() };
+    crate::study::StudyService::new(cfg.data_dir.clone(), crate::study::StudyConfig::from_map(&map))
+}
+
+/// Everything injectable (tests pass a fake utility model and a study engine with a fake LLM).
+pub async fn start_full(cfg: Config, listener: TcpListener, voice: Arc<Voice>, util: Arc<dyn UtilLlm>, study: Option<crate::study::StudyService>) -> std::io::Result<()> {
+    let study = study.unwrap_or_else(|| study_from_config(&cfg));
     let port = listener.local_addr()?.port();
     let store = Arc::new(Store::open(&cfg.data_dir, cfg.fixed_pair_code.as_deref())?);
     // Decide TTS availability once, before any phone connects.
@@ -164,12 +232,14 @@ pub async fn start_with_util(cfg: Config, listener: TcpListener, voice: Arc<Voic
         catalog,
         util,
         folders,
+        study,
     };
     let state = AppState::new(deps);
     let app = Router::new()
         .route("/health", get(health))
         .route("/upload", post(upload).layer(DefaultBodyLimit::max(MAX_UPLOAD_BYTES + 1024)))
         .route("/file/{id}", get(file_get))
+        .route("/exam/{id}", get(exam_get))
         .route("/ws", get(ws_upgrade))
         .route("/mcp", post(mcp_general_post).get(mcp_get).delete(mcp_delete))
         .route("/mcp/{sid}", post(mcp_post).get(mcp_get).delete(mcp_delete))
@@ -207,6 +277,17 @@ async fn upload(State(st): State<Arc<AppState>>, Query(q): Query<UploadQuery>, h
     match st.deps.uploads.save(q.name.as_deref().unwrap_or(""), mime, &body) {
         Ok(m) => Json(m.public()).into_response(),
         Err(e) => (StatusCode::BAD_REQUEST, Json(json!({"error": e}))).into_response(),
+    }
+}
+
+async fn exam_get(State(st): State<Arc<AppState>>, Path(id): Path<String>, Query(q): Query<UploadQuery>, headers: HeaderMap) -> Response {
+    let token = q.token.unwrap_or_else(|| bearer(&headers));
+    if !st.deps.store.check_token(&token) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    match st.deps.study.exam_html(&id) {
+        Some(html) => ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], html).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
     }
 }
 
@@ -283,8 +364,6 @@ struct AudioBuf {
     draft: bool,
 }
 
-/// Messages owned by the exam module (another part of the server, not built yet).
-const RESERVED: &[&str] = &["ingest_start", "ingest_cancel", "get_knowledge", "gen_exam", "list_exams", "delete_exam"];
 
 fn sessions_frame(st: &AppState, folder: Option<&str>) -> Value {
     let items: Vec<Value> = st
@@ -362,6 +441,7 @@ async fn handle_socket(st: Arc<AppState>, socket: WebSocket) {
     }
 
     let conn = st.next_conn.fetch_add(1, Ordering::Relaxed);
+    st.phones.lock().unwrap().push((conn, otx.downgrade()));
     let mut sid = match hello["sessionId"].as_str() {
         Some(s) if is_valid_session_id(s) => s.to_string(),
         _ => uuid::Uuid::new_v4().to_string(),
@@ -477,11 +557,11 @@ async fn handle_socket(st: Arc<AppState>, socket: WebSocket) {
                     "list_sessions" => {
                         reply(sessions_frame(&st, v["folderId"].as_str()));
                     }
-                    "list_folders" => reply(st.deps.folders.frame(&st.deps.store)),
+                    "list_folders" => reply(st.deps.folders_frame()),
                     "create_folder" => match st.deps.folders.create(v["name"].as_str().unwrap_or(""), v["subject"].as_str().unwrap_or("chung")) {
                         Ok(f) => {
                             reply(json!({"t": "folder_created", "id": f.id}));
-                            reply(st.deps.folders.frame(&st.deps.store));
+                            reply(st.deps.folders_frame());
                         }
                         Err(e) => reply(err_frame("bad_folder", &e, false)),
                     },
@@ -490,10 +570,11 @@ async fn handle_socket(st: Arc<AppState>, socket: WebSocket) {
                         if !st.deps.folders.rename(id, v["name"].as_str().unwrap_or("")) {
                             reply(err_frame("no_folder", "Không đổi được tên folder.", false));
                         }
-                        reply(st.deps.folders.frame(&st.deps.store));
+                        reply(st.deps.folders_frame());
                     }
                     "delete_folder" => {
                         let id = v["id"].as_str().unwrap_or("").to_string();
+                        let _ = st.deps.study.delete_folder_data(&id);
                         if st.deps.folders.delete(&id) {
                             let inside: Vec<String> = st.deps.store.list_sessions().into_iter().filter(|m| m.folder_id.as_deref() == Some(id.as_str())).map(|m| m.session_id).collect();
                             for sid2 in inside {
@@ -502,7 +583,7 @@ async fn handle_socket(st: Arc<AppState>, socket: WebSocket) {
                         } else {
                             reply(err_frame("no_folder", "Không tìm thấy folder.", false));
                         }
-                        reply(st.deps.folders.frame(&st.deps.store));
+                        reply(st.deps.folders_frame());
                     }
                     "move_session" => {
                         let target = v["folderId"].as_str().map(String::from);
@@ -552,7 +633,7 @@ async fn handle_socket(st: Arc<AppState>, socket: WebSocket) {
                         };
                         let _ = session.send(Cmd::Attach { conn, tx, last_seq: None, settings: None, pair_token: None, init });
                     }
-                    "get_usage" => reply(st.deps.usage.report(Some(&sid))),
+                    "get_usage" => reply(st.deps.usage_frame(Some(&sid))),
                     "get_review" => reply(crate::review::review_frame(&st.deps, v["folderId"].as_str().unwrap_or(""))),
                     "get_weekly" => {
                         let (st2, folder, r) = (st.clone(), v["folderId"].as_str().unwrap_or("").to_string(), reply.clone());
@@ -564,8 +645,39 @@ async fn handle_socket(st: Arc<AppState>, socket: WebSocket) {
                         let name = v["name"].as_str().map(String::from).filter(|n| !n.trim().is_empty());
                         tokio::spawn(async move { r(crate::greeting::greeting(&st2.deps, &st2.greeting, &local, name.as_deref()).await) });
                     }
-                    t if RESERVED.contains(&t) => {
-                        reply(json!({"t": "notice", "code": "not_ready", "text": "Tính năng này chưa có trên server."}));
+                    "ingest_start" => {
+                        if let Err(e) = st.start_ingest(&v) {
+                            reply(e);
+                        }
+                    }
+                    "ingest_cancel" => {
+                        let f = v["folderId"].as_str().unwrap_or("");
+                        if !st.deps.study.cancel(f) {
+                            reply(st.knowledge_frame(f));
+                        }
+                    }
+                    "get_knowledge" => reply(st.knowledge_frame(v["folderId"].as_str().unwrap_or(""))),
+                    "gen_exam" => {
+                        let folder = v["folderId"].as_str().unwrap_or("").to_string();
+                        let structure = v["structureId"].as_str().unwrap_or("").to_string();
+                        let note = v["note"].as_str().map(String::from).filter(|n| !n.trim().is_empty());
+                        let st2 = st.clone();
+                        tokio::spawn(async move {
+                            let b = st2.clone();
+                            let _ = st2.deps.study.gen_exam(&folder, &structure, note.as_deref(), move |e| b.broadcast(&e)).await;
+                            st2.broadcast(&st2.exams_frame(&folder));
+                        });
+                    }
+                    "list_exams" => reply(st.exams_frame(v["folderId"].as_str().unwrap_or(""))),
+                    "delete_exam" => {
+                        let id = v["examId"].as_str().unwrap_or("");
+                        let folder = st.deps.study.exam(id).and_then(|e| e["folderId"].as_str().map(String::from));
+                        if !st.deps.study.delete_exam(id) {
+                            reply(err_frame("no_exam", "Không tìm thấy đề đó.", false));
+                        }
+                        if let Some(f) = folder {
+                            reply(st.exams_frame(&f));
+                        }
                     }
                     "open_session" => {
                         let Some(id) = v["sessionId"].as_str().filter(|s| is_valid_session_id(s)) else { continue };
@@ -597,6 +709,7 @@ async fn handle_socket(st: Arc<AppState>, socket: WebSocket) {
     }
     let _ = session.send(Cmd::Detach { conn });
     st.clear_active(conn);
+    st.phones.lock().unwrap().retain(|(c, _)| *c != conn);
 }
 
 /// MCP routes are for local Claude Code only: never reachable over Tailscale or the LAN.

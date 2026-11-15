@@ -138,3 +138,81 @@ async fn real_v2_chat_across_providers() {
     println!("usage.jsonl:\n{}", std::fs::read_to_string(tmp.join("data").join("usage.jsonl")).unwrap_or_default());
     let _ = Duration::from_secs(0);
 }
+
+/// Exam matrix end to end over the WebSocket with the real OpenRouter models (mock tutor):
+/// upload photos, `ingest_start`, wait for `knowledge`, `gen_exam`, `GET /exam/<id>`.
+/// Run: `BELUGA_STUDY_MATERIAL=<dir with de1_p1.jpg de1_p2.jpg de1_p3.jpg phieu.jpg>` (from
+/// `tests/fixtures/study/render.py`) `cargo test --test real_v2 real_v2_exam_matrix -- --ignored --nocapture`.
+#[tokio::test]
+#[ignore]
+async fn real_v2_exam_matrix() {
+    let _ = tracing_subscriber::fmt().with_env_filter("beluga_server=info").try_init();
+    let material = std::path::PathBuf::from(std::env::var("BELUGA_STUDY_MATERIAL").expect("BELUGA_STUDY_MATERIAL"));
+    let tmp = std::env::temp_dir().join(format!("beluga-real-exam-{}", uuid::Uuid::new_v4()));
+    let mut cfg = Config::from_args(&["--mock".to_string()]);
+    cfg.util_in_mock = true;
+    cfg.data_dir = tmp.join("data");
+    cfg.tutor_dir = tmp.join("tutor");
+    cfg.fixed_pair_code = Some(CODE.into());
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        let _ = start_with(cfg, listener, Voice::none()).await;
+    });
+    let mut p = Phone::connect(addr).await;
+    let token = p.hello(json!({"v": 2})).await["pairToken"].as_str().unwrap().to_string();
+    p.send(json!({"t":"create_folder","name":"Toán 9 giữa kỳ","subject":"toan"})).await;
+    let fid = p.until(|x| x["t"] == "folder_created").await.pop().unwrap()["id"].as_str().unwrap().to_string();
+    let c = reqwest::Client::new();
+    let mut files = Vec::new();
+    for name in ["de1_p1.jpg", "de1_p2.jpg", "de1_p3.jpg", "phieu.jpg"] {
+        let up: Value = c
+            .post(format!("http://{addr}/upload?name={name}"))
+            .bearer_auth(&token)
+            .header("Content-Type", "image/jpeg")
+            .body(std::fs::read(material.join(name)).unwrap())
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        files.push(up["fileId"].clone());
+    }
+    let t0 = Instant::now();
+    p.send(json!({"t":"ingest_start","folderId": fid,"files": files,"goal":"ôn giữa kỳ 1"})).await;
+    let k = loop {
+        let f = p.next_within(600_000).await.expect("frame");
+        if f["t"] == "ingest" {
+            println!("{:>6} ms ingest {} {}/{} {}", t0.elapsed().as_millis(), f["state"], f["done"], f["total"], f["note"]);
+        }
+        if f["t"] == "knowledge" {
+            break f;
+        }
+    };
+    let data = &k["data"];
+    println!("knowledge: {} chapters, {} structures, progress {}", data["curriculum"].as_array().map(|a| a.len()).unwrap_or(0),
+        data["structures"].as_array().map(|a| a.len()).unwrap_or(0), data["schoolProgress"]);
+    let sid = data["structures"][0]["id"].as_str().expect("structure").to_string();
+    let t1 = Instant::now();
+    p.send(json!({"t":"gen_exam","folderId": fid,"structureId": sid})).await;
+    let list = loop {
+        let f = p.next_within(900_000).await.expect("frame");
+        if f["t"] == "exam" {
+            println!("{:>6} ms exam {} {}", t1.elapsed().as_millis(), f["state"], f["note"]);
+        }
+        if f["t"] == "exams" {
+            break f;
+        }
+    };
+    let exam_id = list["items"][0]["examId"].as_str().expect("exam").to_string();
+    let html = c.get(format!("http://{addr}/exam/{exam_id}?token={token}")).send().await.unwrap().text().await.unwrap();
+    std::fs::write(tmp.join("exam.html"), &html).unwrap();
+    println!("exam html {} bytes -> {}", html.len(), tmp.join("exam.html").display());
+    p.send(json!({"t":"get_usage"})).await;
+    let u = p.until(|x| x["t"] == "usage").await.pop().unwrap();
+    println!("ingest {} exam {} other {}", u["ingest"], u["exam"], u["other"]);
+    // the tutor's [memory] digest from this knowledge
+    let mem = beluga_server::memory::Memory::new(&tmp.join("tutor"));
+    println!("{}", mem.folder_summary(&fid, "toan", Some(data), beluga_server::memory::today()).unwrap_or_default());
+}
