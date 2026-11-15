@@ -481,7 +481,8 @@ final class LiveController {
                 showSettings = true
             } else { showNotice(text.isEmpty ? code : text) }
             if fatal { fatalStop = true; transport?.disconnect(); connected = false; pill.handle(.disconnected) }
-        case .folders, .folderCreated, .ingest, .knowledge, .review, .exam, .exams, .usage, .greeting, .voices:
+        case .folders, .folderCreated, .ingest, .knowledge, .review, .exam, .exams, .usage, .greeting, .voices,
+             .home, .sync, .backup:
             handleLibrary(m)
         case .unknown:
             break
@@ -868,12 +869,6 @@ final class LiveController {
 
     private func tick() {
         let now = Date()
-        if pill.shouldAnnounceThinking(now: now), mode == .live {
-            let line = strings("pill.thinkingAloud")
-            if captionsOn { caption = line }
-            setStageCaption(line)
-            if !isMock { audio?.say(line, lang: settings.lang) }
-        }
         if timeline.hasGap {
             if gapSince == nil { gapSince = now }
             if let g = gapSince, now.timeIntervalSince(g) > 1.2 { gapSince = nil; process(timeline.skipGap()) }

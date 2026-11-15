@@ -101,11 +101,13 @@ final class MockTransport: Transport {
             open(id)
         case .listFolders:
             deliver(foldersFrame)
-        case let .createFolder(name, subject):
+        case let .createFolder(name, about, subject, clientId):
             let id = "f-new-\(folders.count)"
-            folders.insert(["id": .string(id), "name": .string(name), "subject": .string(subject), "sessionCount": 0,
+            let kind = subject ?? "chung"
+            folders.insert(["id": .string(id), "name": .string(name), "subject": .string(kind), "kind": .string(kind),
+                            "about": .string(about ?? ""), "sessionCount": 0,
                             "updatedAt": "2026-11-15T02:00:00Z", "hasKnowledge": false], at: 0)
-            deliver(["t": "folder_created", "id": .string(id)])
+            deliver(["t": "folder_created", "id": .string(id), "clientId": clientId.map(JSONValue.string) ?? .null])
             deliver(foldersFrame)
         case let .renameFolder(id, name):
             folders = folders.map { $0["id"]?.string == id ? Self.set($0, "name", .string(name)) : $0 }

@@ -403,7 +403,7 @@ extension LiveController {
         case .folders(let items):
             library.folders = items
             for f in items { if let i = f.ingest { library.ingest[f.id] = i } }
-        case .folderCreated(let id):
+        case .folderCreated(let id, _):
             if openCreatedFolder, !id.isEmpty { openCreatedFolder = false; openFolder(id) }
         case .ingest(let s):
             library.ingest[s.folderId] = s
