@@ -26,7 +26,7 @@ use super::ingest::{
 use super::llm::{Llm, LlmRequest, Part};
 
 /// Bump when the page prompt or schema changes: old cache entries are then ignored.
-pub const PROMPT_VERSION: &str = "page-v1";
+pub const PROMPT_VERSION: &str = "page-v2";
 
 pub fn sha256_hex(b: &[u8]) -> String {
     Sha256::digest(b).iter().map(|x| format!("{x:02x}")).collect()
@@ -99,8 +99,8 @@ pub const PAGE_SYSTEM: &str = r#"You transcribe ONE page (a photo or a PDF page)
 doc: the header if this page shows one (title as printed; school; date; grade like "9"; time limit in minutes; total points), else "" and 0. kind: exam (test paper), review (đề cương / ôn tập), worksheet (exercise sheet). fullExam: a complete test paper (header with a time limit or point scheme). continues: the page has no header and continues a document begun on an earlier page.
 empty: true only if the page has no questions at all (cover, answer sheet, blank).
 sections: the parts printed on this page, in order (label as printed: "I", "PHẦN II", "A"; kind mcq|truefalse|short|essay; note: short instructions or "").
-questions: every gradable item on the page, in reading order (two columns: the whole left column, then the right one). Split essay problems into their printed sub-items (1a, 1b); one multiple-choice question is one item; a true/false cluster (statements a-d) is one item.
-- sec: label of its section, "" if none. n: printed number ("3", "2b"). kind: mcq|truefalse|short|essay. pts: printed points, else 0.
+questions: every gradable item on the page, in reading order (two columns: the whole left column, then the right one). Split a problem with sub-items into one item per sub-item ("1a", "1b", also when they share one line "a) …; b) …") and put the shared stem at the start of the first sub-item, never as an item of its own; one multiple-choice question is one item; a true/false cluster (statements a-d) is one item.
+- sec: label of its section, "" if none. n: printed number ("3", "2b"). kind: mcq (choices A-D) | truefalse (Đúng/Sai statements) | short (only in a part titled "trả lời ngắn") | essay (any other written problem, "Bài"). pts: printed points, else 0.
 - level: nb = recall; th = one-step application; vd = multi-step problem; vdc = hard, non-routine.
 - chapter, topic, form: Vietnamese textbook names (chương; bài or chủ đề; dạng bài = the specific task type).
 - text: the question copied exactly: Vietnamese with every diacritic, every formula in LaTeX between $...$ (\frac, \sqrt{}, chemistry in \ce{}). mcq: append " A. … B. … C. … D. …"; truefalse: append " a) … b) … c) … d) …". Describe a table or figure briefly in words. At most ~400 characters: shorten words, never formulas.
@@ -191,7 +191,35 @@ pub fn parse_page(v: &Value) -> Result<PageOut, String> {
         }
         out.questions.push(rec);
     }
+    fold_stems(&mut out.questions);
+    // A header with a time limit is a full test paper even when the model forgot to say so.
+    if out.doc.duration_min > 0 && !out.doc.title.is_empty() && out.doc.kind != "worksheet" {
+        out.doc.full_exam = true;
+    }
     Ok(out)
+}
+
+/// "Bài 1" (the shared stem) followed by "1a", "1b": the stem is not an item of its own; its text goes in
+/// front of the first sub-item.
+pub fn fold_stems(qs: &mut Vec<QRec>) {
+    let mut i = 0;
+    while i < qs.len() {
+        let n = qs[i].n.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect::<String>();
+        let is_number = !n.is_empty() && n.chars().all(|c| c.is_ascii_digit());
+        let next_is_sub = qs.get(i + 1).is_some_and(|x| {
+            let m: String = x.n.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect();
+            x.section == qs[i].section && m.len() > n.len() && m.starts_with(&n) && m[n.len()..].chars().all(|c| c.is_alphabetic())
+        });
+        if is_number && next_is_sub {
+            let stem = qs.remove(i);
+            if !stem.text.is_empty() && !qs[i].text.contains(stem.text.trim()) {
+                qs[i].text = format!("{} {}", stem.text.trim(), qs[i].text);
+            }
+            qs[i].has_figure |= stem.has_figure;
+            continue;
+        }
+        i += 1;
+    }
 }
 
 /// Leading number of a printed question number: "12" → 12, "2b" → 2, "Câu 3" → 3.

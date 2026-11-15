@@ -455,6 +455,10 @@ fn pct(a: usize, b: usize) -> f64 {
 
 #[tokio::main]
 async fn main() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| "beluga_server=warn".into()))
+        .with_writer(std::io::stderr)
+        .try_init();
     let here = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let fx = here.join("tests/fixtures/study");
     let gt: Value = serde_json::from_str(&std::fs::read_to_string(fx.join("ground_truth.json")).expect("ground_truth.json")).unwrap();

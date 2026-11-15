@@ -261,6 +261,9 @@ pub fn merge_prompt(subject: &str, goal: Option<&str>, tree: &Tree, open: &[Raw]
             r.id, r.chapter, r.topic, r.form, rq.len(), lc["nb"], lc["th"], lc["vd"], lc["vdc"], clip(sample, 110)
         ));
     }
+    if let (Some(a), Some(b)) = (open.first(), open.last()) {
+        p.push_str(&format!("\nPlace ALL {} RAW ids ({}…{}), each in exactly one form.\n", open.len(), a.id, b.id));
+    }
     p
 }
 
