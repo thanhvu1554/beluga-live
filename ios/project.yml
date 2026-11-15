@@ -48,3 +48,36 @@ targets:
         CODE_SIGN_STYLE: Manual
         DEVELOPMENT_TEAM: ""
         ENABLE_USER_SCRIPT_SANDBOXING: NO
+  BelugaLiveUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: BelugaLiveUITests
+    dependencies:
+      - target: BelugaLive
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.thanhvu.belugalive.uitests
+        TEST_TARGET_NAME: BelugaLive
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: ""
+        SWIFT_STRICT_CONCURRENCY: minimal
+schemes:
+  BelugaLive:
+    build:
+      targets:
+        BelugaLive: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+  BelugaLiveUITests:
+    build:
+      targets:
+        BelugaLive: all
+        BelugaLiveUITests: [test]
+    test:
+      config: Debug
+      targets:
+        - BelugaLiveUITests

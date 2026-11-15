@@ -109,3 +109,51 @@ jobs:
           name: demo-video
           path: video
           if-no-files-found: ignore
+
+  uitests:
+    name: UI crash hunt (simulator, software keyboard)
+    runs-on: xcode-27
+    timeout-minutes: 45
+    env:
+      DERIVED: ${{ github.workspace }}/build/DerivedData
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Boot simulator with the software keyboard
+        run: |
+          defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
+          bash ios/scripts/screenshots.sh --boot-only
+
+      - name: Generate project
+        working-directory: ios
+        run: |
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+          xcodegen generate
+
+      - name: Run the walk-through
+        working-directory: ios
+        run: |
+          UDID=$(xcrun simctl list devices booted -j | jq -r '[.devices[][] | select(.state=="Booted")][0].udid')
+          xcrun simctl bootstatus "$UDID" -b
+          rm -rf ~/Library/Logs/DiagnosticReports/BelugaLive* || true
+          set +e
+          xcodebuild test -project BelugaLive.xcodeproj -scheme BelugaLiveUITests             -destination "platform=iOS Simulator,id=$UDID" -derivedDataPath "$DERIVED"             -resultBundlePath "$GITHUB_WORKSPACE/hunt.xcresult" -parallel-testing-enabled NO             CODE_SIGNING_ALLOWED=NO > "$GITHUB_WORKSPACE/hunt.log" 2>&1
+          CODE=$?
+          set -e
+          grep -E "HUNT |error:|Test Case .*(passed|failed)|\*\* TEST" "$GITHUB_WORKSPACE/hunt.log" | tail -n 200
+          mkdir -p "$GITHUB_WORKSPACE/crashes"
+          cp ~/Library/Logs/DiagnosticReports/BelugaLive* "$GITHUB_WORKSPACE/crashes/" 2>/dev/null || true
+          ls -la "$GITHUB_WORKSPACE/crashes"
+          for f in "$GITHUB_WORKSPACE"/crashes/*; do [ -f "$f" ] && { echo "=== $f"; head -c 6000 "$f"; echo; }; done
+          exit $CODE
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: crash-hunt
+          path: |
+            crashes
+            hunt.log
+            hunt.xcresult
+          if-no-files-found: ignore
+

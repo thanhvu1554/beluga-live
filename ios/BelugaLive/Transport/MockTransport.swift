@@ -75,6 +75,7 @@ final class MockTransport: Transport {
             if let sid, !sid.isEmpty { sessionId = sid }
             folderId = fid
             deliver(ready())
+            if UserDefaults.standard.bool(forKey: "mockOffer"), mode == .chat { offerReview() }
         case .settings(let s):
             mode = s.mode
             if let v = s.voice { voice = v; deliver(MockData.voices(current: voice)) }
@@ -82,7 +83,9 @@ final class MockTransport: Transport {
             deliver(MockData.voices(current: voice))
         case let .userText(text, files, draft, _):
             if draft { deliver(["t": "heard", "text": .string(Self.tidy(text)), "raw": .string(text), "draft": true]); return }
-            if mode == .live { echoUser(text, files: files, via: "voice"); playNextTurn() } else { playChat(text, files: files) }
+            if mode == .live { echoUser(text, files: files, via: "voice"); playNextTurn() }
+            else if UserDefaults.standard.bool(forKey: "mockRateLimit") { rateLimited(text) }
+            else { playChat(text, files: files) }
         case .audioEnd:
             if mode == .live { playNextTurn() }
         case .photo:
@@ -220,6 +223,35 @@ final class MockTransport: Transport {
     private func playChat(_ text: String, files: [String]) {
         echoUser(text, files: files, via: "text")
         streamTurn(intro: nil, answer: MockData.chatAnswer, block: MockData.chatBlock, outro: MockData.chatAnswer2)
+    }
+
+    /// `-mockOffer 1`: what the real server pushes right after `ready` in a new chat session when a review is due.
+    private func offerReview() {
+        turn += 1
+        let t = JSONValue.number(Double(turn))
+        deliver(["t": "chat", "seq": .number(Double(nextSeq())), "turn": t,
+                 "md": "Lần trước cậu hay nhầm hằng số bù trong hàm từng khúc, ôn một câu không?"])
+        deliver(["t": "chat", "seq": .number(Double(nextSeq())), "turn": t, "md": "### Ôn lại"])
+        deliver(["t": "show", "seq": .number(Double(nextSeq())), "turn": t, "step": -1,
+                 "block": ["type": "review_offer", "id": "b3", "topic": "Hằng số bù trong hàm từng khúc", "subject": "Toán",
+                           "lastSeen": "2026-11-14", "note": "Lúng túng khi thấy số 2.200 trong nhánh giữa.",
+                           "fallback": "**Ôn lại** · Toán · Hằng số bù trong hàm từng khúc"]])
+        deliver(["t": "turn_end", "seq": .number(Double(nextSeq())), "turn": t])
+    }
+
+    /// `-mockRateLimit 1`: the plan's limit is reached, as the real server answers it (echo, error, empty turn).
+    private func rateLimited(_ text: String) {
+        echoUser(text, files: [], via: "text")
+        let t = turn
+        playTask?.cancel()
+        playTask = Task { [weak self] in
+            self?.deliver(["t": "state", "state": "thinking"])
+            try? await Task.sleep(for: .milliseconds(1600))
+            guard let self, !Task.isCancelled else { return }
+            self.deliver(["t": "error", "code": "rate_limited", "text": "Hết hạn mức gói Claude, thử lại sau.", "fatal": false])
+            self.deliver(["t": "turn_end", "seq": .number(Double(self.nextSeq())), "turn": .number(Double(t))])
+            self.deliver(["t": "state", "state": "idle"])
+        }
     }
 
     private func playQuiz() {
