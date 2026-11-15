@@ -24,7 +24,7 @@ pub struct ExamOptions {
 
 impl Default for ExamOptions {
     fn default() -> Self {
-        ExamOptions { model: "anthropic/claude-sonnet-5.5".into(), effort: Some("medium".into()), max_tokens: 32_000, retries: 1 }
+        ExamOptions { model: "anthropic/claude-haiku-5.5".into(), effort: Some("high".into()), max_tokens: 32_000, retries: 1 }
     }
 }
 
