@@ -11,6 +11,40 @@
 - [ ] **Chưa làm lần nào: app thật nói chuyện với server thật trên iPhone.** Đây là việc kế tiếp.
 - [x] Memory, ôn lại đầu phiên, tám module môn học: xong ở server, đã chạy thử với Claude thật (riêng module Toán; bảy module còn lại mới kiểm cú pháp). Trang tiến độ trong app: xem mục iOS.
 
+## VPS và đợt sửa crash (15/11/2026)
+
+**Server chạy trên VPS** (`cmvps`, Ubuntu 24.04, 1 CPU / 2 GB, chung máy với ClassMind và pptx worker)
+- Cài ở `/opt/beluga` (`server/`, `shared/`, `tutor/`), user `beluga` (Claude Code đã đăng nhập), unit `beluga.service`
+  (`BELUGA_ROOT=/opt/beluga`, `MemoryMax=1200M`, `CPUQuota=80%`, tự bật lại). Gói lấy từ artifact `beluga-server-linux`
+  của workflow Server; cập nhật = dừng unit, giải nén đè, chown, bật lại (`.env`, `data/`, `tutor/memory/` không nằm trong gói).
+- Chỉ vào được qua Tailscale: node `beluga-vps`, `100.108.74.11:8787` (ufw chỉ mở 8787 trên `tailscale0`). Secret
+  `BELUGA_DEFAULT_HOST` đã trỏ về địa chỉ này. Khóa Tailscale hết hạn 14/05/2027 nếu chủ nhà chưa tắt key expiry.
+- Đã chép từ PC: `pair.json`, `folders.json`, `tutor/memory/toan.md`. Không chép phiên cũ (phiên Claude Code nằm ở PC).
+- **Đã chạy thật trên VPS** (điện thoại giả bằng Node qua WebSocket): `deepseek` (DeepSeek Flash qua Claude Code) ở chat: init báo
+  8 skill + 4 tool, gọi `Skill toan`, chữ đầu 6,8 s, bảng xét dấu + `ask`, lượt sau nhớ ngữ cảnh, hai lượt 0,0009 USD; ở live:
+  `say` đầu 5,7 s, có `step`/`show`; ảnh qua `/upload` rồi gửi kèm: chép đúng đề `2x + 3 = 11` sau 3,4 s (vậy `vision:true` cho
+  `deepseek` đã kiểm chứng qua Claude Code). `haiku` bằng đăng nhập gói trên VPS: chạy, `usage.limit` thật. Lời mời ôn lấy đúng từ memory.
+- Chưa kiểm chứng: iPhone thật nối VPS; RAM khi pptx worker và gia sư cùng chạy Claude Code.
+
+**Giọng nói chọn được (PROTOCOL mục 16)**: `server/voices.json` (8 giọng GenVoice: Chi, Thắm, Kiều Linh, An Nhiên, Tony Hoàng,
+Phong, Hào, Sơn), clip nghe thử tạo sẵn ở `server/voices/<id>.mp3` (360 credit một lần), `get_voices`/`voices`, `settings.voice`
+(lưu `data/voice.json`), `GET /voice/<id>.mp3`, lệnh `beluga-server gen-voice-previews` tạo clip còn thiếu. Test giả xanh
+(98 đơn vị + 82 tích hợp); chạy thật trên cổng tạm: nhận `voices`, chọn Phong, tải clip. Chưa ai nghe clip bằng tai; chưa có
+lượt học thật đọc bằng giọng mới.
+
+**iOS: sửa crash (commit 26f6838, CI xanh run 43681078080)** — chỉ soát mã, không có log từ máy thật.
+- Chắc chắn gây văng: `AudioHub.start()` cài tap lần hai sau một lần `engine.start()` lỗi ("Tap() already exists");
+  `AVAudioPlayerNode.play()` khi engine đã dừng (đổi route, cuộc gọi, vào nền); mỗi lần rớt kết nối phát earcon cả ở chế độ chat
+  nên khởi động engine + mic rồi rơi vào hai lỗi trên; thiếu `NSPhotoLibraryAddUsageDescription` (Lưu ảnh trong share sheet).
+- Nghi ngờ, đã chặn: format mic 0 Hz, media-services reset, đổi route giữa lúc đọc chính tả, `capturePhoto` khi session bị ngắt,
+  id trùng từ server trong `List`/`ForEach`, `Int(Double)` với NaN, giải mã 30 ảnh cỡ gốc trên main thread ("Thêm đề").
+- `AudioHub` viết lại (graph dựng một lần mỗi engine, `ensureRunning()` trước mọi `play()`, engine chỉ có đầu ra khi chưa có quyền
+  mic, `suspend()` khi rời Live/hết đọc chính tả). Web view tự nạp lại khi tiến trình web bị kill.
+- Bộ ghi lỗi (`App/Diagnostics.swift`): nhật ký phiên, exception/signal có backtrace, stderr, MetricKit; Cài đặt → Chẩn đoán →
+  Báo lỗi (gửi, xóa, gửi nhật ký phiên này).
+- Màn Giọng nói (Cài đặt → Giọng gia sư): nghe thử từng giọng (cache ở máy), chọn giọng; cảnh mock `voices`.
+- Lưu ý khi làm tiếp: sau khi hết gián đoạn âm thanh, `interruption(ended)` gọi `ensureRunning()` cả khi đang ở chat (đã `suspend`).
+
 ## iOS (`ios/`, `shared/board/`)
 
 ### Bản v2 (giao thức v2, 15/11/2026)
