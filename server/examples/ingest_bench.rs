@@ -141,6 +141,15 @@ fn canon_braces(s: &str) -> String {
                 continue;
             }
         }
+        if rest.starts_with("\\vec") || rest.starts_with("\\hat") {
+            if !c.get(i + 4).is_some_and(|x| x.is_ascii_alphabetic()) {
+                if let Some((a, k)) = tex_arg(&c, i + 4) {
+                    out.push_str(&format!("{}{{{}}}", &rest[..4], canon_braces(&a)));
+                    i = k;
+                    continue;
+                }
+            }
+        }
         if (c[i] == '^' || c[i] == '_') && c.get(i + 1) == Some(&'{') {
             if let Some((a, k)) = tex_arg(&c, i + 1) {
                 let inner = canon_braces(&a);
@@ -217,6 +226,26 @@ pub fn norm_math(s: &str) -> String {
             _ => ch,
         })
         .collect();
+    // `√12` → `\sqrt{12}` (a digit run under a unicode root sign)
+    let sub = {
+        let cs: Vec<char> = sub.chars().collect();
+        let mut o = String::new();
+        let mut i = 0;
+        while i < cs.len() {
+            if cs[i] == '√' && cs.get(i + 1).is_some_and(|c| c.is_ascii_digit()) {
+                let mut j = i + 1;
+                while j < cs.len() && cs[j].is_ascii_digit() {
+                    j += 1;
+                }
+                o.push_str(&format!("\\sqrt{{{}}}", cs[i + 1..j].iter().collect::<String>()));
+                i = j;
+            } else {
+                o.push(cs[i]);
+                i += 1;
+            }
+        }
+        o
+    };
     let mut t = replace_all(
         sub,
         &[
@@ -229,6 +258,7 @@ pub fn norm_math(s: &str) -> String {
             ("\\left", ""), ("\\right", ""), ("\\displaystyle", ""), ("\\limits", ""), ("\\,", ""), ("\\;", ""), ("\\!", ""),
             ("\\quad", ""), ("\\ ", ""), ("~", ""), ("\\dfrac", "\\frac"), ("\\tfrac", "\\frac"), ("\\geqslant", "\\ge "),
             ("\\leqslant", "\\le "), ("\\geq", "\\ge "), ("\\leq", "\\le "), ("\\neq", "\\ne "), ("\\overrightarrow", "\\vec"),
+            ("\\widehat", "\\hat"),
             ("\\mathbb R", "\\mathbb{R}"), ("{,}", ","), ("^{\\circ}", "^\\circ"), ("\\longrightarrow", "->"),
             ("\\rightarrow", "->"), ("\\xrightarrow", "->"), ("\\rightleftharpoons", "<=>"), ("\\leftrightarrows", "<=>"),
             ("\\to", "->"), ("\\varnothing", "\\emptyset"),
@@ -428,6 +458,30 @@ async fn main() {
     let here = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let fx = here.join("tests/fixtures/study");
     let gt: Value = serde_json::from_str(&std::fs::read_to_string(fx.join("ground_truth.json")).expect("ground_truth.json")).unwrap();
+    let rescore = arg("--rescore", "");
+    if !rescore.is_empty() {
+        // Score saved runs again (after a scorer fix) without calling any model.
+        let mut dirs: Vec<PathBuf> = std::fs::read_dir(&rescore).unwrap().flatten().map(|e| e.path()).filter(|p| p.join("row.json").exists()).collect();
+        dirs.sort();
+        for d in dirs {
+            let rec: Value = serde_json::from_slice(&std::fs::read(d.join("data/folders/bench/ingest/records.json")).unwrap()).unwrap();
+            let have: HashSet<String> = rec["sources"].as_array().into_iter().flatten()
+                .flat_map(|s| s["fileIds"].as_array().cloned().unwrap_or_default()).filter_map(|f| f.as_str().map(String::from)).collect();
+            let docs: Vec<Value> = gt["docs"].as_array().unwrap().iter()
+                .filter(|d| d["files"].as_array().unwrap().iter().any(|f| have.contains(f.as_str().unwrap().trim_end_matches(".jpg")))).cloned().collect();
+            let sc = score(&json!({"docs": docs}), &rec);
+            let mut row: Value = serde_json::from_slice(&std::fs::read(d.join("row.json")).unwrap()).unwrap();
+            for (k, v) in [("matched", json!(sc.matched)), ("gt", json!(sc.gt)), ("extra", json!(sc.extra)), ("questions", json!(sc.found)),
+                ("kindPct", json!(pct(sc.kind_ok, sc.matched))), ("mathPct", json!(pct(sc.math_ok, sc.math_total))), ("mathOk", json!(sc.math_ok)),
+                ("mathTotal", json!(sc.math_total)), ("viOk", json!(sc.vi_ok)), ("viTotal", json!(sc.vi_total)), ("viDiacritics", json!(sc.vi_diacritics))] {
+                row[k] = v;
+            }
+            std::fs::write(d.join("score.txt"), sc.misses.join("\n")).unwrap();
+            std::fs::write(d.join("row.json"), serde_json::to_vec_pretty(&row).unwrap()).unwrap();
+            println!("{}", serde_json::to_string(&row).unwrap());
+        }
+        return;
+    }
     let env_path = PathBuf::from(arg("--env", "../../../../server/.env"));
     let keys = env_file(&env_path);
     let cfg_name = arg("--config", "default");
