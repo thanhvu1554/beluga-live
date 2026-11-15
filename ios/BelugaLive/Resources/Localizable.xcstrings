@@ -2,6 +2,13 @@
   "sourceLanguage": "vi",
   "version": "1.0",
   "strings": {
+    "folders.edit": { "extractionState": "manual", "localizations": { "vi": { "stringUnit": { "state": "translated", "value": "Sửa thư mục" } }, "en": { "stringUnit": { "state": "translated", "value": "Edit folder" } } } },
+    "folders.create": { "extractionState": "manual", "localizations": { "vi": { "stringUnit": { "state": "translated", "value": "Tạo" } }, "en": { "stringUnit": { "state": "translated", "value": "Create" } } } },
+    "folders.name": { "extractionState": "manual", "localizations": { "vi": { "stringUnit": { "state": "translated", "value": "Tên" } }, "en": { "stringUnit": { "state": "translated", "value": "Name" } } } },
+    "folders.name.example": { "extractionState": "manual", "localizations": { "vi": { "stringUnit": { "state": "translated", "value": "Ví dụ: Tiếng Anh trên lớp" } }, "en": { "stringUnit": { "state": "translated", "value": "e.g. English at school" } } } },
+    "folders.about": { "extractionState": "manual", "localizations": { "vi": { "stringUnit": { "state": "translated", "value": "Mô tả" } }, "en": { "stringUnit": { "state": "translated", "value": "About" } } } },
+    "folders.about.placeholder": { "extractionState": "manual", "localizations": { "vi": { "stringUnit": { "state": "translated", "value": "Không bắt buộc. Ví dụ: Anh 9 theo sách Global Success, cô hay cho ngữ pháp và viết lại câu" } }, "en": { "stringUnit": { "state": "translated", "value": "Optional. e.g. Year 9 English with the Global Success book, lots of grammar and sentence rewriting" } } } },
+    "folders.about.footer": { "extractionState": "manual", "localizations": { "vi": { "stringUnit": { "state": "translated", "value": "Beluga đọc tên và mô tả để dạy đúng phạm vi của thư mục này." } }, "en": { "stringUnit": { "state": "translated", "value": "Beluga reads the name and description to teach within this folder's scope." } } } },
     "call.start": { "extractionState": "manual", "localizations": { "vi": { "stringUnit": { "state": "translated", "value": "Gọi gia sư: học như một cuộc gọi, vẫn tiếp tục khi sang app khác" } }, "en": { "stringUnit": { "state": "translated", "value": "Call the tutor: a lesson like a call that keeps going in other apps" } } } },
     "call.home.title": { "extractionState": "manual", "localizations": { "vi": { "stringUnit": { "state": "translated", "value": "Gọi gia sư" } }, "en": { "stringUnit": { "state": "translated", "value": "Call the tutor" } } } },
     "call.home.detail": { "extractionState": "manual", "localizations": { "vi": { "stringUnit": { "state": "translated", "value": "Vẫn học khi mở app khác" } }, "en": { "stringUnit": { "state": "translated", "value": "Keeps going in other apps" } } } },

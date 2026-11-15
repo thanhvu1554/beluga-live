@@ -360,17 +360,59 @@ extension LiveController {
         transport?.send(.listSessions())
     }
 
-    func createFolder(name: String, subject: String) {
+    /// The server speaks protocol v3 (free-form folders, home, sync, backup). Unknown before the first `ready`.
+    var serverV3: Bool { (ready?.v ?? 0) >= 3 }
+
+    /// A folder with the owner's own name and an optional line about it (PROTOCOL section 17). It opens once the
+    /// server confirms it, after the sheet has finished going down (a push under a sheet still sliding away
+    /// reads as two movements at once).
+    func createFolder(name: String, about: String) {
         let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !n.isEmpty else { return }
+        let a = String(about.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Folder.aboutLimit))
+        let clientId = OpQueue.newClientId()
+        createdFolderClientId = clientId
+        openCreatedFolderAfter = Date().addingTimeInterval(0.45)
         openCreatedFolder = true
-        transport?.send(.createFolder(name: n, subject: subject))
+        if serverV3 || isMock {
+            transport?.send(.createFolder(name: n, about: a.isEmpty ? nil : a, clientId: clientId))
+        } else {
+            // A v2 server needs a subject; "chung" teaches in general and the name still says what it is.
+            transport?.send(.createFolder(name: n, subject: "chung"))
+        }
     }
 
-    func renameFolder(_ id: String, name: String) {
+    /// New name and/or about. A v2 server only knows names.
+    func updateFolder(_ id: String, name: String, about: String) {
         let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !n.isEmpty else { return }
-        transport?.send(.renameFolder(id: id, name: n))
+        guard !n.isEmpty, let old = library.folder(id) else { return }
+        let a = String(about.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Folder.aboutLimit))
+        let newName = n == old.name ? nil : n
+        let newAbout = a == old.about ? nil : a
+        guard newName != nil || newAbout != nil else { return }
+        // Shown at once; the server's `folders` confirms it.
+        if let i = library.folders.firstIndex(where: { $0.id == id }) {
+            if let newName { library.folders[i].name = newName }
+            if let newAbout { library.folders[i].about = newAbout }
+        }
+        if serverV3 || isMock {
+            transport?.send(.updateFolder(id: id, name: newName, about: newAbout))
+        } else if let newName {
+            transport?.send(.renameFolder(id: id, name: newName))
+        }
+    }
+
+    /// `folder_created`: open it when it is the one this phone just asked for.
+    func folderCreated(id: String, clientId: String?) {
+        guard openCreatedFolder, !id.isEmpty else { return }
+        if let clientId, let mine = createdFolderClientId, clientId != mine { return }
+        openCreatedFolder = false
+        createdFolderClientId = nil
+        let wait = max(0, openCreatedFolderAfter.timeIntervalSinceNow)
+        Task { [weak self] in
+            if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
+            self?.openFolder(id)
+        }
     }
 
     func deleteFolder(_ id: String) {
@@ -403,8 +445,8 @@ extension LiveController {
         case .folders(let items):
             library.folders = items
             for f in items { if let i = f.ingest { library.ingest[f.id] = i } }
-        case .folderCreated(let id, _):
-            if openCreatedFolder, !id.isEmpty { openCreatedFolder = false; openFolder(id) }
+        case let .folderCreated(id, clientId):
+            folderCreated(id: id, clientId: clientId)
         case .ingest(let s):
             library.ingest[s.folderId] = s
             if knowledgeFolder == s.folderId { knowledgePage.invoke("progress", s.json); renderedIngest = s.json }

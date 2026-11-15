@@ -194,6 +194,9 @@ final class LiveController {
     var knowledgeSections: [KnowledgeSection] = []
     /// Open the folder the server creates next (created from the drawer).
     @ObservationIgnored var openCreatedFolder = false
+    /// `clientId` of that folder (v3 echoes it in `folder_created`), and when the create sheet is down.
+    @ObservationIgnored var createdFolderClientId: String?
+    @ObservationIgnored var openCreatedFolderAfter = Date.distantPast
     /// Folder for the session the next `hello` starts (new chat while offline).
     @ObservationIgnored var pendingFolderId: String?
     /// Scene work still running (screenshot marker waits for it).

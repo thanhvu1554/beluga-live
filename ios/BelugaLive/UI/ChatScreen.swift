@@ -287,7 +287,7 @@ struct HomeGreeting: View {
                             .multilineTextAlignment(.center)
                     }
                     if let folder = controller.library.folder(controller.folderId) {
-                        Label { Text(verbatim: folder.name) } icon: { Image(systemName: Subject.symbol(folder.subject)) }
+                        Label { Text(verbatim: folder.name) } icon: { Image(systemName: Subject.symbol(folder.kind)) }
                             .font(TypeScale.caption.weight(.medium))
                             .foregroundStyle(Ink.secondary)
                             .padding(.horizontal, Space.m)

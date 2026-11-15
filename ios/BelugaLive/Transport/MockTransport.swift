@@ -103,7 +103,7 @@ final class MockTransport: Transport {
             deliver(foldersFrame)
         case let .createFolder(name, about, subject, clientId):
             let id = "f-new-\(folders.count)"
-            let kind = subject ?? "chung"
+            let kind = subject ?? Self.kind(name + " " + (about ?? ""))
             folders.insert(["id": .string(id), "name": .string(name), "subject": .string(kind), "kind": .string(kind),
                             "about": .string(about ?? ""), "sessionCount": 0,
                             "updatedAt": "2026-11-15T02:00:00Z", "hasKnowledge": false], at: 0)
@@ -111,6 +111,16 @@ final class MockTransport: Transport {
             deliver(foldersFrame)
         case let .renameFolder(id, name):
             folders = folders.map { $0["id"]?.string == id ? Self.set($0, "name", .string(name)) : $0 }
+            deliver(foldersFrame)
+        case let .updateFolder(id, name, about):
+            folders = folders.map { f in
+                guard f["id"]?.string == id else { return f }
+                var out = f
+                if let name { out = Self.set(out, "name", .string(name)) }
+                if let about { out = Self.set(out, "about", .string(about)) }
+                let kind = Self.kind((out["name"]?.string ?? "") + " " + (out["about"]?.string ?? ""))
+                return Self.set(Self.set(out, "kind", .string(kind)), "subject", .string(kind))
+            }
             deliver(foldersFrame)
         case .deleteFolder(let id):
             folders.removeAll { $0["id"]?.string == id }
@@ -179,7 +189,7 @@ final class MockTransport: Transport {
 
     private func ready() -> JSONValue {
         var o = script.ready.object ?? [:]
-        o["v"] = 2
+        o["v"] = 3
         o["sessionId"] = .string(sessionId)
         o["mode"] = .string(mode.rawValue)
         o["models"] = MockData.models
@@ -199,6 +209,16 @@ final class MockTransport: Transport {
     }
 
     private static func knowledge(for fid: String) -> JSONValue { set(MockData.knowledge, "folderId", .string(fid)) }
+
+    /// What the server's utility model does with a folder's name and about: a teaching kind (icon only).
+    static func kind(_ text: String) -> String {
+        let t = text.lowercased()
+        let table: [(String, [String])] = [("toan", ["toán", "đại", "hình học"]), ("ly", ["lý", "vật lí", "vật lý"]),
+                                           ("hoa", ["hóa", "hoá"]), ("van", ["văn"]), ("anh-ssat", ["ssat"]),
+                                           ("duc", ["đức"]), ("tin-cpp", ["tin", "c++", "lập trình"]),
+                                           ("ngoai-ngu", ["anh", "english", "nhật", "trung", "pháp", "hàn"])]
+        return table.first { _, words in words.contains { t.contains($0) } }?.0 ?? "chung"
+    }
 
     /// What the cheap STT-fix model would do to a dictated line.
     private static func tidy(_ text: String) -> String {

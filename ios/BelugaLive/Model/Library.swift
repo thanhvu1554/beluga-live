@@ -71,6 +71,7 @@ enum Subject {
         case "hoa": return "flask"
         case "van": return "text.book.closed"
         case "anh-ssat", "duc": return "character.book.closed"
+        case "ngoai-ngu": return "globe"
         case "tin-cpp": return "chevron.left.forwardslash.chevron.right"
         default: return "folder"
         }

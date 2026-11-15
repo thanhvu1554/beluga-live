@@ -13,9 +13,9 @@ enum MockData {
     """#)
 
     static let folders: [JSONValue] = parse(#"""
-    [{"id":"f-toan","name":"Toán 9 · Giữa kỳ 1","subject":"toan","sessionCount":4,"updatedAt":"2026-11-15T01:20:00Z","hasKnowledge":true},
-     {"id":"f-hoa","name":"Hóa 9","subject":"hoa","sessionCount":2,"updatedAt":"2026-11-13T19:42:00Z","hasKnowledge":false},
-     {"id":"f-anh","name":"Luyện SSAT","subject":"anh-ssat","sessionCount":1,"updatedAt":"2026-11-12T21:05:00Z","hasKnowledge":false}]
+    [{"id":"f-toan","name":"Toán 9 · Giữa kỳ 1","subject":"toan","kind":"toan","about":"Ôn giữa kỳ 1 theo đề của trường","sessionCount":4,"updatedAt":"2026-11-15T01:20:00Z","hasKnowledge":true},
+     {"id":"f-hoa","name":"Hóa 9","subject":"hoa","kind":"hoa","about":"","sessionCount":2,"updatedAt":"2026-11-13T19:42:00Z","hasKnowledge":false},
+     {"id":"f-anh","name":"Tiếng Anh trên lớp","subject":"anh-ssat","kind":"anh-ssat","about":"Anh 9 theo sách Global Success, cô hay cho ngữ pháp và viết lại câu","sessionCount":1,"updatedAt":"2026-11-12T21:05:00Z","hasKnowledge":false}]
     """#).array ?? []
 
     static let sessions: [JSONValue] = parse(#"""

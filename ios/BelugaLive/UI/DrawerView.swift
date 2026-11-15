@@ -1,8 +1,8 @@
 import SwiftUI
 import BelugaCore
 
-/// Side drawer (left), revealed under the sliding chat (`ChatShell`): new chat, progress, folders (name +
-/// subject) and loose sessions.
+/// Side drawer (left), revealed under the sliding chat (`ChatShell`): new chat, progress, folders (the owner's
+/// own names) and loose sessions.
 struct DrawerView: View {
     @Bindable var controller: LiveController
     @Environment(\.strings) private var s
@@ -65,8 +65,8 @@ struct DrawerView: View {
         }
         .tint(Ink.primary)
         .sheet(isPresented: $creating) {
-            NewFolderSheet { name, subject in controller.createFolder(name: name, subject: subject) }
-                .presentationDetents([.medium])
+            FolderEditorSheet(purpose: .create) { name, about in controller.createFolder(name: name, about: about) }
+                .presentationDetents([.medium, .large])
         }
         .alert(s("sessions.rename"), isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField(s("sessions.rename"), text: $draftName)
@@ -81,8 +81,10 @@ struct FolderRow: View {
     @Environment(\.strings) private var s
 
     var body: some View {
-        RowLabel(symbol: Subject.symbol(folder.subject), title: folder.name,
-                 subtitle: Subject.name(folder.subject, lang: s.lang) + " · " + s("folders.sessionCount", folder.sessionCount)) {
+        // The folder's own name and what the owner wrote about it; its teaching kind only picks the glyph.
+        RowLabel(symbol: Subject.symbol(folder.kind), title: folder.name,
+                 subtitle: ([s("folders.sessionCount", folder.sessionCount)] + (folder.about.isEmpty ? [] : [folder.about]))
+                    .joined(separator: " · ")) {
             if let i = folder.ingest, i.isActive {
                 ProgressView().controlSize(.small)
             }
@@ -129,42 +131,5 @@ struct SessionMenu: View {
             }
         } label: { Label(s("sessions.move"), systemImage: "folder") }
         Button(role: .destructive) { controller.deleteSession(item) } label: { Label(s("common.delete"), systemImage: "trash") }
-    }
-}
-
-/// Name + subject for a new folder.
-struct NewFolderSheet: View {
-    var initialName = ""
-    var initialSubject = "toan"
-    let done: (String, String) -> Void
-    @Environment(\.strings) private var s
-    @Environment(\.dismiss) private var dismiss
-    @State private var name = ""
-    @State private var subject = "toan"
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                TextField(s("folders.name.placeholder"), text: $name)
-                Picker(s("folders.subject"), selection: $subject) {
-                    ForEach(Folder.subjects, id: \.self) { id in
-                        Text(verbatim: Subject.name(id, lang: s.lang)).tag(id)
-                    }
-                }
-            }
-            .navigationTitle(s("folders.new"))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(s("common.cancel")) { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(s("common.save")) { done(name, subject); dismiss() }
-                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-            }
-        }
-        .tint(Ink.primary)
-        .onAppear { name = initialName; subject = initialSubject }
     }
 }

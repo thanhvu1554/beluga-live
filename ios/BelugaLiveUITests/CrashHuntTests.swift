@@ -130,6 +130,49 @@ final class CrashHuntTests: XCTestCase {
         alive("back from folder")
     }
 
+    /// PROTOCOL section 17: a folder with a free name and a line about it, created from the drawer, opened at
+    /// once, then its about edited from the folder's menu.
+    func testCreateAndEditFolder() {
+        launch([])
+        tap("Thư mục và phiên")
+        pause(1.5)
+        tap("Thư mục mới")
+        pause(1.2)
+        alive("new folder sheet")
+        let name = field("folder.name")
+        XCTAssertTrue(app.keyboards.count > 0, "keyboard should rise with the sheet")
+        name.typeText("Tiếng Nhật N5")
+        field("folder.about").tap()
+        pause(0.4)
+        app.typeText("Luyện kanji và nghe")
+        pause(0.6)
+        alive("new folder filled")
+        tap("Tạo")
+        pause(2.5)
+        alive("new folder opened")
+        XCTAssertTrue(app.navigationBars["Tiếng Nhật N5"].waitForExistence(timeout: 4), "the new folder opens by its own name")
+        XCTAssertTrue(exists("Luyện kanji và nghe"), "the about line shows in the folder")
+        tap("Thêm")
+        pause(1)
+        tap("Sửa thư mục")
+        pause(1.2)
+        let about = field("folder.about")
+        about.tap()
+        pause(0.3)
+        app.typeText(", mỗi tối 20 phút")
+        pause(0.5)
+        tap("Lưu")
+        pause(1.5)
+        alive("folder edited")
+        XCTAssertTrue(exists("Luyện kanji và nghe, mỗi tối 20 phút"), "edited about shows at once")
+        app.navigationBars.buttons.firstMatch.tap()
+        pause(1.5)
+        tap("Thư mục và phiên")
+        pause(1.5)
+        XCTAssertTrue(exists("Tiếng Nhật N5"), "the drawer lists the folder by its name")
+        alive("drawer with new folder")
+    }
+
     func testLiveAndCall() {
         launch(["-mockOffer", "1"])
         tapContaining("Chuyển sang Live")
@@ -210,6 +253,25 @@ final class CrashHuntTests: XCTestCase {
         tap("Gửi")
     }
 
+    /// A text field or text view by its accessibility identifier, focused.
+    @discardableResult
+    private func field(_ id: String) -> XCUIElement {
+        let el = app.descendants(matching: .any).matching(identifier: id).firstMatch
+        guard el.waitForExistence(timeout: 4) else {
+            print("HUNT MISSING field: \(id)")
+            XCTFail("field not found: \(id)")
+            return el
+        }
+        if !el.hasKeyboardFocusSafe { el.tap() }
+        pause(0.3)
+        return el
+    }
+
+    private func exists(_ text: String, timeout: TimeInterval = 4) -> Bool {
+        let predicate = NSPredicate(format: "label CONTAINS[c] %@ OR value CONTAINS[c] %@", text, text)
+        return app.descendants(matching: .any).matching(predicate).firstMatch.waitForExistence(timeout: timeout)
+    }
+
     private func tap(_ label: String) {
         let button = app.buttons[label].firstMatch
         if button.waitForExistence(timeout: 4) {
@@ -232,4 +294,8 @@ final class CrashHuntTests: XCTestCase {
             XCTFail("element not found: \(text)")
         }
     }
+}
+
+private extension XCUIElement {
+    var hasKeyboardFocusSafe: Bool { (value(forKey: "hasKeyboardFocus") as? Bool) ?? false }
 }

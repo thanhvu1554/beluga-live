@@ -7,9 +7,8 @@ struct FolderView: View {
     @Bindable var controller: LiveController
     let folderId: String
     @Environment(\.strings) private var s
-    @State private var renaming = false
+    @State private var editing = false
     @State private var confirmDelete = false
-    @State private var draftName = ""
     @State private var examNote = ""
 
     private var folder: Folder? { controller.library.folder(folderId) }
@@ -62,7 +61,7 @@ struct FolderView: View {
                 .disabled(controller.folderTab != .knowledge || controller.knowledgeSections.isEmpty)
                 .accessibilityLabel(s("knowledge.sections"))
                 Menu {
-                    Button { draftName = folder?.name ?? ""; renaming = true } label: { Label(s("folders.rename"), systemImage: "pencil") }
+                    Button { editing = true } label: { Label(s("folders.edit"), systemImage: "pencil") }
                     Button { controller.showIngest = folderId } label: { Label(s("ingest.add"), systemImage: "doc.badge.plus") }
                     Button(role: .destructive) { confirmDelete = true } label: { Label(s("folders.delete"), systemImage: "trash") }
                 } label: {
@@ -74,10 +73,11 @@ struct FolderView: View {
             }
         }
         .onAppear { controller.refreshFolder(folderId) }
-        .alert(s("folders.rename"), isPresented: $renaming) {
-            TextField(s("folders.name.placeholder"), text: $draftName)
-            Button(s("common.cancel"), role: .cancel) {}
-            Button(s("common.save")) { controller.renameFolder(folderId, name: draftName) }
+        .sheet(isPresented: $editing) {
+            FolderEditorSheet(purpose: .edit, initialName: folder?.name ?? "", initialAbout: folder?.about ?? "") { name, about in
+                controller.updateFolder(folderId, name: name, about: about)
+            }
+            .presentationDetents([.medium, .large])
         }
         .confirmationDialog(s("folders.delete.confirm"), isPresented: $confirmDelete, titleVisibility: .visible) {
             Button(s("folders.delete"), role: .destructive) { controller.deleteFolder(folderId) }
@@ -117,6 +117,11 @@ private struct FolderSessions: View {
             Section {
                 Button { controller.newChat(in: folderId) } label: {
                     RowLabel(symbol: "square.and.pencil", title: s("chat.new"), emphasized: true)
+                }
+            } footer: {
+                // What the owner wrote about the folder: the scope Beluga teaches in here.
+                if let about = controller.library.folder(folderId)?.about, !about.isEmpty {
+                    Text(verbatim: about)
                 }
             }
             Section {
