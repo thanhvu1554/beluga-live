@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Beluga web bundle: dev harness</title>
+<!-- Not linked from the app. Feeds mock events into board / chat / knowledge for manual and automated checks.
+     Query: ?page=board|chat|knowledge&theme=light|dark&lang=vi|en&run=<scenario> -->
+<style>
+  :root { color-scheme: light dark; font: 14px/1.4 -apple-system, system-ui, "Segoe UI", sans-serif; }
+  body { margin: 0; display: flex; gap: 20px; padding: 16px; background: #e9e7e3; color: #1a1917; flex-wrap: wrap; }
+  @media (prefers-color-scheme: dark) { body { background: #0e0d0c; color: #edebe7; } }
+  .phone { width: 390px; height: 844px; border-radius: 44px; overflow: hidden; border: 10px solid #111; background: #000; flex: none; }
+  .phone iframe { width: 390px; height: 844px; border: 0; display: block; }
+  .side { flex: 1; min-width: 300px; max-width: 560px; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  fieldset { border: 1px solid rgba(128,128,128,.35); border-radius: 10px; margin: 0 0 12px; padding: 10px 12px; }
+  legend { font-weight: 600; padding: 0 4px; }
+  button { font: inherit; padding: 6px 10px; margin: 0 6px 6px 0; border-radius: 8px; border: 1px solid rgba(128,128,128,.5); background: transparent; color: inherit; cursor: pointer; }
+  button.on { background: #1a1917; color: #fff; }
+  #log { font: 12px/1.45 ui-monospace, Consolas, monospace; white-space: pre-wrap; max-height: 300px; overflow: auto; background: rgba(128,128,128,.12); border-radius: 8px; padding: 8px; }
+  .hide { display: none; }
+</style>
+</head>
+<body>
+<div class="phone"><iframe id="f" title="page"></iframe></div>
+<div class="side">
+  <h1>Beluga web bundle · dev</h1>
+  <fieldset><legend>Trang</legend>
+    <button data-page="board">Bảng (live)</button><button data-page="chat">Chat</button><button data-page="knowledge">Kiến thức</button>
+  </fieldset>
+  <fieldset><legend>Giao diện</legend>
+    <button data-theme="light">Sáng</button><button data-theme="dark">Tối</button><button data-theme="auto">Theo hệ thống</button>
+    <button data-lang="vi">Tiếng Việt</button><button data-lang="en">English</button>
+  </fieldset>
+  <fieldset class="for-board"><legend>Bảng</legend>
+    <button data-run="lesson">Bài 6 bước (phát dần)</button><button data-run="lessonLoad">Lịch sử (load)</button>
+    <button data-run="newWhileBack">Bước mới khi đang xem lại</button>
+    <button data-run="prev">‹ prev</button><button data-run="next">next ›</button><button data-run="reset">reset</button>
+  </fieldset>
+  <fieldset class="for-chat"><legend>Chat</legend>
+    <button data-run="chatHistory">Lịch sử</button><button data-run="chatStream">Stream dài (math, bảng, code)</button>
+    <button data-run="chatThinking">Đang suy nghĩ</button><button data-run="reset">reset</button>
+  </fieldset>
+  <fieldset class="for-knowledge"><legend>Kiến thức</legend>
+    <button data-run="kSample">Mẫu đầy đủ</button><button data-run="kReview">Mẫu + review</button>
+    <button data-run="kIngest">Nạp đề (giả lập)</button><button data-run="kEmpty">Trống</button>
+  </fieldset>
+  <fieldset><legend>postMessage từ trang</legend><div id="log"></div></fieldset>
+</div>
+<script src="dev-data.js"></script>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var st = { page: q.get("page") || "board", theme: q.get("theme") || "auto", lang: q.get("lang") || "vi" };
+  var f = document.getElementById("f"), logEl = document.getElementById("log");
+  var pending = q.get("run");
+  var timers = [];
+  function W() { return f.contentWindow; }
+  function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
+  function clearTimers() { timers.forEach(clearTimeout); timers = []; }
+  function log(m) { logEl.textContent = JSON.stringify(m) + "\n" + logEl.textContent.slice(0, 6000); }
+  window.addEventListener("message", function (e) {
+    if (e.source !== W() || !e.data || !e.data.beluga) return;
+    log(e.data.beluga);
+    if (e.data.beluga.type === "ready") { applyLook(); if (pending) { run(pending); pending = null; } }
+  });
+  function applyLook() {
+    var w = W(), api = w[st.page === "board" ? "board" : st.page];
+    if (!api) return;
+    api.setTheme(st.theme === "auto" ? null : st.theme);
+    api.setLang(st.lang);
+    if (st.page === "chat") { api.setInsets(0, 90); api.setFileBase(new URL("dev-files", location.href).href, "dev"); }
+  }
+  function load() {
+    clearTimers();
+    f.src = (st.page === "board" ? "index" : st.page) + ".html";
+    document.querySelectorAll("fieldset[class^=for-]").forEach(function (fs) { fs.classList.toggle("hide", fs.className !== "for-" + st.page); });
+    paint();
+  }
+  function paint() {
+    document.querySelectorAll("[data-page]").forEach(function (b) { b.classList.toggle("on", b.dataset.page === st.page); });
+    document.querySelectorAll("[data-theme]").forEach(function (b) { b.classList.toggle("on", b.dataset.theme === st.theme); });
+    document.querySelectorAll("[data-lang]").forEach(function (b) { b.classList.toggle("on", b.dataset.lang === st.lang); });
+  }
+  // A real sample written by the server tests wins over the bundled mock.
+  function knowledgeSample() {
+    return fetch("../../server/tests/fixtures/knowledge.sample.json").then(function (r) { if (!r.ok) throw 0; return r.json(); })
+      .catch(function () { return fetch("dev-knowledge.json").then(function (r) { return r.json(); }); });
+  }
+  function mockReview(k) {
+    var states = ["solid", "solid", "learning", "weak", "learning", "solid", "weak", "learning"], i = 0, topics = [];
+    (k.curriculum || []).forEach(function (c) { (c.topics || []).forEach(function (t) { topics.push({ topicId: t.id, title: t.title, chapter: c.title, state: states[i++] || "new", wrong: 1, right: 2 }); }); });
+    return { t: "review", folderId: k.folderId, topics: topics };
+  }
+  function run(name) {
+    var w = W();
+    clearTimers();
+    switch (name) {
+      case "reset": (w.board || w.chat).reset(); break;
+      case "prev": w.board.prev(); break;
+      case "next": w.board.next(); break;
+      case "lesson":
+        w.board.reset();
+        DevData.lesson.forEach(function (e, i) { later(function () { w.board.apply(e); }, 300 + i * 450); });
+        break;
+      case "lessonLoad": w.board.load(DevData.lesson); break;
+      case "newWhileBack":
+        w.board.load(DevData.lesson); w.board.goto(1);
+        later(function () { w.board.apply({ t: "step", index: 6, title: "Bài tập thêm" }); w.board.apply({ t: "show", step: 6, block: { type: "math", tex: "x^2-7x+10<0" } }); }, 900);
+        break;
+      case "chatHistory": w.chat.load(DevData.chatHistory); break;
+      case "chatStream": {
+        var evs = DevData.streamTurn(4), t = 200;
+        w.chat.load(DevData.chatHistory);
+        evs.forEach(function (e) { t += e.t === "chat_delta" ? 35 : e.t === "state" ? 900 : 120; later(function () { w.chat.apply(e); }, t); });
+        break;
+      }
+      case "chatThinking":
+        w.chat.apply({ t: "user", seq: 900, turn: 9, text: "Câu 3 làm sao vậy?", via: "voice" });
+        w.chat.apply({ t: "state", state: "thinking" });
+        later(function () { w.chat.apply({ t: "state", state: "tool", tool: "capture" }); }, 2500);
+        break;
+      case "kSample": knowledgeSample().then(function (k) { w.knowledge.progress(null); w.knowledge.render(k); }); break;
+      case "kReview": knowledgeSample().then(function (k) { w.knowledge.progress(null); w.knowledge.render(k, mockReview(k)); }); break;
+      case "kEmpty": w.knowledge.progress(null); w.knowledge.render(null); break;
+      case "kIngest": {
+        w.knowledge.render(null);
+        var steps = DevData.ingestSteps("dev-folder");
+        steps.forEach(function (e, i) { later(function () { w.knowledge.progress(e); }, 400 + i * 600); });
+        later(function () { knowledgeSample().then(function (k) { w.knowledge.render(k); }); }, 400 + steps.length * 600 + 800);
+        break;
+      }
+    }
+  }
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest("button");
+    if (!b) return;
+    if (b.dataset.page) { st.page = b.dataset.page; load(); }
+    else if (b.dataset.theme) { st.theme = b.dataset.theme; paint(); applyLook(); }
+    else if (b.dataset.lang) { st.lang = b.dataset.lang; paint(); applyLook(); }
+    else if (b.dataset.run) run(b.dataset.run);
+  });
+  window.dev = { run: run, state: st, frame: f };
+  load();
+})();
+</script>
+</body>
+</html>
