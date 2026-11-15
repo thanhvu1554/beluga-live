@@ -39,10 +39,7 @@ public struct PillMachine: Sendable {
 
     public private(set) var state: PillState = .offline
     public private(set) var enteredAt: Date
-    private var thinkingAnnounced = false
     private var askingBeforeSend = false
-
-    public static let thinkingAnnounceDelay: TimeInterval = 4
 
     public init(now: Date = Date()) { enteredAt = now }
 
@@ -94,15 +91,6 @@ public struct PillMachine: Sendable {
         guard next != state else { return false }
         state = next
         enteredAt = now
-        thinkingAnnounced = false
-        return true
-    }
-
-    /// True exactly once per thinking period, after 4 seconds of thinking.
-    public mutating func shouldAnnounceThinking(now: Date = Date()) -> Bool {
-        guard state == .thinking, !thinkingAnnounced,
-              now.timeIntervalSince(enteredAt) >= Self.thinkingAnnounceDelay else { return false }
-        thinkingAnnounced = true
         return true
     }
 }

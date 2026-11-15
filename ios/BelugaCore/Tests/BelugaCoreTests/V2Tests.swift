@@ -58,7 +58,7 @@ import Testing
         #expect(f.count == 2)
         #expect(f[0].subject == "toan" && f[0].sessionCount == 4 && f[0].hasKnowledge && f[0].ingest?.done == 3)
         #expect(f[1].subject == "chung" && f[1].ingest == nil && !f[1].hasKnowledge)
-        #expect(try decode(#"{"t":"folder_created","id":"f3"}"#) == .folderCreated(id: "f3"))
+        #expect(try decode(#"{"t":"folder_created","id":"f3"}"#) == .folderCreated(id: "f3", clientId: nil))
         guard case .sessions(let s) = try decode(#"""
         {"t":"sessions","items":[{"sessionId":"a","title":"T","updatedAt":1763000000,"folderId":"f1","mode":"chat","preview":"Giải pt"},
                                  {"sessionId":"b","title":"U","updatedAt":"x","folderId":null}]}
@@ -155,7 +155,7 @@ import Testing
     @Test func encodesV2ClientMessages() throws {
         let hello = try json(.hello(pairCode: nil, pairToken: "t", device: "iPhone", sessionId: nil, lastSeq: nil,
                                     settings: TutorSettings(model: "deepseek", effort: "high", mode: .live, sttFix: false), folderId: "f1"))
-        #expect(hello["v"]?.int == 2 && hello["folderId"]?.string == "f1" && hello["lastSeq"] == nil)
+        #expect(hello["v"]?.int == 3 && hello["folderId"]?.string == "f1" && hello["lastSeq"] == nil)
         #expect(hello["settings"]?["model"]?.string == "deepseek" && hello["settings"]?["effort"]?.string == "high")
         #expect(hello["settings"]?["mode"]?.string == "live" && hello["settings"]?["sttFix"]?.bool == false)
 
@@ -169,6 +169,7 @@ import Testing
         #expect(ClientMessage.listSessions(folderId: "f1").text == #"{"folderId":"f1","t":"list_sessions"}"#)
         #expect(ClientMessage.listFolders.text == #"{"t":"list_folders"}"#)
         #expect(ClientMessage.createFolder(name: "Toán 9", subject: "toan").text == #"{"name":"Toán 9","subject":"toan","t":"create_folder"}"#)
+        #expect(ClientMessage.createFolder(name: "Toán 9").text == #"{"name":"Toán 9","t":"create_folder"}"#)
         #expect(ClientMessage.renameFolder(id: "f1", name: "A").text == #"{"id":"f1","name":"A","t":"rename_folder"}"#)
         #expect(ClientMessage.deleteFolder(id: "f1").text == #"{"id":"f1","t":"delete_folder"}"#)
         #expect(ClientMessage.moveSession(sessionId: "s", folderId: nil).text == #"{"folderId":null,"sessionId":"s","t":"move_session"}"#)

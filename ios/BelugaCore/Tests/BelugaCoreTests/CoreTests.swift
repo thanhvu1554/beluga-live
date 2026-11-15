@@ -45,7 +45,7 @@ import Testing
                                         sessionId: nil, lastSeq: 4, settings: TutorSettings())
         let v = try JSONValue.parse(hello.text)
         #expect(v["t"]?.string == "hello")
-        #expect(v["v"]?.int == 2)
+        #expect(v["v"]?.int == 3)
         #expect(v["pairCode"]?.string == "123456")
         #expect(v["pairToken"] == nil)
         #expect(v["sessionId"]?.string == "")
@@ -99,17 +99,14 @@ import Testing
         #expect(p.state == .idle)
     }
 
-    @Test func thinkingAnnouncedOnceAfterFourSeconds() {
+    @Test func thinkingRecordsWhenItStarted() {
+        // The device voice no longer announces "thinking" (PROTOCOL section 21): the pill only keeps the moment
+        // thinking began, which the glow and the wait clips read.
         let t0 = Date(timeIntervalSince1970: 100)
         var p = PillMachine(now: t0)
         p.handle(.connected, now: t0)
-        p.handle(.userSent, now: t0)
-        let a1 = p.shouldAnnounceThinking(now: t0.addingTimeInterval(3.9))
-        #expect(!a1)
-        let a2 = p.shouldAnnounceThinking(now: t0.addingTimeInterval(4.1))
-        #expect(a2)
-        let a3 = p.shouldAnnounceThinking(now: t0.addingTimeInterval(9))
-        #expect(!a3)
+        p.handle(.userSent, now: t0.addingTimeInterval(2))
+        #expect(p.state == .thinking && p.enteredAt == t0.addingTimeInterval(2))
     }
 
     @Test func unchangedStateReportsFalse() {

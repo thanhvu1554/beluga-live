@@ -224,7 +224,8 @@ public enum ServerMessage: Sendable, Equatable {
     case error(code: String, text: String, fatal: Bool)
     // v2
     case folders([Folder])
-    case folderCreated(id: String)
+    /// `clientId` echoes the id the phone chose (v3); nil from older servers.
+    case folderCreated(id: String, clientId: String?)
     case ingest(IngestStatus)
     case knowledge(FolderKnowledge)
     case review(FolderReview)
@@ -233,6 +234,10 @@ public enum ServerMessage: Sendable, Equatable {
     case usage(Usage)
     case greeting(Greeting)
     case voices(VoiceCatalog)
+    // v3
+    case home(HomeFrame)
+    case sync(SyncHint)
+    case backup(BackupStatus)
     case unknown(type: String)
 
     public static func decode(_ data: Data) throws -> ServerMessage {
@@ -279,7 +284,7 @@ public enum ServerMessage: Sendable, Equatable {
         case "folders":
             return .folders((v["items"]?.array ?? []).compactMap(Folder.from).uniquedByID())
         case "folder_created":
-            return .folderCreated(id: v["id"]?.string ?? v["folderId"]?.string ?? "")
+            return .folderCreated(id: v["id"]?.string ?? v["folderId"]?.string ?? "", clientId: v["clientId"]?.nonEmptyString)
         case "ingest":
             return .ingest(IngestStatus.from(v))
         case "knowledge":
@@ -296,6 +301,12 @@ public enum ServerMessage: Sendable, Equatable {
             return .greeting(Greeting.from(v))
         case "voices":
             return .voices(VoiceCatalog.from(v))
+        case "home":
+            return .home(HomeFrame.from(v))
+        case "sync":
+            return .sync(SyncHint.from(v))
+        case "backup":
+            return .backup(BackupStatus.from(v))
         default:
             return .unknown(type: t)
         }
@@ -321,8 +332,12 @@ public enum ClientMessage: Sendable, Equatable {
     case getProgress
     // v2: folders and sessions (section 8)
     case listFolders
-    case createFolder(name: String, subject: String)
+    /// v3: free name, optional one-line `about`, `clientId` so a replay after an offline create never makes two.
+    /// `subject` is only for a v2 server (a v3 server picks the kind itself).
+    case createFolder(name: String, about: String? = nil, subject: String? = nil, clientId: String? = nil)
     case renameFolder(id: String, name: String)
+    /// v3: change name and/or about (nil = leave as is).
+    case updateFolder(id: String, name: String?, about: String?)
     case deleteFolder(id: String)
     case moveSession(sessionId: String, folderId: String?)
     case renameSession(sessionId: String, title: String)
@@ -338,8 +353,12 @@ public enum ClientMessage: Sendable, Equatable {
     case listExams(folderId: String)
     case deleteExam(examId: String)
     case getUsage
-    case getGreeting(localTime: String, name: String?)
+    case getGreeting(localTime: String, name: String?, folderId: String? = nil)
     case getVoices
+    // v3
+    case getHome(folderId: String?)
+    case getBackup
+    case backupNow
 
     public var json: JSONValue {
         func obj(_ t: String, _ fields: [String: JSONValue?] = [:]) -> JSONValue {
@@ -374,8 +393,12 @@ public enum ClientMessage: Sendable, Equatable {
         case .openSession(let id): return obj("open_session", ["sessionId": .string(id)])
         case .getProgress: return obj("get_progress")
         case .listFolders: return obj("list_folders")
-        case let .createFolder(name, subject): return obj("create_folder", ["name": .string(name), "subject": .string(subject)])
+        case let .createFolder(name, about, subject, clientId):
+            return obj("create_folder", ["name": .string(name), "about": about.map(JSONValue.string),
+                                         "subject": str(subject), "clientId": str(clientId)])
         case let .renameFolder(id, name): return obj("rename_folder", ["id": .string(id), "name": .string(name)])
+        case let .updateFolder(id, name, about):
+            return obj("update_folder", ["id": .string(id), "name": name.map(JSONValue.string), "about": about.map(JSONValue.string)])
         case .deleteFolder(let id): return obj("delete_folder", ["id": .string(id)])
         case let .moveSession(sessionId, folderId):
             return obj("move_session", ["sessionId": .string(sessionId), "folderId": folderId.map(JSONValue.string) ?? .null])
@@ -395,8 +418,12 @@ public enum ClientMessage: Sendable, Equatable {
         case .listExams(let folderId): return obj("list_exams", ["folderId": .string(folderId)])
         case .deleteExam(let examId): return obj("delete_exam", ["examId": .string(examId)])
         case .getUsage: return obj("get_usage")
-        case let .getGreeting(localTime, name): return obj("get_greeting", ["localTime": .string(localTime), "name": str(name)])
+        case let .getGreeting(localTime, name, folderId):
+            return obj("get_greeting", ["localTime": .string(localTime), "name": str(name), "folderId": str(folderId)])
         case .getVoices: return obj("get_voices")
+        case .getHome(let folderId): return obj("get_home", ["folderId": str(folderId)])
+        case .getBackup: return obj("get_backup")
+        case .backupNow: return obj("backup_now")
         }
     }
 

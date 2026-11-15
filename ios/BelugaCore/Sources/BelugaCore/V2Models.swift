@@ -40,30 +40,56 @@ public struct ModelInfo: Sendable, Equatable, Identifiable, Hashable {
 
 public struct Folder: Sendable, Equatable, Identifiable, Hashable {
     public var id: String
+    /// The owner's own name for the folder: the only text ever shown for it (PROTOCOL section 17).
     public var name: String
-    /// Subject skill id: toan, ly, hoa, van, anh-ssat, duc, tin-cpp, chung.
+    /// v2 subject id; v3 servers send it equal to `kind`.
     public var subject: String
     public var sessionCount: Int
     public var updatedAt: String
     public var hasKnowledge: Bool
     public var ingest: IngestStatus?
+    /// One optional line the owner wrote about the folder (v3, may be empty).
+    public var about: String
+    /// Teaching style the server assigned from name + about (v3). Only picks the icon; never shown as text.
+    public var kind: String
+    /// Created on the phone while offline, not yet on the server (the id is a local `clientId`).
+    public var pending: Bool
 
     public init(id: String, name: String, subject: String = "chung", sessionCount: Int = 0, updatedAt: String = "",
-                hasKnowledge: Bool = false, ingest: IngestStatus? = nil) {
+                hasKnowledge: Bool = false, ingest: IngestStatus? = nil, about: String = "", kind: String? = nil,
+                pending: Bool = false) {
         self.id = id; self.name = name; self.subject = subject; self.sessionCount = sessionCount
         self.updatedAt = updatedAt; self.hasKnowledge = hasKnowledge; self.ingest = ingest
+        self.about = about; self.kind = kind ?? subject; self.pending = pending
     }
 
-    static func from(_ v: JSONValue) -> Folder? {
+    public static func from(_ v: JSONValue) -> Folder? {
         guard let id = v["id"]?.nonEmptyString else { return nil }
         let ingest = v["ingest"].flatMap { $0.object == nil ? nil : IngestStatus.from($0) }
-        return Folder(id: id, name: v["name"]?.string ?? "", subject: v["subject"]?.nonEmptyString ?? "chung",
+        let subject = v["subject"]?.nonEmptyString
+        let kind = v["kind"]?.nonEmptyString ?? subject ?? "chung"
+        return Folder(id: id, name: v["name"]?.string ?? "", subject: subject ?? kind,
                       sessionCount: v["sessionCount"]?.integer ?? 0, updatedAt: v["updatedAt"]?.dateText ?? "",
-                      hasKnowledge: v["hasKnowledge"]?.bool ?? false, ingest: ingest)
+                      hasKnowledge: v["hasKnowledge"]?.bool ?? false, ingest: ingest,
+                      about: v["about"]?.string ?? "", kind: kind, pending: v["pending"]?.bool ?? false)
     }
 
-    /// Subject ids the server knows (tutor skills).
+    /// The wire shape of a `folders.items[]` entry (the replica keeps lists in this form).
+    public var json: JSONValue {
+        var o: [String: JSONValue] = ["id": .string(id), "name": .string(name), "subject": .string(subject),
+                                      "sessionCount": .number(Double(sessionCount)), "updatedAt": .string(updatedAt),
+                                      "hasKnowledge": .bool(hasKnowledge), "about": .string(about), "kind": .string(kind)]
+        if let ingest { o["ingest"] = ingest.json }
+        if pending { o["pending"] = true }
+        return .object(o)
+    }
+
+    /// Subject ids the server knows (tutor skills, v2).
     public static let subjects = ["toan", "ly", "hoa", "van", "anh-ssat", "duc", "tin-cpp", "chung"]
+    /// Teaching kinds of v3: the subject skills plus `ngoai-ngu` (a foreign language in general).
+    public static let kinds = subjects + ["ngoai-ngu"]
+    /// Longest `about` the server keeps (section 17).
+    public static let aboutLimit = 300
 }
 
 // MARK: - Knowledge ingest (section 11)
