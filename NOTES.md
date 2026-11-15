@@ -13,6 +13,64 @@
 
 ## iOS (`ios/`, `shared/board/`)
 
+### Bản v2 (giao thức v2, 15/11/2026)
+
+CI xanh ở run 43656665973 (commit 2752895): `swift test` BelugaCore (thêm `V2Tests.swift`: mọi frame v2 hai chiều,
+frame lạ/thiếu trường, `ChatTranscript`), IPA unsigned, 62 ảnh simulator, video demo. App gửi `hello.v = 2`.
+
+**Cấu trúc mới**
+- Gốc là chat (giống app Claude): `ChatShell` = NavigationStack (màn chat/home ở gốc, thư mục được push) + ngăn kéo trái.
+  Live là một mode của cùng phiên, phủ lên từ dưới (`LiveView` = màn camera/pill/bảng cũ, nút trái là "Về đoạn chat").
+  Camera chỉ bật khi vào Live; rời Live thì ngắt tiếng đang nói, tắt mic, tắt camera. Mode của app là gốc, gửi trong
+  `settings.mode`; `ready.mode` khác thì app gửi lại `settings`.
+- Mọi sự kiện có `seq` đi cả vào transcript chat (một lần, chặn trùng theo `seq`) lẫn timeline; bảng chỉ nhận `step`,
+  `show` có `step >= 0`, và `ask`/`done` của lượt có sự kiện live. `say` lọt vào khi đang ở chat thì không phát tiếng.
+- Transcript vẽ bằng `chat.html` (WKWebView, `WebPage.swift`); khi trang chưa `ready` thì vẽ bản native tối giản từ
+  `ChatTranscript` (BelugaCore). Kiến thức vẽ bằng `knowledge.html`, có bản native dự phòng. Thiếu trang trong bundle mà
+  server báo `boardVersion >= 3` thì tải trang từ `/board/`.
+- Composer: "+" (Ảnh tối đa 30, Chụp ảnh, Tệp PDF/ảnh, Model và mức nghĩ), ô chữ nhiều dòng, mic (chạm để bật/tắt hoặc
+  giữ để nói), Live; có chữ hoặc tệp thì Live đổi thành Gửi. Tệp tải ngay khi chọn qua `POST /upload` (ảnh 2000 px,
+  JPEG 0,8), chip có vòng tiến độ, lỗi thì chạm để tải lại; còn tệp đang tải thì không gửi được.
+- Đọc chính tả: STT server gửi `audio_start{draft}`; STT máy gửi `user_text{draft, via:"voice"}`, chờ `heard{draft}` tối đa
+  3 giây rồi dùng bản gốc (server chỉ trả `heard` khi có sửa); tắt "Sửa lỗi nhận dạng giọng" thì đặt thẳng vào ô.
+- Thư mục: tạo (tên + môn), đổi tên, xóa (có xác nhận), chuyển/đổi tên/xóa phiên (menu giữ, vuốt); xóa phiên đang mở thì
+  mở phiên mới trước (server từ chối xóa phiên đang mở). Màn thư mục có 4 tab: Phiên, Kiến thức, Ôn tập, Đề.
+- Thêm đề: sheet chọn ảnh/PDF + mục đích, tải hết rồi `ingest_start`; tiến độ đẩy vào `knowledge.progress`.
+  Tạo đề: hỏi yêu cầu thêm, `gen_exam`, xong thì tự xuất PDF. Xuất PDF: WKWebView ẩn đặt ngoài màn hình trong cửa sổ,
+  chờ `exam_ready` hoặc `dataset.ready == "1"` (tối đa 25 s), `UIPrintPageRenderer` + `viewPrintFormatter`, A4 lề 28 pt,
+  mở QuickLook (có nút chia sẻ). Bỏ `dev*.html/js/json` của gói web khỏi bundle bằng script sau build.
+- Lời chào: `get_greeting{localTime}` mỗi lần `ready`; trước đó dùng danh sách dự phòng theo giờ (BelugaCore, có test).
+  Sáu hình nét vẽ bằng Canvas + TimelineView 30 fps, chỉ nét, màu theo foreground, Reduce Motion thì đứng yên.
+
+**Đã kiểm chứng bằng screenshot trên simulator (mock, run 43656665973)** — đã xem: home sáng/tối (mèo đi, câu chào
+serif, gợi ý), chat đang stream (KaTeX của `chat.html`, khối math chèn giữa, đoạn đang gõ dở), chat có tệp (ảnh, PDF trong
+lượt người dùng; composer có 3 chip, một chip đang tải 45 %, nút Gửi tắt), ngăn kéo (thư mục + phiên rời, dấu Live), thư mục
+tab Phiên, Kiến thức (`knowledge.html`: tổng quan, mức độ, loại câu, tiến độ), đang nạp đề (7/24, số câu/chủ đề, nút Huỷ),
+Ôn tập (Ôn nhanh, thanh trạng thái chủ đề, danh sách), Đề (đang viết đề + danh sách), PDF đề trong QuickLook (2 trang,
+đáp án trang sau), chọn model, hạn mức và chi phí, xem lại bài giảng (bảng chỉ đọc, "Bước 4 trên 4"), cài đặt, và toàn bộ
+cảnh live cũ. Ảnh `chatflow-*`: gửi câu hỏi thật qua mock transport, câu trả lời stream rồi chốt. Ảnh `flow-*`: luồng live.
+Sau khi xem đã sửa: nút Live/Gửi bị nhạt trong lớp kính (đổi sang `.glassProminent` mực đen/trắng), giờ làm mới hạn mức theo
+ngôn ngữ app, tên khung hạn mức, `limit.utilization`, `usage.exam`; mock dùng `knowledge.sample.json` thật của server.
+
+**Chỉ biên dịch, chưa thấy chạy**: tải tệp thật (`/upload` với Bearer, tiến độ từ `URLSessionTaskDelegate`), mở tệp từ
+transcript (`open_file` → `GET /file` → QuickLook), `open_url`, `ask_tap`, copy/retry; đọc chính tả thật (cả hai đường);
+camera chụp trong composer; menu "+", PhotosPicker và fileImporter (không mở được trong screenshot); đổi tên/xóa/chuyển;
+nút "Thêm đề" trong `knowledge.html` (`add_exams`), `ingest_cancel`, `open_topic`; `Ôn nhanh` (kickoff `review_quiz`);
+tải trang web từ server khi bundle thiếu.
+
+**Cần iPhone thật**: mọi thứ của bản v1 bên dưới, cộng: tải ảnh lớn qua Tailscale, PDF xuất từ trang `/exam` thật (KaTeX
+vẽ xong trước khi in, ngắt trang), nhận dạng giọng khi đọc chính tả, ngăn kéo vuốt bằng tay, cảm giác vuốt bước trên bảng
+(panel chỉ nhận kéo dọc ở thanh tiêu đề, ngang thuộc về trang web).
+
+**Nghi vấn còn mở (v2)**
+- Một bản `WKWebView` cho bảng dùng chung giữa Live và màn xem lại; hai chỗ không bao giờ hiện cùng lúc nên ổn, nhưng nếu
+  sau này cho xem lại ngay trong Live thì phải tách.
+- Xem lại bài cũ mở hẳn phiên đó (`open_session`), nên sau khi đóng, phiên hiện tại là phiên cũ.
+- Hiện tất cả phiên rồi lọc theo thư mục ở máy; nếu có hàng nghìn phiên thì nên dùng `list_sessions{folderId}`.
+- Native fallback của transcript chỉ hiện TeX thô (chỉ dùng khi `chat.html` lỗi).
+
+### Bản v1
+
 Cập nhật 14/11/2026. CI xanh ở run 43591800568 (commit f640c8b): `swift test` BelugaCore, IPA unsigned
 (đúng cấu trúc, không `_CodeSignature`, không provisioning profile), 30 screenshot simulator, video demo.
 

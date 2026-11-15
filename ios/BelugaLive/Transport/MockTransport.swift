@@ -76,7 +76,7 @@ final class MockTransport: Transport {
             deliver(ready())
         case .settings(let s):
             mode = s.mode
-        case let .userText(text, files, draft):
+        case let .userText(text, files, draft, _):
             if draft { deliver(["t": "heard", "text": .string(Self.tidy(text)), "raw": .string(text), "draft": true]); return }
             if mode == .live { echoUser(text, files: files, via: "voice"); playNextTurn() } else { playChat(text, files: files) }
         case .audioEnd:

@@ -365,6 +365,8 @@ public struct Usage: Sendable, Equatable {
         public var status: String
         public var resetsAt: String?
         public var type: String?
+        /// 0...1 of the window used, when the server knows it.
+        public var utilization: Double?
     }
     public var session: UsageBucket
     public var today: UsageBucket
@@ -373,6 +375,9 @@ public struct Usage: Sendable, Equatable {
     public var otherToday: UsageBucket
     public var ingestToday: Double
     public var ingestTotal: Double
+    /// Exam generation (section 13), real money.
+    public var examToday: Double = 0
+    public var examTotal: Double = 0
 
     public init(session: UsageBucket = .init(), today: UsageBucket = .init(), week: UsageBucket = .init(), limit: Limit? = nil,
                 otherToday: UsageBucket = .init(), ingestToday: Double = 0, ingestTotal: Double = 0) {
@@ -384,11 +389,15 @@ public struct Usage: Sendable, Equatable {
         let c = v["claude"]
         var limit: Limit?
         if let l = c?["limit"], let status = l["status"]?.string {
-            limit = Limit(status: status, resetsAt: l["resetsAt"]?.dateText, type: l["type"]?.nonEmptyString)
+            limit = Limit(status: status, resetsAt: l["resetsAt"]?.dateText, type: l["type"]?.nonEmptyString,
+                          utilization: l["utilization"]?.numeric)
         }
-        return Usage(session: .from(c?["session"]), today: .from(c?["today"]), week: .from(c?["week"]), limit: limit,
-                     otherToday: .from(v["other"]?["today"]), ingestToday: v["ingest"]?["today"]?["costUsd"]?.numeric ?? 0,
-                     ingestTotal: v["ingest"]?["total"]?["costUsd"]?.numeric ?? 0)
+        var u = Usage(session: .from(c?["session"]), today: .from(c?["today"]), week: .from(c?["week"]), limit: limit,
+                      otherToday: .from(v["other"]?["today"]), ingestToday: v["ingest"]?["today"]?["costUsd"]?.numeric ?? 0,
+                      ingestTotal: v["ingest"]?["total"]?["costUsd"]?.numeric ?? 0)
+        u.examToday = v["exam"]?["today"]?["costUsd"]?.numeric ?? 0
+        u.examTotal = v["exam"]?["total"]?["costUsd"]?.numeric ?? 0
+        return u
     }
 }
 

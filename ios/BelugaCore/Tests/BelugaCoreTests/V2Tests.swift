@@ -126,12 +126,12 @@ import Testing
         guard case .usage(let u) = try decode(#"""
         {"t":"usage","claude":{"session":{"inputTokens":1200,"outputTokens":300,"cacheReadTokens":5000,"cacheWriteTokens":100,"costUsd":0.05,"turns":3},
           "today":{"inputTokens":9000,"costUsd":0.4,"turns":12},"week":{"costUsd":2.5},
-          "limit":{"status":"allowed_warning","resetsAt":"2026-11-15T05:00:00Z","type":"five_hour"}},
-         "other":{"today":{"costUsd":0.01,"inputTokens":100,"outputTokens":20}},"ingest":{"today":{"costUsd":0.02},"total":{"costUsd":0.3}}}
+          "limit":{"status":"allowed_warning","resetsAt":"2026-11-15T05:00:00Z","type":"five_hour","utilization":0.82}},
+         "other":{"today":{"costUsd":0.01,"inputTokens":100,"outputTokens":20}},"ingest":{"today":{"costUsd":0.02},"total":{"costUsd":0.3}},"exam":{"today":{"costUsd":0.04},"total":{"costUsd":0.5}}}
         """#) else { Issue.record("not usage"); return }
         #expect(u.session.totalTokens == 6600 && u.session.turns == 3 && u.today.turns == 12 && u.week.costUsd == 2.5)
-        #expect(u.limit?.status == "allowed_warning" && u.limit?.type == "five_hour")
-        #expect(u.otherToday.outputTokens == 20 && u.ingestTotal == 0.3)
+        #expect(u.limit?.status == "allowed_warning" && u.limit?.type == "five_hour" && u.limit?.utilization == 0.82)
+        #expect(u.otherToday.outputTokens == 20 && u.ingestTotal == 0.3 && u.examToday == 0.04 && u.examTotal == 0.5)
         guard case .usage(let none) = try decode(#"{"t":"usage"}"#) else { Issue.record("not usage"); return }
         #expect(none.limit == nil && none.today.totalTokens == 0)
 
@@ -162,6 +162,7 @@ import Testing
         #expect(ClientMessage.userText("hi").text == #"{"t":"user_text","text":"hi"}"#)
         #expect(ClientMessage.userText("hi", files: ["a", "b"]).text == #"{"files":["a","b"],"t":"user_text","text":"hi"}"#)
         #expect(ClientMessage.userText("x", draft: true).text == #"{"draft":true,"t":"user_text","text":"x"}"#)
+        #expect(ClientMessage.userText("x", via: "voice").text == #"{"t":"user_text","text":"x","via":"voice"}"#)
         #expect(ClientMessage.audioStart(sampleRate: 16000).text == #"{"mime":"audio/wav","sampleRate":16000,"t":"audio_start"}"#)
         #expect(try json(.audioStart(sampleRate: 16000, draft: true))["draft"]?.bool == true)
         #expect(ClientMessage.listSessions().text == #"{"t":"list_sessions"}"#)

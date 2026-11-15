@@ -3622,6 +3622,91 @@
           }
         }
       }
+    },
+    "usage.used": {
+      "extractionState": "manual",
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đã dùng"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Used"
+          }
+        }
+      }
+    },
+    "usage.window.fiveHour": {
+      "extractionState": "manual",
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "5 giờ"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "5 hours"
+          }
+        }
+      }
+    },
+    "usage.window.week": {
+      "extractionState": "manual",
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "7 ngày"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "7 days"
+          }
+        }
+      }
+    },
+    "usage.examToday": {
+      "extractionState": "manual",
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tạo đề hôm nay"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exam writing today"
+          }
+        }
+      }
+    },
+    "usage.examTotal": {
+      "extractionState": "manual",
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tạo đề từ trước tới nay"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exam writing, all time"
+          }
+        }
+      }
     }
   }
 }

@@ -9,6 +9,7 @@ struct ComposerView: View {
     let controller: LiveController
     @Bindable var composer: ChatComposer
     @Environment(\.strings) private var s
+    @Environment(\.colorScheme) private var scheme
     @FocusState private var focused: Bool
     @State private var showPhotos = false
     @State private var photoItems: [PhotosPickerItem] = []
@@ -106,11 +107,13 @@ struct ComposerView: View {
         Button { controller.sendChat() } label: {
             Image(systemName: "arrow.up")
                 .font(.system(size: Size.icon, weight: .semibold))
-                .foregroundStyle(Color(uiColor: .systemBackground))
-                .frame(width: 40, height: 40)
-                .background(Circle().fill(composer.canSend ? Ink.primary : Ink.faint))
-                .frame(width: 44, height: 44)
+                .foregroundStyle(inverse)
+                .frame(width: 30, height: 30)
         }
+        .buttonStyle(.glassProminent)
+        .buttonBorderShape(.circle)
+        .tint(ink)
+        .frame(minWidth: 44, minHeight: 44)
         .disabled(!composer.canSend)
         .accessibilityLabel(s("composer.send"))
         .transition(.scale.combined(with: .opacity))
@@ -124,15 +127,20 @@ struct ComposerView: View {
                 Text(verbatim: "Live")
                     .font(TypeScale.callout.weight(.semibold))
             }
-            .foregroundStyle(Color(uiColor: .systemBackground))
-            .padding(.horizontal, Space.m)
-            .frame(height: 40)
-            .background(Capsule().fill(Ink.primary))
-            .frame(minHeight: 44)
+            .foregroundStyle(inverse)
+            .frame(height: 30)
         }
+        .buttonStyle(.glassProminent)
+        .buttonBorderShape(.capsule)
+        .tint(ink)
+        .frame(minHeight: 44)
         .accessibilityLabel(s("live.enter"))
         .transition(.scale.combined(with: .opacity))
     }
+
+    /// Solid ink for the primary buttons (black in light, white in dark) and the text on it.
+    private var ink: Color { scheme == .dark ? .white : .black }
+    private var inverse: Color { scheme == .dark ? .black : .white }
 
     private func loadPhotos(_ items: [PhotosPickerItem]) {
         guard !items.isEmpty else { return }

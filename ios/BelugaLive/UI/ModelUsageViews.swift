@@ -47,7 +47,7 @@ struct ModelPickerList: View {
                         }
                         .accessibilityAddTraits(m.id == controller.settings.model ? .isSelected : [])
                     }
-                } header: { Text(verbatim: s("models.title")) }
+                }
 
                 if let m = controller.currentModel, !m.efforts.isEmpty {
                     Section {
@@ -85,11 +85,16 @@ struct UsageView: View {
                 if let limit = u.limit {
                     Section {
                         LabeledContent(s("usage.limit"), value: s("usage.limit.\(Self.limitKey(limit.status))"))
+                        if let used = limit.utilization {
+                            LabeledContent(s("usage.used"), value: "\(Int((used * 100).rounded())) %")
+                            ProgressView(value: min(1, max(0, used)))
+                        }
                         if let r = limit.resetsAt, let d = LearningDate.parse(r) {
-                            LabeledContent(s("usage.resets"), value: d.formatted(.dateTime.hour().minute().weekday(.abbreviated)))
+                            LabeledContent(s("usage.resets"), value: d.formatted(Date.FormatStyle(date: .omitted, time: .shortened)
+                                .weekday(.abbreviated).locale(Locale(identifier: s.lang == .vi ? "vi_VN" : "en_US"))))
                         }
                     } footer: {
-                        if let type = limit.type { Text(verbatim: s("usage.window", type.replacingOccurrences(of: "_", with: " "))) }
+                        if let type = limit.type { Text(verbatim: s("usage.window", Self.windowName(type, s))) }
                     }
                 }
                 bucket(s("usage.session"), u.session)
@@ -99,6 +104,8 @@ struct UsageView: View {
                     LabeledContent(s("usage.other"), value: Self.money(u.otherToday.costUsd))
                     LabeledContent(s("usage.ingestToday"), value: Self.money(u.ingestToday))
                     LabeledContent(s("usage.ingestTotal"), value: Self.money(u.ingestTotal))
+                    LabeledContent(s("usage.examToday"), value: Self.money(u.examToday))
+                    LabeledContent(s("usage.examTotal"), value: Self.money(u.examTotal))
                 } header: { Text(verbatim: s("usage.paid")) } footer: { Text(verbatim: s("usage.paid.footer")) }
             } else {
                 Text(verbatim: s(controller.connected ? "progress.loading" : "progress.offline"))
@@ -120,6 +127,14 @@ struct UsageView: View {
             LabeledContent(s("usage.cost"), value: "≈ " + Self.money(b.costUsd))
         } header: { Text(verbatim: title) } footer: {
             if title == s("usage.session") { Text(verbatim: s("usage.cost.footer")) }
+        }
+    }
+
+    static func windowName(_ type: String, _ s: Strings) -> String {
+        switch type {
+        case "five_hour": return s("usage.window.fiveHour")
+        case "seven_day", "weekly": return s("usage.window.week")
+        default: return type.replacingOccurrences(of: "_", with: " ")
         }
     }
 

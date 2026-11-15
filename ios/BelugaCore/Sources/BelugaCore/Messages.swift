@@ -300,7 +300,8 @@ public enum ClientMessage: Sendable, Equatable {
                settings: TutorSettings, folderId: String? = nil)
     case settings(TutorSettings)
     /// `files`: ids from `POST /upload`. `draft`: dictation, the server only answers with `heard{draft}`.
-    case userText(_ text: String, files: [String] = [], draft: Bool = false)
+    /// `via: "voice"` when the text came from the device's speech recognition (typed text is never corrected).
+    case userText(_ text: String, files: [String] = [], draft: Bool = false, via: String? = nil)
     case audioStart(sampleRate: Int, draft: Bool = false)
     case audioEnd
     case interrupt
@@ -347,10 +348,10 @@ public enum ClientMessage: Sendable, Equatable {
             var o: [String: JSONValue] = ["t": "settings"]
             if case .object(let so) = s.json { o.merge(so) { a, _ in a } }
             return .object(o)
-        case let .userText(text, files, draft):
+        case let .userText(text, files, draft, via):
             return obj("user_text", ["text": .string(text),
                                      "files": files.isEmpty ? nil : .array(files.map(JSONValue.string)),
-                                     "draft": draft ? .bool(true) : nil])
+                                     "draft": draft ? .bool(true) : nil, "via": str(via)])
         case let .audioStart(rate, draft):
             return obj("audio_start", ["mime": "audio/wav", "sampleRate": .number(Double(rate)), "draft": draft ? .bool(true) : nil])
         case .audioEnd: return obj("audio_end")

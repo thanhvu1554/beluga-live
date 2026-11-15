@@ -641,7 +641,7 @@ final class LiveController {
     }
 
     private func sendUtterance(_ text: String) {
-        transport?.send(.userText(text))
+        transport?.send(.userText(text, via: "voice"))
         if captionsOn { caption = text }
         afterSend()
     }

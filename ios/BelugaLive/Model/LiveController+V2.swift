@@ -208,8 +208,9 @@ extension LiveController {
             // Device recognition: the server corrects it (when allowed and reachable), else use it as is.
             guard connected, settings.sttFix else { composer.insertDictation(text); return }
             composer.transcribing = true
-            transport?.send(.userText(text, draft: true))
-            armDictationTimeout(fallback: text, seconds: 3.5)
+            // Only a corrected line comes back as `heard`; otherwise the raw text is used after the 2.5 s budget.
+            transport?.send(.userText(text, draft: true, via: "voice"))
+            armDictationTimeout(fallback: text, seconds: 3.0)
         case .wav(let wav):
             composer.transcribing = true
             sendWav(wav, draft: true)
@@ -295,8 +296,9 @@ extension LiveController {
     }
 
     func deleteSession(_ s: SessionItem) {
-        transport?.send(.deleteSession(sessionId: s.sessionId))
+        // The open session cannot be deleted (`busy_session`): leave it for a new chat first.
         if s.sessionId == sessionId { newChat(in: folderId) }
+        transport?.send(.deleteSession(sessionId: s.sessionId))
     }
 
     // MARK: Library frames

@@ -30,7 +30,15 @@ enum MockData {
      {"sessionId":"mock-0005","title":"Sử · Cách mạng tháng Tám 1945","updatedAt":"2026-11-08T20:15:00Z","mode":"chat"}]
     """#).array ?? []
 
-    static let knowledge: JSONValue = parse(#"""
+    /// The server's real sample (`server/tests/fixtures/knowledge.sample.json`, copied as `mock-knowledge.json`),
+    /// else the small inline one below.
+    static let knowledge: JSONValue = {
+        if let url = Bundle.main.url(forResource: "mock-knowledge", withExtension: "json"),
+           let data = try? Data(contentsOf: url), let v = try? JSONValue.parse(data), v.object != nil { return v }
+        return inlineKnowledge
+    }()
+
+    static let inlineKnowledge: JSONValue = parse(#"""
     {"v":1,"folderId":"f-toan","subject":"toan","grade":"9","goal":"ôn giữa kỳ 1","updatedAt":"2026-11-15T02:00:00Z",
      "sources":[{"fileId":"a","name":"de-on-1.pdf","kind":"exam","title":"Đề ôn giữa kỳ số 1","pages":2,"questions":18},
                 {"fileId":"b","name":"de-on-2.pdf","kind":"exam","title":"Đề ôn giữa kỳ số 2","pages":2,"questions":17},
@@ -103,9 +111,9 @@ enum MockData {
      "claude":{"session":{"inputTokens":18400,"outputTokens":2600,"cacheReadTokens":142000,"cacheWriteTokens":9100,"costUsd":0.21,"turns":6},
                "today":{"inputTokens":61000,"outputTokens":9800,"cacheReadTokens":610000,"cacheWriteTokens":32000,"costUsd":0.94,"turns":23},
                "week":{"inputTokens":402000,"outputTokens":61000,"cacheReadTokens":3900000,"cacheWriteTokens":180000,"costUsd":6.12,"turns":141},
-               "limit":{"status":"allowed","resetsAt":"2026-11-15T05:00:00Z","type":"five_hour"}},
+               "limit":{"status":"allowed","resetsAt":"2026-11-15T05:00:00Z","type":"five_hour","utilization":0.34}},
      "other":{"today":{"costUsd":0.03,"inputTokens":21000,"outputTokens":4000}},
-     "ingest":{"today":{"costUsd":0.08},"total":{"costUsd":0.41}}}
+     "ingest":{"today":{"costUsd":0.08},"total":{"costUsd":0.41}},"exam":{"today":{"costUsd":0.06},"total":{"costUsd":0.22}}}
     """#)
 
     static let greeting: JSONValue = parse(#"""
