@@ -20,6 +20,13 @@ cargo build --release      # server\target\release\beluga-server.exe
 - Dữ liệu phiên (danh sách, nhật ký sự kiện) ở `data/` (đã gitignore). Ảnh chụp ở `../tutor/photos/<sessionId>/`.
 - Tự chạy khi đăng nhập Windows: `scripts\install-autostart.ps1` (gỡ: `uninstall-autostart.ps1`).
 
+## Đồng bộ với iPhone và sao lưu (PROTOCOL mục 19, 20)
+
+- `GET /sync/manifest`, `/sync/folder/<id>`, `/sync/session/<id>`, `/sync/profile` (token như `/file`, `ETag` + `If-None-Match` → 304);
+  khung WS `sync{folders?,sessions?,profile?}` khi etag đổi. Mã: `src/sync.rs`.
+- Sao lưu lên R2 (`src/backup.rs`, cấu hình trong `.env`, xem `.env.example`): `beluga-server backup-now`, `backup-status`,
+  `restore [--key <khóa>] [--to <thư mục>] [--force]`. Định dạng tệp mã hóa ghi ở đầu `src/backup.rs`.
+
 ## Giọng nói (TTS / STT)
 
 Chọn nhà cung cấp trong `server/.env` (xem `.env.example`; file `.env` không bao giờ được commit hay in ra):

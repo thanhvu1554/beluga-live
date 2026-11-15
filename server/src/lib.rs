@@ -1,5 +1,6 @@
 //! Beluga Live PC server: bridges the iPhone tutor app and Claude Code.
 
+pub mod backup;
 pub mod brain;
 pub mod config;
 pub mod folders;
@@ -14,6 +15,7 @@ pub mod review;
 pub mod session;
 pub mod store;
 pub mod study;
+pub mod sync;
 pub mod uploads;
 pub mod usage;
 pub mod util_llm;

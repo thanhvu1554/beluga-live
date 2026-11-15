@@ -27,6 +27,9 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls"] }
 lopdf = { version = "0.47", default-features = false }
+tar = { version = "0.4", default-features = false }
+zstd = { version = "0.13", default-features = false }
+ring = "0.17"
 
 [dev-dependencies]
 tokio-tungstenite = "0.26"

@@ -141,7 +141,7 @@ impl Config {
         let get = |k: &str| env.get(k).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
         let mut secrets = env.clone();
         for (k, v) in std::env::vars() {
-            if k.ends_with("_API_KEY") || k.ends_with("_TOKEN") || k.starts_with("BELUGA_UTIL") {
+            if k.ends_with("_API_KEY") || k.ends_with("_TOKEN") || k.starts_with("BELUGA_UTIL") || k.starts_with("R2_") || k.starts_with("BACKUP_") {
                 secrets.insert(k, v);
             }
         }

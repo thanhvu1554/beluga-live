@@ -113,6 +113,8 @@ struct PairFile {
 pub struct Store {
     dir: PathBuf,
     lock: Mutex<()>,
+    /// Called after the session index or a session's turn changes (sync hints, backups).
+    on_change: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>>,
 }
 
 pub fn now_rfc3339() -> String {
@@ -135,7 +137,7 @@ pub fn is_valid_session_id(id: &str) -> bool {
 impl Store {
     pub fn open(dir: &Path, fixed_code: Option<&str>) -> std::io::Result<Store> {
         std::fs::create_dir_all(dir.join("sessions"))?;
-        let s = Store { dir: dir.to_path_buf(), lock: Mutex::new(()) };
+        let s = Store { dir: dir.to_path_buf(), lock: Mutex::new(()), on_change: std::sync::OnceLock::new() };
         let mut pf = s.read_pair();
         if let Some(c) = fixed_code {
             pf.code = c.to_string();
@@ -149,6 +151,19 @@ impl Store {
 
     pub fn dir(&self) -> &Path {
         &self.dir
+    }
+
+    /// Install the change hook (once; later calls are ignored).
+    pub fn set_on_change(&self, f: impl Fn() + Send + Sync + 'static) {
+        let _ = self.on_change.set(Box::new(f));
+    }
+
+    /// Something the phone replica mirrors may have changed (see `sync.rs`). Cheap: it only wakes
+    /// the sync task, which diffs etags.
+    pub fn changed(&self) {
+        if let Some(f) = self.on_change.get() {
+            f();
+        }
     }
 
     fn read_pair(&self) -> PairFile {
@@ -217,6 +232,8 @@ impl Store {
             None => v.push(meta.clone()),
         }
         let _ = std::fs::write(self.index_path(), serde_json::to_string_pretty(&v).unwrap());
+        drop(_g);
+        self.changed();
     }
 
     /// Read-modify-write the index under the lock.
@@ -225,6 +242,8 @@ impl Store {
         let mut v = self.read_index();
         f(&mut v);
         let _ = std::fs::write(self.index_path(), serde_json::to_string_pretty(&v).unwrap());
+        drop(_g);
+        self.changed();
     }
 
     /// Remove a session from the index and delete its journal and MCP config.
@@ -254,6 +273,10 @@ impl Store {
         let _g = self.lock.lock().unwrap();
         if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(self.journal_path(id)) {
             let _ = writeln!(f, "{}", ev);
+        }
+        drop(_g);
+        if ev["t"] == "turn_end" {
+            self.changed();
         }
     }
 

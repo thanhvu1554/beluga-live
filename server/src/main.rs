@@ -18,6 +18,9 @@ async fn main() {
     if args.first().map(String::as_str) == Some("gen-voice-fillers") {
         std::process::exit(gen_voice_fillers(&cfg).await);
     }
+    if let Some(code) = beluga_server::backup::cli(&cfg, &args).await {
+        std::process::exit(code);
+    }
 
     let listener = match TcpListener::bind(("0.0.0.0", cfg.port)).await {
         Ok(l) => l,
