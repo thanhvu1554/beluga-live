@@ -61,20 +61,34 @@ struct PillView: View {
 
                 outline
 
-                if let symbol {
-                    Image(systemName: symbol)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Palette.glow.opacity(0.85))
-                        .contentTransition(.symbolEffect(.replace))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                        .padding(.leading, Space.xl - Space.xs)
+                // What the pill is doing, or what to do with it: a glyph and a few words, centred. While sound
+                // drives the glow (listening, speaking) the light says it all and the words step aside.
+                if symbol != nil || label != nil {
+                    HStack(spacing: Space.s) {
+                        if let symbol {
+                            Image(systemName: symbol)
+                                .font(.system(size: 14, weight: .semibold))
+                                .contentTransition(.symbolEffect(.replace))
+                        }
+                        if let label {
+                            Text(verbatim: label)
+                                .font(TypeScale.callout.weight(.medium))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                                .contentTransition(.opacity)
+                        }
+                    }
+                    .foregroundStyle(Palette.glow.opacity(state == .idle ? 0.72 : 0.9))
+                    .padding(.horizontal, Space.l)
+                    .transition(.opacity.combined(with: .scale(0.92)))
                 }
             }
             .frame(width: Size.pillWidth, height: Size.pillHeight)
             .clipShape(.capsule)
+            .animation(Motion.snappy, value: state)
         }
-        .scaleEffect(pressing ? 0.97 : 1)
-        .animation(.spring(response: 0.25, dampingFraction: 0.8), value: pressing)
+        .scaleEffect(pressing ? 0.96 : 1)
+        .animation(Motion.snappy, value: pressing)
         .glassEffect(.regular.tint(Palette.scrim.opacity(0.6)).interactive(), in: .capsule)
         .environment(\.colorScheme, .dark)
         .contentShape(.capsule)
@@ -123,10 +137,20 @@ struct PillView: View {
 
     private var symbol: String? {
         switch state {
+        case .idle: return controller.settings.handsFree ? "hand.tap" : "mic"
         case .asking: return "mic"
-        case .speaking: return "speaker.wave.2"
         case .offline: return "wifi.slash"
         case .done: return "checkmark"
+        default: return nil
+        }
+    }
+
+    private var label: String? {
+        switch state {
+        case .idle: return s(controller.settings.handsFree ? "pill.idle.handsFree" : "pill.idle.hold")
+        case .asking: return s("pill.a11y.asking")
+        case .offline: return s("pill.idle.offline")
+        case .done: return s("pill.a11y.done")
         default: return nil
         }
     }

@@ -177,6 +177,12 @@ final class AudioHub {
     private var transcript = ""
     private var transcriptFinal = false
     private var observers: [NSObjectProtocol] = []
+    /// `suspend()` gave the session back (chat): only an explicit `ensureRunning()` from a caller wakes the engine,
+    /// never a route change or the end of an interruption.
+    private var suspended = false
+    /// The app is in the background outside a call: nothing may start the engine (with the `audio` background mode
+    /// a running engine would keep the app awake, and a play-and-record session cannot start from the background).
+    private var backgroundHold = false
 
     enum Grant: Sendable { case granted, undetermined, denied }
 
@@ -188,6 +194,8 @@ final class AudioHub {
     /// Builds the graph if needed and starts the engine. Returns whether it runs.
     @discardableResult
     func ensureRunning() -> Bool {
+        guard !backgroundHold else { return false }
+        suspended = false
         let wantInput = Self.microphoneGrant() == .granted
         if configured, wantInput, !hasInput {
             Diagnostics.log("audio: rebuilding engine with microphone")
@@ -274,15 +282,37 @@ final class AudioHub {
     /// indicator goes off, other apps' audio may resume). `ensureRunning()` brings it back.
     func suspend() {
         guard configured else { return }
+        suspended = true
         stopSpeaking()
         endListeningNow()
         if engine.isRunning { engine.stop() }
+        deactivateSession()
+        Diagnostics.log("audio: suspended")
+    }
+
+    private func deactivateSession() {
         do {
             try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         } catch {
             Diagnostics.log("audio: deactivate \(error.localizedDescription)")
         }
-        Diagnostics.log("audio: suspended")
+    }
+
+    /// The app went to the background outside a call. Before the `audio` background mode existed iOS stopped the
+    /// engine and suspended the app; this keeps it that way: speech stops, the engine stops (the microphone tap stays
+    /// installed, as when the system stopped it) and the session is released until `endBackgroundHold()`.
+    func holdForBackground() {
+        backgroundHold = true
+        guard configured else { return }
+        stopSpeaking()
+        if engine.isRunning { engine.stop() }
+        deactivateSession()
+        Diagnostics.log("audio: held for background")
+    }
+
+    /// Back in the foreground: the engine may start again (callers decide whether it should).
+    func endBackgroundHold() {
+        backgroundHold = false
     }
 
     /// Restarts the engine after route changes, interruptions and media-services resets.
@@ -308,7 +338,9 @@ final class AudioHub {
 
     private func configurationChanged(source: ObjectIdentifier?) {
         guard configured, source == nil || source == ObjectIdentifier(engine) else { return }
-        Diagnostics.log("audio: configuration change (listening \(listening))")
+        Diagnostics.log("audio: configuration change (listening \(listening), suspended \(suspended), hold \(backgroundHold))")
+        // Chat (suspended) or background outside a call: leave the engine off; the next real use restarts it.
+        guard !suspended, !backgroundHold else { return }
         // The engine stopped itself; a player waiting for completion may never get it.
         stopSpeaking()
         let wasListening = listening
@@ -324,7 +356,8 @@ final class AudioHub {
         Diagnostics.log("audio: interruption \(began ? "began" : "ended")")
         if began {
             stopSpeaking()
-        } else if configured {
+        } else if configured, !suspended, !backgroundHold {
+            // Only Live and the call restart the engine; in chat it was suspended and stays off.
             ensureRunning()
         }
     }
@@ -502,8 +535,13 @@ final class AudioHub {
 
     private nonisolated static func recognize(_ rec: SFSpeechRecognizer, _ r: SFSpeechAudioBufferRecognitionRequest,
                                               _ handler: @escaping @Sendable (String, Bool) -> Void) -> SFSpeechRecognitionTask {
-        rec.recognitionTask(with: r) { result, _ in
+        let onDevice = r.requiresOnDeviceRecognition
+        return rec.recognitionTask(with: r) { result, error in
             if let result { handler(result.bestTranscription.formattedString, result.isFinal) }
+            // Breadcrumb: device recognition is the part most likely to refuse work in the background (PiP call).
+            if let error = error as NSError? {
+                Diagnostics.log("speech: error \(error.domain) \(error.code) on-device \(onDevice)")
+            }
         }
     }
 

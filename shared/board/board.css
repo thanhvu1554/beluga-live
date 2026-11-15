@@ -49,6 +49,33 @@
   color-scheme: dark;
 }
 
+/* Inside the app the pages sit on native surfaces (systemBackground, grouped backgrounds, Liquid Glass) whose
+ * greys are neutral, not warm: use the same family there so web and native read as one app. */
+html.native[data-theme="light"] {
+  --bg: #FFFFFF;
+  --ink: #000000;
+  --ink-2: rgba(0, 0, 0, 0.68);
+  --ink-3: rgba(0, 0, 0, 0.55);
+  --ink-4: rgba(0, 0, 0, 0.30);
+  --rule: rgba(0, 0, 0, 0.10);
+  --wash: rgba(0, 0, 0, 0.04);
+  --wash-2: rgba(0, 0, 0, 0.065);
+  --card: #FFFFFF;
+  --on-ink: #FFFFFF;
+}
+html.native[data-theme="dark"] {
+  --bg: #000000;
+  --ink: #FFFFFF;
+  --ink-2: rgba(255, 255, 255, 0.70);
+  --ink-3: rgba(255, 255, 255, 0.56);
+  --ink-4: rgba(255, 255, 255, 0.30);
+  --rule: rgba(255, 255, 255, 0.13);
+  --wash: rgba(255, 255, 255, 0.06);
+  --wash-2: rgba(255, 255, 255, 0.12);
+  --card: #1C1C1E;
+  --on-ink: #000000;
+}
+
 * { box-sizing: border-box; }
 html, body {
   margin: 0; padding: 0;

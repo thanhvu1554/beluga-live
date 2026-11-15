@@ -8,10 +8,22 @@ enum MockScene: String, CaseIterable {
     // Chat mode and the v2 screens.
     case home, chat, chatfiles, drawer, sessions, settings, progress
     case folder, knowledge, ingest, folderreview, exams, models, usage, exampdf, replay, voices
+    // Design pass: the computer page of Settings, and the composer with a long draft (Send instead of Live).
+    case connection, typing
+    // Call mode: speaking with a step on the stage, listening while a question waits, camera without multitasking
+    // access, the board raised in a call; and the PiP window's content on its own at PiP sizes.
+    case call, calllisten, callnocam, callboard, pip
 
     var isLive: Bool {
         switch self {
         case .idle, .listening, .thinking, .tool, .lesson, .ask, .done, .offline, .review, .longcaption: return true
+        default: return isCall
+        }
+    }
+
+    var isCall: Bool {
+        switch self {
+        case .call, .calllisten, .callnocam, .callboard: return true
         default: return false
         }
     }
@@ -31,23 +43,30 @@ enum PermissionIssue: Sendable, Equatable {
 }
 
 /// Launch options: `-mock 1`, `-mockScene <name>`, `-mockMode live|chat` (start mode), `-mockChat 1`
-/// (send a chat message by itself once connected).
+/// (send a chat message by itself once connected), `-mockTour 1` (walk through the chat shell's transitions
+/// for the screen recording).
 struct LaunchOptions {
     var mock: Bool
     var scene: MockScene?
     var startMode: SessionMode?
     var autoChat: Bool
+    var tour = false
+    /// `-mockCall 1`: from the chat, start a call, run the mock lesson in it, raise the board, end the call.
+    var callTour = false
 
     static func current() -> LaunchOptions {
         let d = UserDefaults.standard
         return LaunchOptions(mock: d.bool(forKey: "mock"),
                              scene: d.string(forKey: "mockScene").flatMap(MockScene.init(rawValue:)),
                              startMode: d.string(forKey: "mockMode").flatMap(SessionMode.init(rawValue:)),
-                             autoChat: d.bool(forKey: "mockChat"))
+                             autoChat: d.bool(forKey: "mockChat"),
+                             tour: d.bool(forKey: "mockTour"),
+                             callTour: d.bool(forKey: "mockCall"))
     }
 }
 
 enum FolderTab: String, CaseIterable, Hashable { case sessions, knowledge, review, exams }
+struct KnowledgeSection: Hashable { let id: String; let title: String }
 enum Route: Hashable { case folder(String) }
 
 /// A file to show in QuickLook (exported exam PDF).
@@ -76,14 +95,14 @@ final class LiveController {
     let ingestBasket = ChatComposer()
     let options: LaunchOptions
 
-    private(set) var pill = PillMachine()
+    var pill = PillMachine()
     var title = ""
     var caption = ""
     private(set) var askPrompt: String?
     var notice: String?
     var connected = false
     private(set) var shutterTick = 0
-    private(set) var handsFreeActive = false
+    var handsFreeActive = false
     var progress: LearningProgress?
     var permissionIssue: PermissionIssue?
     var boardVisible = false
@@ -91,6 +110,25 @@ final class LiveController {
     var showProgress = false
     /// Scenes may force captions on for review.
     var captionsForced = false
+
+    // Call mode: a calling-app face on the same live session (`LiveController+Call.swift`).
+    /// The call screen is up (the session is in live mode underneath).
+    var inCall = false
+    var callStartedAt: Date?
+    var callMuted = false
+    var callCameraOn = true
+    /// Step, blocks, spoken line and open question as native text (call stage and PiP window).
+    var callStage = CallStage()
+    var callRoute: CallRoute = .speaker
+    /// The PiP window is showing.
+    var pipActive = false
+    var appInBackground = false
+    /// The camera keeps running while the app is in PiP (multitasking camera access).
+    var cameraMultitasking = false
+    /// The capture session is interrupted (background without multitasking access, camera used elsewhere).
+    var cameraInterrupted = false
+    let pip = CallPiP()
+    @ObservationIgnored var callObservers: [NSObjectProtocol] = []
 
     // v2 state
     /// Chat (default) or live, for the current session (PROTOCOL section 7).
@@ -149,6 +187,11 @@ final class LiveController {
     @ObservationIgnored var chatLog: [JSONValue] = []
     /// Folder whose data is on the knowledge page.
     @ObservationIgnored var knowledgeFolder: String?
+    /// What the knowledge page shows now (folder, data, review) and the ingest panel, to skip identical redraws.
+    @ObservationIgnored var renderedKnowledge: JSONValue?
+    @ObservationIgnored var renderedIngest: JSONValue?
+    /// Sections of the knowledge page, for the jump menu in the folder's navigation bar.
+    var knowledgeSections: [KnowledgeSection] = []
     /// Open the folder the server creates next (created from the drawer).
     @ObservationIgnored var openCreatedFolder = false
     /// Folder for the session the next `hello` starts (new chat while offline).
@@ -181,8 +224,9 @@ final class LiveController {
         knowledgePage.onMessage = { [weak self] body in self?.knowledgePageMessage(body) }
         chatPage.onReload = { [weak self] in self?.redrawChat() }
         knowledgePage.onReload = { [weak self] in
-            if let self, let folder = self.knowledgeFolder { self.renderKnowledge(folder) }
+            if let self, let folder = self.knowledgeFolder { self.renderKnowledge(folder, force: true) }
         }
+        installCallObservers()
     }
 
     var strings: Strings { Strings(lang: settings.lang) }
@@ -197,6 +241,8 @@ final class LiveController {
             if options.scene == .offline { mock.reachable = false }
             attach(mock)
             if let scene = options.scene { applyScene(scene, mock: mock) } else { connect() }
+            if options.tour { runMockTour() }
+            if options.callTour { runMockCallTour() }
             return
         }
         sessionId = settings.lastSessionId
@@ -204,7 +250,7 @@ final class LiveController {
         if sessionId != nil { timeline.reset(lastPlayed: settings.lastPlayedSeq) }
         // The camera is only needed in live mode; microphone and speech recognition are asked on first use.
         if mode == .live { startCamera() }
-        if hasHost { connect() } else { showSettings = true }
+        if hasHost { connect() } else { settingsPath = [.connection]; showSettings = true }
     }
 
     func startCamera() {
@@ -237,11 +283,19 @@ final class LiveController {
 
     /// Back in the foreground: pick up permissions changed in Settings and retry a dropped connection.
     func appBecameActive() {
+        let wasAway = appInBackground
+        appInBackground = false
         guard !isMock else { return }
+        if wasAway, inCall {
+            Diagnostics.log("call: foreground (pip \(pipActive), engine \(audio?.isRunning ?? false), connected \(connected))")
+        }
+        audio?.endBackgroundHold()
         if mode == .live { audio?.resumeIfNeeded() }
+        // Live (not a call) paused its sentence when the app left: say it again from the start.
+        if wasAway, mode == .live, !inCall, let current = timeline.current { speak(current) }
         if CameraController.accessGranted {
             if permissionIssue == .camera { permissionIssue = nil }
-            if mode == .live, camera?.isRunning == false { camera?.start() }
+            if mode == .live, camera?.isRunning == false, !inCall || callCameraOn { camera?.start() }
         }
         if permissionIssue == .microphone || permissionIssue == .speech, micPermissionsGranted() { permissionIssue = nil }
         if !connected, !fatalStop, hasHost {
@@ -422,7 +476,8 @@ final class LiveController {
                 // Drop the stale token and take the user to the pairing code field.
                 settings.pairToken = nil
                 showNotice(strings("error.badPair"))
-                drawerOpen = false
+                closeDrawer()
+                settingsPath = [.connection]
                 showSettings = true
             } else { showNotice(text.isEmpty ? code : text) }
             if fatal { fatalStop = true; transport?.disconnect(); connected = false; pill.handle(.disconnected) }
@@ -439,6 +494,7 @@ final class LiveController {
         boardVisible = false
         title = ""
         askPrompt = nil
+        callStage.reset()
         liveTurns.removeAll()
         chatSeq = 0
         chatLog.removeAll()
@@ -482,20 +538,24 @@ final class LiveController {
         case .step, .show:
             guard e.isBoardEvent else { break }
             board.apply(e, restoring: !live)
-            if live, !boardVisible { withAnimation(Motion.panel) { boardVisible = true } }
-            if !live { boardVisible = true }
+            applyToStage(e)
+            // In a call the stage shows the step; the board only rises when asked for.
+            if live, !boardVisible, !inCall { withAnimation(Motion.panel) { boardVisible = true } }
+            if !live, !inCall { boardVisible = true }
         case .ask(_, let prompt):
             guard lessonTurn else { break }
             board.apply(e, restoring: !live)
             if live, mode == .live {
                 askPrompt = prompt
+                applyToStage(e)
                 pill.handle(.askReached)
                 cue(.ask)
-                if settings.handsFree && handsFreeActive { reopenHandsFree() }
+                if handsFreeOn && handsFreeActive { reopenHandsFree() }
             }
         case .done:
             guard lessonTurn else { break }
             board.apply(e, restoring: !live)
+            applyToStage(e)
             if live, mode == .live {
                 pill.handle(.doneReached)
                 cue(.done)
@@ -510,7 +570,7 @@ final class LiveController {
         case .turnEnd:
             if live {
                 pill.handle(.turnEnded)
-                if mode == .live, settings.handsFree && handsFreeActive && askPrompt == nil { reopenHandsFree() }
+                if mode == .live, handsFreeOn && handsFreeActive && askPrompt == nil { reopenHandsFree() }
             }
         case .say, .user, .chat:
             break
@@ -528,6 +588,7 @@ final class LiveController {
                 guard !Task.isCancelled, self.timeline.current?.seq == e.seq else { return }
                 self.pill.handle(.sayStarted)
                 if self.captionsOn { self.caption = text }
+                self.setStageCaption(text)
                 await self.play(text: text, source: source)
                 guard !Task.isCancelled, self.timeline.current?.seq == e.seq else { return }
                 self.pill.handle(.sayFinished)
@@ -550,6 +611,8 @@ final class LiveController {
             try? await Task.sleep(for: .milliseconds(40))
             if let known = timeline.takeAudio(seq: seq) { return known }
         }
+        // Paused (app left Live) rather than timed out: keep late audio for when the sentence is said again.
+        guard !Task.isCancelled else { return .skip }
         timeline.abandonAudio(seq: seq)
         return .skip
     }
@@ -580,7 +643,7 @@ final class LiveController {
     func pillPressBegan() {
         let wasSpeaking = pill.state == .speaking
         if wasSpeaking { interrupt() }
-        if settings.handsFree {
+        if handsFreeOn {
             // Tapping while the tutor speaks interrupts and keeps hands-free listening on.
             handsFreeActive = wasSpeaking ? true : !handsFreeActive
             if handsFreeActive {
@@ -594,7 +657,7 @@ final class LiveController {
     }
 
     func pillPressEnded() {
-        guard !settings.handsFree else { return }
+        guard !handsFreeOn else { return }
         Task { await closeMic(send: true) }
     }
 
@@ -611,7 +674,7 @@ final class LiveController {
     }
 
     @discardableResult
-    private func openMic() -> Bool {
+    func openMic() -> Bool {
         guard connected || isMock else { return false }
         guard canListen() else { return false }
         if !isMock {
@@ -669,6 +732,7 @@ final class LiveController {
 
     private func afterSend() {
         askPrompt = nil
+        if callStage.prompt != nil { withAnimation(Motion.snappy) { callStage.prompt = nil } }
         pill.handle(.micClosed(sent: true))
         cue(.send)
     }
@@ -699,6 +763,13 @@ final class LiveController {
     }
 
     private func takePhoto(requestId: String?) async {
+        // In a call the camera may be off, or unusable while the app is in PiP: the tutor's request gets a clear
+        // answer now instead of waiting out its 8 seconds.
+        if inCall, let reason = callCaptureBlocker() {
+            Diagnostics.log("call: capture refused (\(reason.rawValue), background \(appInBackground))")
+            answerCaptureFailure(requestId: requestId, reason: reason)
+            return
+        }
         shutterTick += 1
         cue(.shutter)
         Haptics.light()
@@ -709,7 +780,8 @@ final class LiveController {
             image = await camera?.capture()
         }
         guard let image, let encoded = PhotoEncoder.jpeg(image) else {
-            showNotice(strings("notice.cameraUnavailable"))
+            if inCall { answerCaptureFailure(requestId: requestId, reason: appInBackground ? .background : .unavailable) }
+            else { showNotice(strings("notice.cameraUnavailable")) }
             return
         }
         transport?.send(.photo(requestId: requestId, jpeg: encoded.0, w: encoded.1, h: encoded.2))
@@ -718,7 +790,7 @@ final class LiveController {
     // MARK: Sessions
 
     func open(_ item: SessionItem, keepPath: Bool = false) {
-        drawerOpen = false
+        closeDrawer()
         if !keepPath { path = [] }
         guard item.sessionId != sessionId else { return }
         audio?.stopSpeaking(); speakTask?.cancel()
@@ -799,6 +871,7 @@ final class LiveController {
         if pill.shouldAnnounceThinking(now: now), mode == .live {
             let line = strings("pill.thinkingAloud")
             if captionsOn { caption = line }
+            setStageCaption(line)
             if !isMock { audio?.say(line, lang: settings.lang) }
         }
         if timeline.hasGap {
@@ -807,7 +880,7 @@ final class LiveController {
         } else {
             gapSince = nil
         }
-        if settings.handsFree, handsFreeActive, pill.micOpen, let audio {
+        if handsFreeOn, handsFreeActive, pill.micOpen, let audio {
             let db = audio.inputLevel.value * 45 - 55
             if vad.feed(level: db, at: now.timeIntervalSinceReferenceDate) == .speechEnded {
                 Task { await closeMic(send: true) }
@@ -818,7 +891,7 @@ final class LiveController {
     // MARK: Mock
 
     /// Fake student: speaks the scripted line, later answers the `ask`.
-    private func runMockStudent() {
+    func runMockStudent() {
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(1.2))
             await self?.mockSpeakNextLine()

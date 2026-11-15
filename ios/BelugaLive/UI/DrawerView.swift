@@ -1,46 +1,9 @@
 import SwiftUI
 import BelugaCore
 
-/// Side drawer (left): new chat, progress, folders (name + subject) and loose sessions.
-struct DrawerOverlay: View {
-    @Bindable var controller: LiveController
-    @GestureState private var dragX: CGFloat = 0
-
-    var body: some View {
-        GeometryReader { geo in
-            let width = min(340, geo.size.width * 0.84)
-            let open = controller.drawerOpen
-            ZStack(alignment: .leading) {
-                Color.black.opacity(open ? 0.32 : 0)
-                    .ignoresSafeArea()
-                    .allowsHitTesting(open)
-                    .onTapGesture { close() }
-                DrawerView(controller: controller)
-                    .frame(width: width)
-                    .background(Color(uiColor: .systemBackground).ignoresSafeArea())
-                    .overlay(alignment: .trailing) {
-                        Rectangle().fill(Ink.hairline).frame(width: Stroke.hairline).ignoresSafeArea()
-                    }
-                    .offset(x: open ? min(0, dragX) : -width - 8)
-                    .gesture(
-                        DragGesture(minimumDistance: 16)
-                            .updating($dragX) { v, state, _ in
-                                if abs(v.translation.width) > abs(v.translation.height) { state = v.translation.width }
-                            }
-                            .onEnded { v in
-                                if v.translation.width < -80 || v.predictedEndTranslation.width < -200 { close() }
-                            }
-                    )
-            }
-            .animation(Motion.panel, value: open)
-        }
-        .allowsHitTesting(controller.drawerOpen)
-    }
-
-    private func close() { withAnimation(Motion.panel) { controller.drawerOpen = false } }
-}
-
-private struct DrawerView: View {
+/// Side drawer (left), revealed under the sliding chat (`ChatShell`): new chat, progress, folders (name +
+/// subject) and loose sessions.
+struct DrawerView: View {
     @Bindable var controller: LiveController
     @Environment(\.strings) private var s
     @State private var creating = false
@@ -52,19 +15,20 @@ private struct DrawerView: View {
             List {
                 Section {
                     Button { controller.newChat() } label: {
-                        Label(s("chat.new"), systemImage: "square.and.pencil")
+                        RowLabel(symbol: "square.and.pencil", title: s("chat.new"), emphasized: true)
                     }
-                    Button { controller.drawerOpen = false; controller.requestProgress(); controller.showProgress = true } label: {
-                        Label(s("progress.title"), systemImage: "chart.bar")
+                    Button {
+                        withAnimation(Motion.smooth) { controller.drawerOpen = false }
+                        controller.requestProgress()
+                        controller.showProgress = true
+                    } label: {
+                        RowLabel(symbol: "chart.bar", title: s("progress.title"), emphasized: true)
                     }
                 }
-                .font(TypeScale.body.weight(.medium))
 
                 Section {
                     if controller.library.folders.isEmpty {
-                        Text(verbatim: s("folders.empty"))
-                            .font(TypeScale.callout)
-                            .foregroundStyle(Ink.secondary)
+                        StateBlock(title: s("folders.empty"))
                     }
                     ForEach(controller.library.folders) { folder in
                         Button { controller.openFolder(folder.id) } label: { FolderRow(folder: folder) }
@@ -74,7 +38,7 @@ private struct DrawerView: View {
                         Text(verbatim: s("folders.title"))
                         Spacer()
                         Button { creating = true } label: {
-                            Image(systemName: "plus").frame(width: 44, height: 32)
+                            Image(systemName: "plus").frame(width: Size.tap, height: 32)
                         }
                         .accessibilityLabel(s("folders.new"))
                     }
@@ -83,12 +47,10 @@ private struct DrawerView: View {
                 Section {
                     let loose = controller.library.sessions(in: nil)
                     if loose.isEmpty {
-                        Text(verbatim: s("sessions.empty"))
-                            .font(TypeScale.callout)
-                            .foregroundStyle(Ink.secondary)
+                        StateBlock(title: s("sessions.empty"))
                     }
                     ForEach(loose) { item in
-                        Button { controller.open(item) } label: { SessionRow(item: item) }
+                        Button { controller.open(item) } label: { SessionRow(item: item, current: item.sessionId == controller.sessionId) }
                             .contextMenu { SessionMenu(controller: controller, item: item, rename: { renaming = item; draftName = item.title }) }
                     }
                 } header: {
@@ -96,6 +58,8 @@ private struct DrawerView: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .animation(Motion.smooth, value: controller.library.sessions)
+            .animation(Motion.smooth, value: controller.library.folders)
             .navigationTitle(Text(verbatim: "Beluga"))
             .navigationBarTitleDisplayMode(.inline)
         }
@@ -117,64 +81,35 @@ struct FolderRow: View {
     @Environment(\.strings) private var s
 
     var body: some View {
-        HStack(spacing: Space.m) {
-            Image(systemName: Subject.symbol(folder.subject))
-                .font(.system(size: 15, weight: .regular))
-                .foregroundStyle(Ink.secondary)
-                .frame(width: 24)
-            VStack(alignment: .leading, spacing: Space.xxs) {
-                Text(verbatim: folder.name)
-                    .font(TypeScale.body)
-                    .foregroundStyle(Ink.primary)
-                    .lineLimit(1)
-                Text(verbatim: Subject.name(folder.subject, lang: s.lang) + " · " + s("folders.sessionCount", folder.sessionCount))
-                    .font(TypeScale.caption)
-                    .foregroundStyle(Ink.secondary)
-            }
-            Spacer(minLength: Space.s)
+        RowLabel(symbol: Subject.symbol(folder.subject), title: folder.name,
+                 subtitle: Subject.name(folder.subject, lang: s.lang) + " · " + s("folders.sessionCount", folder.sessionCount)) {
             if let i = folder.ingest, i.isActive {
                 ProgressView().controlSize(.small)
             }
         }
-        .frame(minHeight: 44)
     }
 }
 
 struct SessionRow: View {
     let item: SessionItem
+    var current = false
     @Environment(\.strings) private var s
 
     var body: some View {
         let parts = item.title.components(separatedBy: " · ")
-        HStack(alignment: .firstTextBaseline, spacing: Space.m) {
-            VStack(alignment: .leading, spacing: Space.xxs) {
-                Text(verbatim: parts.count > 1 ? parts.dropFirst().joined(separator: " · ") : (item.title.isEmpty ? s("board.untitled") : item.title))
-                    .font(TypeScale.body)
-                    .foregroundStyle(Ink.primary)
-                    .lineLimit(2)
-                if let preview = item.preview {
-                    Text(verbatim: preview)
-                        .font(TypeScale.caption)
-                        .foregroundStyle(Ink.secondary)
-                        .lineLimit(1)
-                } else if parts.count > 1 {
-                    Text(verbatim: parts[0])
-                        .font(TypeScale.caption)
-                        .foregroundStyle(Ink.secondary)
+        let title = parts.count > 1 ? parts.dropFirst().joined(separator: " · ") : (item.title.isEmpty ? s("board.untitled") : item.title)
+        let subtitle = item.preview ?? (parts.count > 1 ? parts[0] : nil)
+        RowLabel(title: title, subtitle: subtitle, emphasized: current) {
+            HStack(spacing: Space.s) {
+                if item.mode == .live {
+                    Image(systemName: "waveform")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Ink.tertiary)
+                        .accessibilityLabel(Text(verbatim: "Live"))
                 }
+                RowMeta(text: DateText.short(item.updatedAt, lang: s.lang) ?? item.updatedAt)
             }
-            Spacer(minLength: Space.s)
-            if item.mode == .live {
-                Image(systemName: "waveform")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Ink.tertiary)
-                    .accessibilityLabel(Text(verbatim: "Live"))
-            }
-            Text(verbatim: DateText.short(item.updatedAt, lang: s.lang) ?? item.updatedAt)
-                .font(TypeScale.caption.monospacedDigit())
-                .foregroundStyle(Ink.tertiary)
         }
-        .padding(.vertical, Space.xxs)
     }
 }
 

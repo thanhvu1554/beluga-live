@@ -132,7 +132,12 @@ extension LiveController {
             startCamera()
             if board.hasContent { boardVisible = true }
         }
-        withAnimation(Motion.panel) { mode = new }
+        withAnimation(Motion.panel) {
+            mode = new
+            // Leaving live also hangs up a call (the call is a face of live mode).
+            if new == .chat, inCall { inCall = false }
+        }
+        if new == .chat { callDidEnd() }
         Haptics.tap()
         if connected { transport?.send(.settings(settings.tutor(mode: new))) }
     }
@@ -315,8 +320,14 @@ extension LiveController {
 
     // MARK: Sessions and folders
 
+    /// The drawer slides shut on the shared spring (whatever triggered it: a row, a new chat, an error).
+    func closeDrawer() {
+        guard drawerOpen else { return }
+        withAnimation(Motion.smooth) { drawerOpen = false }
+    }
+
     func newChat(in folder: String? = nil) {
-        drawerOpen = false
+        closeDrawer()
         path = []
         audio?.stopSpeaking(); speakTask?.cancel()
         sessionId = nil
@@ -333,9 +344,12 @@ extension LiveController {
     }
 
     func openFolder(_ id: String, tab: FolderTab = .sessions) {
-        drawerOpen = false
+        closeDrawer()
         folderTab = tab
         path = [.folder(id)]
+        // Draw this folder's knowledge page now (from cache, then again when fresh data arrives) so the tab
+        // is ready before it is opened.
+        renderKnowledge(id)
         refreshFolder(id)
     }
 
@@ -393,7 +407,7 @@ extension LiveController {
             if openCreatedFolder, !id.isEmpty { openCreatedFolder = false; openFolder(id) }
         case .ingest(let s):
             library.ingest[s.folderId] = s
-            if knowledgeFolder == s.folderId { knowledgePage.invoke("progress", s.json) }
+            if knowledgeFolder == s.folderId { knowledgePage.invoke("progress", s.json); renderedIngest = s.json }
             if s.state == .done {
                 transport?.send(.getKnowledge(folderId: s.folderId))
                 transport?.send(.getReview(folderId: s.folderId))
@@ -431,12 +445,31 @@ extension LiveController {
 
     // MARK: Knowledge page
 
-    /// Puts a folder's knowledge (with its review overlay and any running ingest) on the page.
-    func renderKnowledge(_ folder: String) {
+    /// Puts a folder's knowledge (with its review overlay and any running ingest) on the page. The page is only
+    /// rebuilt when what it would show changed: switching folder tabs, or the same data arriving again after
+    /// `refreshFolder`, used to rebuild the whole page (KaTeX included) on the main thread mid-transition.
+    func renderKnowledge(_ folder: String, force: Bool = false) {
+        let data = library.knowledge[folder]?.raw ?? .null
+        let review = library.review[folder]?.raw ?? .null
+        let ingest: JSONValue = library.ingest[folder].map { $0.isActive || $0.state == .error ? $0.json : .null } ?? .null
+        let signature = JSONValue.array([.string(folder), data, review])
+        if !force, knowledgeFolder == folder, renderedKnowledge == signature {
+            if renderedIngest != ingest { renderedIngest = ingest; knowledgePage.invoke("progress", ingest) }
+            return
+        }
         knowledgeFolder = folder
+        renderedKnowledge = signature
+        renderedIngest = ingest
+        // The native folder screen has its own tab bar: hide the page's section strip (older pages ignore this).
+        knowledgePage.call("knowledge.setOptions&&knowledge.setOptions({tabs:false})")
         // null data draws the page's empty state (with its "add exams" button).
-        knowledgePage.invoke("render", library.knowledge[folder]?.raw ?? .null, library.review[folder]?.raw ?? .null)
-        if let i = library.ingest[folder] { knowledgePage.invoke("progress", i.isActive || i.state == .error ? i.json : .null) }
+        knowledgePage.invoke("render", data, review)
+        if library.ingest[folder] != nil { knowledgePage.invoke("progress", ingest) }
+    }
+
+    /// Scrolls the knowledge page to one of its sections (menu in the folder's navigation bar).
+    func showKnowledgeSection(_ id: String) {
+        knowledgePage.invoke("show", .string(id))
     }
 
     func knowledgePageMessage(_ body: [String: Any]) {
@@ -448,6 +481,12 @@ extension LiveController {
             showIngest = folder
         case "ingest_cancel":
             cancelIngest(folder: folder)
+        case "sections":
+            let items = (body["items"] as? [[String: Any]]) ?? []
+            knowledgeSections = items.compactMap { item in
+                guard let id = item["id"] as? String, let title = item["title"] as? String else { return nil }
+                return KnowledgeSection(id: id, title: title)
+            }
         case "open_topic":
             let title = body["title"] as? String ?? ""
             newChat(in: folder)
@@ -521,7 +560,7 @@ extension LiveController {
 
     private func newChatSilently(folder: String) {
         path = []
-        drawerOpen = false
+        closeDrawer()
         sessionId = nil
         startFreshSession()
         folderId = folder
@@ -602,9 +641,56 @@ extension LiveController {
         }
     }
 
+    /// `-mockTour 1`: drives the chat shell through its transitions so one screen recording shows them all:
+    /// home entrance, drawer out and back, a folder pushed, its tabs, back, a question typed (Live morphs into
+    /// Send), the answer streaming, Live up and down, the model sheet, Settings.
+    func runMockTour() {
+        Task { [weak self] in
+            func pause(_ s: Double) async { try? await Task.sleep(for: .seconds(s)) }
+            await pause(3.0)
+            guard let self else { return }
+            withAnimation(Motion.smooth) { self.drawerOpen = true }
+            await pause(1.8)
+            self.closeDrawer()
+            await pause(1.4)
+            self.openFolder("f-toan", tab: .sessions)
+            await pause(1.6)
+            self.folderTab = .knowledge
+            await pause(1.8)
+            self.folderTab = .review
+            await pause(1.4)
+            self.folderTab = .exams
+            await pause(1.4)
+            self.path = []
+            await pause(1.6)
+            for ch in MockData.chatQuestion {
+                self.composer.text.append(ch)
+                try? await Task.sleep(for: .milliseconds(28))
+            }
+            await pause(0.8)
+            self.sendChat()
+            await pause(8.0)
+            self.setMode(.live)
+            await pause(2.6)
+            self.setMode(.chat)
+            await pause(1.6)
+            self.showModels = true
+            await pause(1.8)
+            self.showModels = false
+            await pause(1.4)
+            self.showSettings = true
+            await pause(2.0)
+            self.showSettings = false
+        }
+    }
+
     private func feed(_ v: JSONValue) { handle(ServerMessage.decode(v)) }
 
     func applyScene(_ scene: MockScene, mock: MockTransport) {
+        if scene.isCall {
+            applyCallScene(scene, mock: mock)
+            return
+        }
         if scene.isLive {
             applyLiveScene(scene, mock: mock)
             return
@@ -680,6 +766,11 @@ extension LiveController {
                 self.voicePreview.toggle("RxhjHDfpO54FYotYtKpw", controller: self)
                 self.sceneBusy -= 1
             }
+        case .connection:
+            settingsPath = [.connection]
+            showSettings = true
+        case .typing:
+            composer.text = "Cho tớ hỏi bài này: giải phương trình x² − 5x + 6 = 0, rồi kiểm tra lại bằng Vi-ét giúp tớ. Tớ hay nhầm dấu ở bước cuối."
         case .replay:
             applyLiveScene(.replay, mock: mock)
             liveTurns.insert(1)

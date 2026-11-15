@@ -32,6 +32,8 @@ final class ChatComposer {
     var transcribing = false
     /// Asks the text field to take focus (e.g. after tapping a question in the transcript).
     var focusTick = 0
+    /// Asks the composer to open the camera (or the photo library where there is no camera).
+    var cameraTick = 0
 
     static let maxAttachments = 30
 

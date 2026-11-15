@@ -15,7 +15,26 @@ struct FolderView: View {
     private var folder: Folder? { controller.library.folder(folderId) }
 
     var body: some View {
-        VStack(spacing: 0) {
+        // Tabs are peers: they cross-fade in place (no slide). The one tab bar of the screen is this segmented
+        // control in the bar area; the knowledge page's own section strip is hidden and its sections are
+        // reached from the list button in the navigation bar instead.
+        ZStack {
+            // The knowledge page stays mounted (invisible) so it is laid out and painted before its tab is
+            // chosen: switching to it is then a cross-fade, not a blank second while WebKit paints.
+            KnowledgeTab(controller: controller, folderId: folderId)
+                .opacity(controller.folderTab == .knowledge ? 1 : 0)
+                .allowsHitTesting(controller.folderTab == .knowledge)
+                .accessibilityHidden(controller.folderTab != .knowledge)
+            switch controller.folderTab {
+            case .sessions: FolderSessions(controller: controller, folderId: folderId).transition(.opacity)
+            case .knowledge: EmptyView()
+            case .review: ReviewTab(controller: controller, folderId: folderId).transition(.opacity)
+            case .exams: ExamsTab(controller: controller, folderId: folderId).transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(Motion.snappy, value: controller.folderTab)
+        .safeAreaBar(edge: .top, spacing: 0) {
             Picker(s("folder.tabs"), selection: $controller.folderTab) {
                 ForEach(FolderTab.allCases, id: \.self) { tab in
                     Text(verbatim: s("folder.tab.\(tab.rawValue)")).tag(tab)
@@ -23,23 +42,25 @@ struct FolderView: View {
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, Space.l)
-            .padding(.vertical, Space.s)
-
-            Group {
-                switch controller.folderTab {
-                case .sessions: FolderSessions(controller: controller, folderId: folderId)
-                case .knowledge: KnowledgeTab(controller: controller, folderId: folderId)
-                case .review: ReviewTab(controller: controller, folderId: folderId)
-                case .exams: ExamsTab(controller: controller, folderId: folderId)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.top, Space.xs)
+            .padding(.bottom, Space.s)
         }
+        .onChange(of: controller.folderTab) { _, _ in Haptics.selection() }
         .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle(Text(verbatim: folder?.name ?? ""))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
+                if controller.folderTab == .knowledge, !controller.knowledgeSections.isEmpty {
+                    Menu {
+                        ForEach(controller.knowledgeSections, id: \.id) { sec in
+                            Button(sec.title) { controller.showKnowledgeSection(sec.id) }
+                        }
+                    } label: {
+                        Image(systemName: "list.bullet")
+                    }
+                    .accessibilityLabel(s("knowledge.sections"))
+                }
                 Menu {
                     Button { draftName = folder?.name ?? ""; renaming = true } label: { Label(s("folders.rename"), systemImage: "pencil") }
                     Button { controller.showIngest = folderId } label: { Label(s("ingest.add"), systemImage: "doc.badge.plus") }
@@ -95,15 +116,12 @@ private struct FolderSessions: View {
         List {
             Section {
                 Button { controller.newChat(in: folderId) } label: {
-                    Label(s("chat.new"), systemImage: "square.and.pencil")
-                        .font(TypeScale.body.weight(.medium))
+                    RowLabel(symbol: "square.and.pencil", title: s("chat.new"), emphasized: true)
                 }
             }
             Section {
                 if items.isEmpty {
-                    Text(verbatim: s("folder.sessions.empty"))
-                        .font(TypeScale.callout)
-                        .foregroundStyle(Ink.secondary)
+                    StateBlock(title: s("folder.sessions.empty"))
                 }
                 ForEach(items) { item in
                     Button { controller.open(item) } label: { SessionRow(item: item) }
@@ -114,6 +132,7 @@ private struct FolderSessions: View {
                 }
             }
         }
+        .animation(Motion.smooth, value: items)
         .alert(s("sessions.rename"), isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField(s("sessions.rename"), text: $draft)
             Button(s("common.cancel"), role: .cancel) { renaming = nil }
@@ -137,8 +156,9 @@ private struct KnowledgeTab: View {
                 NativeKnowledge(controller: controller, folderId: folderId)
             }
         }
+        // Rendering is skipped when the page already shows this folder's data (no rebuild on tab switches).
         .onAppear { controller.renderKnowledge(folderId) }
-        .onChange(of: controller.knowledgePage.ready) { _, _ in controller.renderKnowledge(folderId) }
+        .onChange(of: controller.knowledgePage.ready) { _, _ in controller.renderKnowledge(folderId, force: true) }
     }
 }
 
@@ -310,8 +330,7 @@ private struct ReviewTab: View {
         List {
             Section {
                 Button { controller.quickReview(folderId) } label: {
-                    Label(s("review.quick"), systemImage: "bolt")
-                        .font(TypeScale.body.weight(.semibold))
+                    RowLabel(symbol: "bolt", title: s("review.quick"), emphasized: true)
                 }
             } footer: { Text(verbatim: s("review.quick.footer")) }
 
@@ -320,12 +339,7 @@ private struct ReviewTab: View {
                     Section(s("review.progress")) {
                         TopicBar(review: r)
                         ForEach(r.topics) { t in
-                            HStack {
-                                VStack(alignment: .leading, spacing: Space.xxs) {
-                                    Text(verbatim: t.title).font(TypeScale.body)
-                                    if !t.chapter.isEmpty { Text(verbatim: t.chapter).font(TypeScale.caption).foregroundStyle(Ink.tertiary) }
-                                }
-                                Spacer()
+                            RowLabel(title: t.title, subtitle: t.chapter.isEmpty ? nil : t.chapter) {
                                 Text(verbatim: s("review.state.\(t.state.rawValue)"))
                                     .font(TypeScale.caption.weight(t.state == .weak ? .semibold : .regular))
                                     .foregroundStyle(t.state == .new ? Ink.tertiary : Ink.primary)
@@ -361,24 +375,17 @@ private struct ReviewTab: View {
                     Section(s("review.lessons")) {
                         ForEach(r.sessions) { lesson in
                             Button { controller.replay(lesson, folder: folderId) } label: {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: Space.xxs) {
-                                        Text(verbatim: lesson.title).font(TypeScale.body).foregroundStyle(Ink.primary)
-                                        Text(verbatim: lesson.steps > 0 ? s("review.steps", lesson.steps) : s("review.chat"))
-                                            .font(TypeScale.caption).foregroundStyle(Ink.secondary)
-                                    }
-                                    Spacer()
-                                    Image(systemName: lesson.mode == .live ? "play.rectangle" : "text.bubble")
-                                        .foregroundStyle(Ink.secondary)
-                                }
+                                RowLabel(symbol: lesson.mode == .live ? "play.rectangle" : "text.bubble", title: lesson.title,
+                                         subtitle: lesson.steps > 0 ? s("review.steps", lesson.steps) : s("review.chat"))
                             }
                         }
                     }
                 }
             } else {
-                ProgressView()
+                ProgressView().frame(maxWidth: .infinity, minHeight: Size.row)
             }
         }
+        .animation(Motion.smooth, value: controller.library.review[folderId])
     }
 }
 
@@ -387,13 +394,8 @@ private struct TopicLine: View {
     let note: String
     let trailing: String?
     var body: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: Space.xxs) {
-                Text(verbatim: topic).font(TypeScale.body)
-                if !note.isEmpty { Text(verbatim: note).font(TypeScale.caption).foregroundStyle(Ink.secondary) }
-            }
-            Spacer()
-            if let trailing { Text(verbatim: trailing).font(TypeScale.caption.monospacedDigit()).foregroundStyle(Ink.tertiary) }
+        RowLabel(title: topic, subtitle: note.isEmpty ? nil : note) {
+            if let trailing { RowMeta(text: trailing) }
         }
     }
 }
@@ -473,30 +475,25 @@ private struct ExamsTab: View {
                             Button(st.title) { controller.genExamRequest = GenExamRequest(folderId: folderId, structureId: st.id) }
                         }
                     } label: {
-                        Label(s("exams.new"), systemImage: "plus")
-                            .font(TypeScale.body.weight(.semibold))
+                        RowLabel(symbol: "plus", title: s("exams.new"), emphasized: true)
                     }
                 }
             }
             Section {
                 let items = controller.library.exams[folderId] ?? []
                 if items.isEmpty {
-                    Text(verbatim: s("exams.empty")).font(TypeScale.callout).foregroundStyle(Ink.secondary)
+                    StateBlock(title: s("exams.empty"))
                 }
                 ForEach(items) { exam in
                     Button { Task { await controller.exportExam(exam.examId, title: exam.title) } } label: {
-                        HStack {
-                            Image(systemName: "doc.richtext").foregroundStyle(Ink.secondary).frame(width: 24)
-                            VStack(alignment: .leading, spacing: Space.xxs) {
-                                Text(verbatim: exam.title).font(TypeScale.body).foregroundStyle(Ink.primary)
-                                Text(verbatim: s("exams.meta", exam.questions, DateText.short(exam.createdAt, lang: s.lang) ?? ""))
-                                    .font(TypeScale.caption).foregroundStyle(Ink.secondary)
+                        RowLabel(symbol: "doc.richtext", title: exam.title,
+                                 subtitle: s("exams.meta", exam.questions, DateText.short(exam.createdAt, lang: s.lang) ?? "")) {
+                            ZStack {
+                                if controller.exporting == exam.examId { ProgressView().transition(.opacity) }
+                                else { Image(systemName: "square.and.arrow.up").foregroundStyle(Ink.tertiary).transition(.opacity) }
                             }
-                            Spacer()
-                            if controller.exporting == exam.examId { ProgressView() }
-                            else { Image(systemName: "square.and.arrow.up").foregroundStyle(Ink.tertiary) }
+                            .animation(Motion.snappy, value: controller.exporting)
                         }
-                        .frame(minHeight: 44)
                     }
                     .disabled(controller.exporting != nil)
                     .swipeActions {
@@ -505,5 +502,6 @@ private struct ExamsTab: View {
                 }
             } header: { Text(verbatim: s("exams.list")) } footer: { Text(verbatim: s("exams.footer")) }
         }
+        .animation(Motion.smooth, value: controller.library.exams[folderId]?.map(\.examId))
     }
 }

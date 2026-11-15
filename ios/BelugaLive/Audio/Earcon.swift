@@ -10,7 +10,7 @@ enum Earcon: CaseIterable {
     case offline     // connection lost
     case shutter     // photo taken
 
-    nonisolated(unsafe) static let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!
+    static let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!
 
     /// (frequency Hz, start s, duration s, gain)
     private var notes: [(Double, Double, Double, Float)] {
@@ -70,5 +70,16 @@ enum Haptics {
     static func success() {
         guard enabled else { return }
         UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
+    /// A value passed a step (folder tab, a panel snapping home).
+    static func selection() {
+        guard enabled else { return }
+        UISelectionFeedbackGenerator().selectionChanged()
+    }
+
+    static func warning() {
+        guard enabled else { return }
+        UINotificationFeedbackGenerator().notificationOccurred(.warning)
     }
 }

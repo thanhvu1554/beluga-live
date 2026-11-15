@@ -31,19 +31,14 @@ struct ModelPickerList: View {
                 Section {
                     ForEach(controller.library.models) { m in
                         Button { controller.selectModel(m.id) } label: {
-                            HStack(spacing: Space.m) {
-                                VStack(alignment: .leading, spacing: Space.xxs) {
-                                    Text(verbatim: m.label).font(TypeScale.body).foregroundStyle(Ink.primary)
-                                    Text(verbatim: s(m.provider == "claude" ? "models.provider.claude" : "models.provider.api")
-                                         + (m.vision ? "" : " · " + s("models.noVision")))
-                                        .font(TypeScale.caption).foregroundStyle(Ink.secondary)
-                                }
-                                Spacer()
-                                if m.id == controller.settings.model {
-                                    Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold)).foregroundStyle(Ink.primary)
-                                }
+                            RowLabel(title: m.label,
+                                     subtitle: s(m.provider == "claude" ? "models.provider.claude" : "models.provider.api")
+                                         + (m.vision ? "" : " · " + s("models.noVision")),
+                                     emphasized: m.id == controller.settings.model) {
+                                Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold)).foregroundStyle(Ink.primary)
+                                    .opacity(m.id == controller.settings.model ? 1 : 0)
+                                    .scaleEffect(m.id == controller.settings.model ? 1 : 0.6)
                             }
-                            .frame(minHeight: 44)
                         }
                         .accessibilityAddTraits(m.id == controller.settings.model ? .isSelected : [])
                     }
@@ -69,12 +64,15 @@ struct ModelPickerList: View {
                     }
                 }
             }
+            .animation(Motion.snappy, value: controller.settings.model)
             .navigationTitle(s("models.title"))
             .navigationBarTitleDisplayMode(.inline)
     }
 }
 
-/// Tokens and reference cost for the Claude subscription, other models and exam reading.
+/// Usage, most important first: how much of the Claude plan limit is used and when it refills; then what the
+/// work would have cost (this chat, today, 7 days) as three plain rows; then the money that is really spent
+/// (external models, reading and writing exams). Raw token counters sit one level down.
 struct UsageView: View {
     let controller: LiveController
     @Environment(\.strings) private var s
@@ -82,51 +80,51 @@ struct UsageView: View {
     var body: some View {
         List {
             if let u = controller.library.usage {
-                if let limit = u.limit {
-                    Section {
-                        LabeledContent(s("usage.limit"), value: s("usage.limit.\(Self.limitKey(limit.status))"))
-                        if let used = limit.utilization {
-                            LabeledContent(s("usage.used"), value: "\(Int((used * 100).rounded())) %")
-                            ProgressView(value: min(1, max(0, used)))
-                        }
-                        if let r = limit.resetsAt, let d = LearningDate.parse(r) {
-                            LabeledContent(s("usage.resets"), value: d.formatted(Date.FormatStyle(date: .omitted, time: .shortened)
-                                .weekday(.abbreviated).locale(Locale(identifier: s.lang == .vi ? "vi_VN" : "en_US"))))
-                        }
-                    } footer: {
-                        if let type = limit.type { Text(verbatim: s("usage.window", Self.windowName(type, s))) }
-                    }
+                Section {
+                    LimitMeter(controller: controller)
+                        .padding(.vertical, Space.xs)
                 }
-                bucket(s("usage.session"), u.session)
-                bucket(s("usage.today"), u.today)
-                bucket(s("usage.week"), u.week)
+                Section {
+                    costRow(s("usage.session"), u.session)
+                    costRow(s("usage.today"), u.today)
+                    costRow(s("usage.week"), u.week)
+                } header: {
+                    Text(verbatim: s("usage.cost"))
+                } footer: {
+                    Text(verbatim: s("usage.cost.footer"))
+                }
                 Section {
                     LabeledContent(s("usage.other"), value: Self.money(u.otherToday.costUsd))
                     LabeledContent(s("usage.ingestToday"), value: Self.money(u.ingestToday))
-                    LabeledContent(s("usage.ingestTotal"), value: Self.money(u.ingestTotal))
                     LabeledContent(s("usage.examToday"), value: Self.money(u.examToday))
-                    LabeledContent(s("usage.examTotal"), value: Self.money(u.examTotal))
+                    LabeledContent(s("usage.paidTotal"), value: Self.money(u.ingestTotal + u.examTotal))
                 } header: { Text(verbatim: s("usage.paid")) } footer: { Text(verbatim: s("usage.paid.footer")) }
+                Section {
+                    NavigationLink {
+                        TokenDetailView(controller: controller)
+                    } label: {
+                        Label(s("usage.tokens.detail"), systemImage: "number")
+                    }
+                }
             } else {
-                Text(verbatim: s(controller.connected ? "progress.loading" : "progress.offline"))
-                    .foregroundStyle(Ink.secondary)
+                Section {
+                    StateBlock(title: s(controller.connected ? "progress.loading" : "usage.offline"))
+                }
             }
         }
+        .monospacedDigit()
+        .animation(Motion.smooth, value: controller.library.usage)
         .navigationTitle(s("usage.title"))
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { controller.requestUsage() }
         .refreshable { controller.requestUsage() }
     }
 
-    private func bucket(_ title: String, _ b: UsageBucket) -> some View {
-        Section {
-            LabeledContent(s("usage.tokens"), value: Self.tokens(b.totalTokens))
-            LabeledContent(s("usage.inout"), value: Self.tokens(b.inputTokens) + " / " + Self.tokens(b.outputTokens))
-            LabeledContent(s("usage.cache"), value: Self.tokens(b.cacheReadTokens) + " / " + Self.tokens(b.cacheWriteTokens))
-            LabeledContent(s("usage.turns"), value: "\(b.turns)")
-            LabeledContent(s("usage.cost"), value: "≈ " + Self.money(b.costUsd))
-        } header: { Text(verbatim: title) } footer: {
-            if title == s("usage.session") { Text(verbatim: s("usage.cost.footer")) }
+    private func costRow(_ title: String, _ b: UsageBucket) -> some View {
+        RowLabel(title: title, subtitle: s("usage.turnsCount", b.turns)) {
+            Text(verbatim: "≈ " + Self.money(b.costUsd))
+                .font(TypeScale.body.monospacedDigit())
+                .foregroundStyle(Ink.primary)
         }
     }
 
@@ -155,6 +153,35 @@ struct UsageView: View {
     }
 
     static func money(_ usd: Double) -> String { String(format: "$%.2f", usd) }
+}
+
+/// The raw counters per window (tokens in and out, cache, turns), for when the numbers themselves matter.
+struct TokenDetailView: View {
+    let controller: LiveController
+    @Environment(\.strings) private var s
+
+    var body: some View {
+        List {
+            if let u = controller.library.usage {
+                bucket(s("usage.session"), u.session)
+                bucket(s("usage.today"), u.today)
+                bucket(s("usage.week"), u.week)
+                bucket(s("usage.other"), u.otherToday)
+            }
+        }
+        .monospacedDigit()
+        .navigationTitle(s("usage.tokens.detail"))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func bucket(_ title: String, _ b: UsageBucket) -> some View {
+        Section(title) {
+            LabeledContent(s("usage.tokens"), value: UsageView.tokens(b.totalTokens))
+            LabeledContent(s("usage.inout"), value: UsageView.tokens(b.inputTokens) + " / " + UsageView.tokens(b.outputTokens))
+            LabeledContent(s("usage.cache"), value: UsageView.tokens(b.cacheReadTokens) + " / " + UsageView.tokens(b.cacheWriteTokens))
+            LabeledContent(s("usage.turns"), value: "\(b.turns)")
+        }
+    }
 }
 
 /// An old lesson on the board, read only: swipe the steps; no camera, no voice.

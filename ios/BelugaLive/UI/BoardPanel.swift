@@ -18,7 +18,7 @@ struct BoardPanel: View {
                 .stroke(Ink.hairline, lineWidth: Stroke.hairline)
                 .allowsHitTesting(false)
         }
-        .offset(y: max(0, drag))
+        .offset(y: drag >= 0 ? drag : Motion.rubberBand(drag, limit: 28))
     }
 
     private var header: some View {
@@ -45,18 +45,27 @@ struct BoardPanel: View {
         .contentShape(.rect)
         // Only a vertical drag on the header collapses the panel; horizontal swipes belong to the board's
         // step paging (web scroll-snap) and are never taken here.
+        // The panel follows the finger (rubber band upwards); a flick or a long pull closes it, carrying the
+        // finger's speed into the spring, otherwise it springs home.
         .gesture(
-            DragGesture(minimumDistance: 12)
+            DragGesture(minimumDistance: 12, coordinateSpace: .global)
                 .onChanged { v in
                     guard abs(v.translation.height) > abs(v.translation.width) else { return }
-                    drag = v.translation.height
+                    var t = Transaction()
+                    t.disablesAnimations = true
+                    withTransaction(t) { drag = v.translation.height }
                 }
                 .onEnded { v in
                     let vertical = abs(v.translation.height) > abs(v.translation.width)
-                    if vertical, v.translation.height > 120 || v.predictedEndTranslation.height > 240 {
-                        controller.showBoard(false)
+                    let close = vertical && (v.translation.height > 120 || v.translation.height + v.velocity.height * 0.2 > 240)
+                    if close {
+                        withAnimation(Motion.release(velocity: v.velocity.height, distance: 600)) {
+                            controller.boardVisible = false
+                            drag = 0
+                        }
+                    } else {
+                        withAnimation(Motion.release(velocity: v.velocity.height, distance: -max(1, drag))) { drag = 0 }
                     }
-                    withAnimation(Motion.panel) { drag = 0 }
                 }
         )
     }
@@ -79,7 +88,8 @@ private struct StepTicks: View {
                     .onTapGesture { select(i) }
             }
         }
-        .animation(.easeOut(duration: Motion.quick), value: current)
+        .animation(Motion.snappy, value: current)
+        .animation(Motion.snappy, value: count)
         .accessibilityElement()
         .accessibilityLabel(s("board.step", current + 1, count))
     }
