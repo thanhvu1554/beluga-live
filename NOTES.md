@@ -61,6 +61,36 @@ lượt học thật đọc bằng giọng mới.
 
 ## iOS (`ios/`, `shared/board/`)
 
+### Bản v3 (giao thức v3, 16/11/2026, nhánh `v3-ios`)
+
+App gửi `hello.v = 3`; mock nói v3 (home, `/sync/*`, backup, câu chờ). Mọi màn mới có cảnh screenshot (sáng/tối) và test UI.
+- **Folder tự đặt tên (mục 17):** sheet "Thư mục mới"/"Sửa thư mục" (tên + một dòng mô tả, đếm ký tự khi gần 300, bàn phím lên
+  cùng sheet, vuốt xuống không mất chữ đã gõ). Không còn chọn môn; `kind` chỉ chọn biểu tượng. Tạo xong mở folder sau khi
+  sheet hạ xong (0,45 s). Mô tả hiện dưới "Đoạn chat mới" trong folder và trong hàng folder ở ngăn kéo.
+- **Gợi ý theo phạm vi (mục 18):** thẻ ở màn chính lấy từ `HomePlanner` (frame `home` đúng ngữ cảnh, không có thì dữ liệu máy,
+  đã lọc); ở gốc thẻ nào của folder cũng ghi tên folder; trong folder không bao giờ nhắc folder khác. Dòng phụ của lời chào
+  chỉ hiện đúng nơi đã hỏi. Trang kiến thức chỉ hiện khi đã vẽ cho đúng folder đó (không còn thoáng thấy trang folder trước).
+- **Bản sao ở máy (mục 19):** `Application Support/replica/` (mock: `replica-mock/`): sổ etag, hàng đợi sửa offline, danh
+  sách folder/phiên, mỗi phần một tệp. Đọc bản sao khi mở app, kéo `manifest` mỗi `ready` và khi vào lại app, kéo theo
+  `sync{…}`; 304 khi không đổi. Offline: ngăn kéo có một dòng "Ngoại tuyến · Đang xem bản lưu lúc …", tiêu đề màn chính ghi
+  "Ngoại tuyến", ô soạn vẫn gõ được nhưng không gửi; mở phiên thì chép lại từ bản sao; tạo/sửa folder, đổi tên/chuyển/xoá
+  phiên xếp hàng (folder chờ có biểu tượng đồng hồ) và gửi lại theo thứ tự khi nối được (folder tạo offline chờ id thật rồi
+  các thao tác sau theo id đó). Xoá folder cần kết nối. Xuất PDF đề vẫn cần máy chủ.
+- **Nghe thử giọng:** thân tải về được kiểm tra trước khi lưu (không lưu trang lỗi, tệp cache hỏng thì bỏ), giải mã từ tệp
+  `.mp3` có khai báo kiểu, đi qua engine khi Live đang chạy, token trong query. ID3 **không** phải nguyên nhân: Core Audio trên
+  máy Mac CI đọc được clip thật của server (thẻ ID3v2.4 45 byte, và bản thẻ 96 KB) bằng mọi cách đưa dữ liệu
+  (`AudioDecodeTests`), mock trên simulator phát clip ID3 thật qua đúng đường của app.
+- **Câu chờ (mục 21):** tải sẵn clip của giọng đang chọn (`Caches/voices/<voice>/<filler>.mp3`), `WaitClips` quyết định,
+  phát trên node riêng của engine, tắt dần ~100 ms khi tới lời thật; chữ của câu chờ hiện ở chỗ phụ đề. Không phát ở chat.
+  Bỏ hẳn câu "Đang suy nghĩ…" bằng giọng hệ thống. Chưa làm: tiếng "ting" và lớp nền êm khi nghĩ (thuộc đợt chuyển động).
+- **Cuộc gọi (mục 22):** "Đang gọi Beluga…" + chuông chờ tổng hợp + vòng sóng trên sân khấu, nối máy (tiếng + rung, "Đã kết
+  nối" 1,2 s rồi đồng hồ), câu nhấc máy bằng clip `hello` (mic chờ trong lúc đó), "Đã kết thúc · mm:ss" 0,9 s; quá 8 s thì
+  "Không gọi được" + "Gọi lại".
+- **Cài đặt → Dữ liệu:** trạng thái bản sao (đã đồng bộ lúc, đang đồng bộ n/m, thay đổi chờ gửi, "Đồng bộ ngay") và sao lưu
+  R2 (lần cuối + dung lượng, lần tới, lỗi, "Sao lưu ngay" chạy tới khi server báo bản mới).
+- Chỉ kiểm được trên iPhone thật: tiếng chuông/nối máy/câu chờ thật qua loa, tắt dần khi lời thật tới, nghe thử giọng với
+  server thật, đồng bộ HTTP thật với `v3-server`, bản sao sau khi khởi động lại máy.
+
 ### Bản v2 (giao thức v2, 15/11/2026)
 
 CI xanh ở run 43659462176 (commit 10f9565; trước đó 43656665973): `swift test` BelugaCore (thêm `V2Tests.swift`: mọi frame v2 hai chiều,

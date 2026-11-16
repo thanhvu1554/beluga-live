@@ -96,7 +96,8 @@ extension LiveController {
         setStageCaption(line.text)
         fillerTask?.cancel()
         if isMock {
-            let seconds = max(1.4, Double(line.text.count) * 0.07)
+            // UI test pacing (`-mockSlowThink`): the line stays long enough for the accessibility queries.
+            let seconds = UserDefaults.standard.bool(forKey: "mockSlowThink") ? 4.5 : max(1.4, Double(line.text.count) * 0.07)
             run(waitClips.handle(.clipStarted(id: id, duration: seconds), now: Date()))
             fillerTask = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(seconds))

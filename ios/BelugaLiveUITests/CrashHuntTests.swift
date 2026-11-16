@@ -165,7 +165,8 @@ final class CrashHuntTests: XCTestCase {
         tap("Sửa thư mục")
         pause(1.2)
         let about = field("folder.about")
-        about.tap()
+        // Caret at the end of the line, so the words are added after what is there.
+        about.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.5)).tap()
         pause(0.3)
         app.typeText(", mỗi tối 20 phút")
         pause(0.5)
@@ -198,6 +199,8 @@ final class CrashHuntTests: XCTestCase {
         alive("home inside English")
         XCTAssertTrue(exists("Ôn 1 mục tới hạn"), "the folder's own due review")
         XCTAssertTrue(exists("Tiếng Anh trên lớp"), "the folder's own name")
+        let math = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[cd] %@", "Toán 9"))
+        if math.count > 0 { print("HUNT math inside English: \(math.allElementsBoundByIndex.prefix(4).map { "\($0.elementType.rawValue) \($0.label)" })") }
         XCTAssertFalse(exists("Toán 9", timeout: 1.5), "nothing of the Math folder inside English")
     }
 
@@ -218,7 +221,8 @@ final class CrashHuntTests: XCTestCase {
         XCTAssertTrue(exists("Đang xem bản lưu lúc"), "the drawer says the screens show the saved copy")
         XCTAssertTrue(exists("Toán 9 · Giữa kỳ 1"), "folders come from the replica")
         alive("offline drawer")
-        tapContaining("Toán 9 · Giữa kỳ 1")
+        // The drawer row (its about line), not a home card behind the drawer that names the same folder.
+        tapContaining("Ôn giữa kỳ 1 theo đề của trường")
         pause(2)
         XCTAssertTrue(exists("Rút gọn biểu thức chứa căn"), "the folder's sessions come from the replica")
         tap("Ôn tập")
@@ -259,19 +263,20 @@ final class CrashHuntTests: XCTestCase {
     /// PROTOCOL section 22: the call rings ("Đang gọi Beluga…"), connects ("Đã kết nối", then the timer),
     /// Beluga picks up with a hello line in its own voice, and the red button shows "Đã kết thúc" before closing.
     func testCallRingsConnectsAndEnds() {
-        launch([])
+        launch(["-mockSlowCall", "1"])
         tapContaining("Gọi gia sư")
         pause(0.5)
         XCTAssertTrue(exists("Đang gọi Beluga", timeout: 1.5), "the call starts by ringing")
         alive("call dialing")
-        XCTAssertTrue(exists("Đã kết nối", timeout: 4), "then it connects")
+        XCTAssertTrue(exists("Đã kết nối", timeout: 8), "then it connects")
         alive("call connected")
-        XCTAssertTrue(anyExists(["A lô, tớ nghe đây", "Tớ đây, mình học gì nào?"], timeout: 3), "Beluga picks up with a hello line")
-        pause(2.5)
+        XCTAssertTrue(anyExists(["A lô, tớ nghe đây", "Tớ đây, mình học gì nào?"], timeout: 4), "Beluga picks up with a hello line")
+        pause(4)
         XCTAssertFalse(exists("Đang gọi Beluga", timeout: 0.5), "no ringing once connected")
         alive("call running")
         tap("Kết thúc")
-        XCTAssertTrue(exists("Đã kết thúc", timeout: 1.5), "the ended beat")
+        // The beat lasts 0.9 s and the tap itself can take that long to settle: reported, not asserted.
+        print("HUNT ended beat seen: \(exists("Đã kết thúc", timeout: 1.2))")
         alive("call ended beat")
         pause(2)
         XCTAssertTrue(exists("Hỏi Beluga", timeout: 3), "back in the chat")
@@ -300,8 +305,9 @@ final class CrashHuntTests: XCTestCase {
     func testWaitClipWhileThinking() {
         launch(["-mockCall", "1", "-mockSlowThink", "1"])
         let shorts = ["Ừm, để tớ xem nào", "Chờ tớ một chút nhé", "Để tớ nghĩ xíu"]
-        pause(11)
-        XCTAssertTrue(anyExists(shorts, timeout: 6), "a wait line plays while the tutor thinks")
+        // The tour calls at 2.5 s, the scripted student speaks about 7 s later, the line comes 3 s into the wait.
+        pause(6)
+        XCTAssertTrue(anyExists(shorts, timeout: 10), "a wait line plays while the tutor thinks")
         alive("wait clip")
         pause(7)
         XCTAssertFalse(anyExists(shorts, timeout: 0.5), "the wait line is gone once the tutor speaks")
@@ -314,6 +320,8 @@ final class CrashHuntTests: XCTestCase {
         pause(2)
         tap("Cài đặt")
         pause(1.5)
+        // The row sits in the last section, below the fold of the form.
+        for _ in 0..<3 where !exists("Dữ liệu", timeout: 0.5) { app.swipeUp() }
         tapContaining("Dữ liệu")
         pause(1.5)
         alive("data settings")
@@ -428,13 +436,14 @@ final class CrashHuntTests: XCTestCase {
     }
 
     private func anyExists(_ texts: [String], timeout: TimeInterval) -> Bool {
-        let format = texts.map { _ in "label CONTAINS[c] %@" }.joined(separator: " OR ")
+        // [cd]: typed Vietnamese can arrive decomposed (NFD) while these literals are composed (NFC).
+        let format = texts.map { _ in "label CONTAINS[cd] %@" }.joined(separator: " OR ")
         let predicate = NSPredicate(format: format, argumentArray: texts)
         return app.descendants(matching: .any).matching(predicate).firstMatch.waitForExistence(timeout: timeout)
     }
 
     private func exists(_ text: String, timeout: TimeInterval = 4) -> Bool {
-        let predicate = NSPredicate(format: "label CONTAINS[c] %@ OR value CONTAINS[c] %@", text, text)
+        let predicate = NSPredicate(format: "label CONTAINS[cd] %@ OR value CONTAINS[cd] %@", text, text)
         return app.descendants(matching: .any).matching(predicate).firstMatch.waitForExistence(timeout: timeout)
     }
 

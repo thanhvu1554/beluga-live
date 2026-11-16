@@ -99,6 +99,11 @@ extension LiveController {
         handsFreeActive = true
         if !timeline.isSpeaking, !pill.micOpen { _ = openMicForCall() }
         if !connected, !isMock { reconnectNow() }
+        if isMock, UserDefaults.standard.bool(forKey: "mockSlowCall") {
+            // UI test pacing: each beat long enough for the accessibility queries to see it.
+            callPhase.minDial = 4
+            callPhase.connectedLabel = 4
+        }
         runCall(callPhase.handle(.start, now: Date()))
     }
 
@@ -194,7 +199,8 @@ extension LiveController {
             self.fillerCaption = line.text
             self.setStageCaption(line.text)
             if self.isMock {
-                try? await Task.sleep(for: .seconds(max(1.2, Double(line.text.count) * 0.07)))
+                let slow = UserDefaults.standard.bool(forKey: "mockSlowCall")
+                try? await Task.sleep(for: .seconds(slow ? 5 : max(1.2, Double(line.text.count) * 0.07)))
             } else if let url = self.fillerFiles[id], let audio = self.audio {
                 _ = await audio.playFiller(url)
             }

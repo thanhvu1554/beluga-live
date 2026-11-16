@@ -257,9 +257,9 @@ extension LiveController {
         Diagnostics.log("replica: replaying \(ops.ops.count) edits")
         while connected, let op = ops.first {
             if case let .createFolder(cid, name, about) = op.kind {
-                if serverV3 || isMock { transport?.send(op.message) }
-                else { transport?.send(.createFolder(name: name, about: about.isEmpty ? nil : about, subject: "chung")) }
-                guard let id = await waitForFolder(clientId: cid, seconds: 6) else { break }
+                let message: ClientMessage = serverV3 || isMock
+                    ? op.message : .createFolder(name: name, about: about.isEmpty ? nil : about, subject: "chung")
+                guard let id = await waitForFolder(clientId: cid, seconds: 6, after: message) else { break }
                 ops.resolve(clientId: cid, to: id)
                 ops.removeFirst()
                 repointFolder(from: cid, to: id)
@@ -276,9 +276,11 @@ extension LiveController {
         transport?.send(.listSessions())
     }
 
-    private func waitForFolder(clientId: String, seconds: Double) async -> String? {
+    /// Sends `message` once the wait for its `folder_created` is in place (the answer can come back at once).
+    private func waitForFolder(clientId: String, seconds: Double, after message: ClientMessage) async -> String? {
         await withCheckedContinuation { (c: CheckedContinuation<String?, Never>) in
             folderWaiters[clientId] = c
+            transport?.send(message)
             Task { [weak self] in
                 try? await Task.sleep(for: .seconds(seconds))
                 self?.folderWaiters.removeValue(forKey: clientId)?.resume(returning: nil)
